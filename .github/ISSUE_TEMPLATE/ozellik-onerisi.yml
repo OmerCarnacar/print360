@@ -1,0 +1,18 @@
+name: Özellik önerisi
+description: Yeni bir özellik veya iyileştirme önerin
+labels: ["öneri"]
+body:
+  - type: textarea
+    id: sorun
+    attributes:
+      label: Hangi sorunu çözüyor
+      description: Önce ihtiyacı anlatın; çözümü sonra konuşalım.
+    validations: { required: true }
+  - type: textarea
+    id: cozum
+    attributes:
+      label: Önerdiğiniz çözüm
+  - type: textarea
+    id: alternatif
+    attributes:
+      label: Denediğiniz alternatifler

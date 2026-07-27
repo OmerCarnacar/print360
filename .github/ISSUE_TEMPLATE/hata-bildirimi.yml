@@ -1,0 +1,46 @@
+name: Hata bildirimi
+description: Beklenmeyen bir davranış veya hata bildirin
+labels: ["hata"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Sorun **yazdırmayla** ilgiliyse, panelde **Tanı** sayfasının (`/tani`)
+        ekran görüntüsünü eklemeniz sorunu çok hızlı çözer.
+  - type: input
+    id: surum
+    attributes:
+      label: Sürüm
+      description: Panelin altbilgisinde veya Tanı sayfasında yazar
+      placeholder: "1.1.49 (27.07 21:41)"
+    validations: { required: true }
+  - type: dropdown
+    id: bilesen
+    attributes:
+      label: Hangi bileşen
+      options: [Sunucu ajanı, Web paneli, Masaüstü paneli, İstemci ajanı, Kurulum, Bilmiyorum]
+    validations: { required: true }
+  - type: textarea
+    id: ne-oldu
+    attributes:
+      label: Ne oldu
+      description: Ne yapmayı denediniz, ne bekliyordunuz, ne oldu?
+    validations: { required: true }
+  - type: textarea
+    id: adimlar
+    attributes:
+      label: Yeniden üretme adımları
+      placeholder: |
+        1. Sunucuda "Print360 - ali" yazıcısına yazdırdım
+        2. ...
+  - type: textarea
+    id: gunluk
+    attributes:
+      label: Günlük (log)
+      description: "`C:\Print360\logs\` altındaki ilgili dosyanın son satırları"
+      render: text
+  - type: input
+    id: ortam
+    attributes:
+      label: Ortam
+      placeholder: "Sunucu: Windows Server 2019 · İstemci: Windows 11 · MSSQL: yok (SQLite)"

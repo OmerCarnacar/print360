@@ -1,0 +1,108 @@
+name: Derleme
+
+# Her push ve PR'da projenin DERLENDIGINI dogrular.
+# Windows gerektirir: WinForms/WPF + winspool/wtsapi32 P/Invoke.
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  derle:
+    name: Bilesenleri derle
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derleyiciyi bul (.NET Framework 4.x)
+        id: csc
+        shell: pwsh
+        run: |
+          $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          if (-not (Test-Path $csc)) { throw "csc.exe bulunamadi: $csc" }
+          "yol=$csc" >> $env:GITHUB_OUTPUT
+          Write-Host "csc: $csc"
+
+      - name: Surum dosyalarini uret
+        shell: pwsh
+        run: |
+          $ver = "1.1.0"
+          @"
+          static class Surum
+          {
+              public const string V = "$ver";
+              public const string Yapim = "CI";
+              public const string YapimTam = "CI build";
+              public const string Etiket = "$ver (CI)";
+          }
+          "@ | Set-Content server/Print360.Version.cs -Encoding utf8
+          @"
+          using System.Reflection;
+          [assembly: AssemblyProduct("Print360")]
+          [assembly: AssemblyCompany("Omer CARNACAR")]
+          [assembly: AssemblyVersion("$ver.0")]
+          [assembly: AssemblyFileVersion("$ver.0")]
+          "@ | Set-Content server/Print360.AssemblyInfo.cs -Encoding utf8
+
+      - name: Sunucu ajani
+        shell: pwsh
+        run: |
+          $csc = "${{ steps.csc.outputs.yol }}"
+          $sq  = "vendor/sqlite/System.Data.SQLite.dll"
+          & $csc /nologo /target:winexe /r:System.Data.dll /r:System.Windows.Forms.dll `
+                 /r:System.Drawing.dll /r:"$sq" /out:out\Print360.ServerAgent.exe `
+                 server\Print360.ServerAgent.cs server\Print360.Db.cs server\Print360.License.cs `
+                 server\Print360.AssemblyInfo.cs server\Print360.Version.cs server\Print360.VChannel.cs
+          if ($LASTEXITCODE -ne 0) { throw "ServerAgent derlenemedi" }
+
+      - name: Web paneli
+        shell: pwsh
+        run: |
+          $csc = "${{ steps.csc.outputs.yol }}"
+          & $csc /nologo /target:winexe /r:System.DirectoryServices.dll /r:System.Data.dll `
+                 /r:"vendor/sqlite/System.Data.SQLite.dll" /out:out\Print360.Dashboard.exe `
+                 server\Print360.Dashboard.cs server\Print360.Db.cs server\Print360.License.cs server\Print360.Version.cs
+          if ($LASTEXITCODE -ne 0) { throw "Dashboard derlenemedi" }
+
+      - name: Masaustu paneli (WPF)
+        shell: pwsh
+        run: |
+          $csc = "${{ steps.csc.outputs.yol }}"
+          $fw  = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319"
+          & $csc /nologo /target:winexe /lib:"$fw\WPF" `
+                 /r:PresentationFramework.dll /r:PresentationCore.dll /r:WindowsBase.dll /r:System.Xaml.dll `
+                 /r:System.DirectoryServices.dll /r:System.Data.dll /r:"vendor/sqlite/System.Data.SQLite.dll" `
+                 /out:out\Print360.Panel.exe `
+                 server\Print360.Panel.cs server\Print360.Db.cs server\Print360.License.cs server\Print360.Version.cs
+          if ($LASTEXITCODE -ne 0) { throw "Panel derlenemedi" }
+
+      - name: Istemci ajani
+        shell: pwsh
+        run: |
+          $csc = "${{ steps.csc.outputs.yol }}"
+          & $csc /nologo /target:winexe /r:System.Drawing.dll /r:System.Windows.Forms.dll `
+                 /r:System.Management.dll /out:out\Print360.ClientAgent.exe `
+                 client\Print360.ClientAgent.cs server\Print360.Version.cs
+          if ($LASTEXITCODE -ne 0) { throw "ClientAgent derlenemedi" }
+
+      - name: Kurulum yapilandiricisi
+        shell: pwsh
+        run: |
+          $csc = "${{ steps.csc.outputs.yol }}"
+          & $csc /nologo /target:exe /r:System.Data.dll /r:System.IO.Compression.dll `
+                 /r:System.IO.Compression.FileSystem.dll /r:Microsoft.CSharp.dll `
+                 /out:out\Print360.Setup.exe setup\Print360.Setup.cs server\Print360.AssemblyInfo.cs
+          if ($LASTEXITCODE -ne 0) { throw "Setup derlenemedi" }
+
+      - name: Sonuc
+        shell: pwsh
+        run: Get-ChildItem out | Select-Object Name, @{n='KB';e={[int]($_.Length/1KB)}} | Format-Table -AutoSize
+
+      - name: Derlenmis dosyalari yukle
+        uses: actions/upload-artifact@v4
+        with:
+          name: print360-binaries
+          path: out/
+          retention-days: 14

@@ -1,0 +1,34 @@
+# === Derleme ciktilari (Releases'e yuklenir, repoya girmez) ===
+dist/
+setup/bin-server/
+setup/bin-client/
+setup/Output/
+*.zip
+*.7z
+*.bundle
+
+# === Ara ciktilar ===
+*.pdb
+*.obj
+*.lib
+*.exp
+assets/make-icon.exe
+vc/*.obj
+vc/*.lib
+vc/*.exp
+
+# === HASSAS - asla commit edilmez ===
+*.pfx
+*.snk
+*.key.xml
+!vendor/sqlite/*
+credentials*
+secrets*
+
+# === Yerel calisma ===
+*.log
+*.user
+*.suo
+.vs/
+Thumbs.db
+desktop.ini

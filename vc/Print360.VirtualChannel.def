@@ -1,0 +1,4 @@
+; Print360 RDP Virtual Channel eklentisi - disa aktarilan giris noktasi.
+; mstsc.exe bu ismi arar (SVC plugin sozlesmesi).
+EXPORTS
+    VirtualChannelEntry
