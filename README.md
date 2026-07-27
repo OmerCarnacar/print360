@@ -7,15 +7,15 @@
 **RDP / Terminal Server oturumlarından yerel yazıcılara sorunsuz yazdırma**
 _Sürücü uyumsuzluğu yok · Merkezi raporlama · Kurulumu tek tıkla_
 
-[![Derleme](https://github.com/omercarnacar/print360/actions/workflows/build.yml/badge.svg)](https://github.com/omercarnacar/print360/actions/workflows/build.yml)
-[![Son sürüm](https://img.shields.io/github/v/release/omercarnacar/print360?label=s%C3%BCr%C3%BCm&color=4f46e5)](https://github.com/omercarnacar/print360/releases/latest)
-[![İndirme](https://img.shields.io/github/downloads/omercarnacar/print360/total?label=indirme&color=0ea5e9)](https://github.com/omercarnacar/print360/releases)
+[![Derleme](https://github.com/OmerCarnacar/print360/actions/workflows/build.yml/badge.svg)](https://github.com/OmerCarnacar/print360/actions/workflows/build.yml)
+[![Son sürüm](https://img.shields.io/github/v/release/OmerCarnacar/print360?label=s%C3%BCr%C3%BCm&color=4f46e5)](https://github.com/OmerCarnacar/print360/releases/latest)
+[![İndirme](https://img.shields.io/github/downloads/OmerCarnacar/print360/total?label=indirme&color=0ea5e9)](https://github.com/OmerCarnacar/print360/releases)
 [![Lisans](https://img.shields.io/badge/lisans-Ücretsiz%20(satılamaz)-059669)](LICENSE)
 
 [![Platform](https://img.shields.io/badge/platform-Windows%20Server%202016%2B-0078d4)](#gereksinimler)
 [![.NET](https://img.shields.io/badge/.NET%20Framework-4.x-512bd4)](#gereksinimler)
 [![Bağımlılık](https://img.shields.io/badge/harici%20bağımlılık-yok-16a34a)](#neden-print360)
-[![Yıldız](https://img.shields.io/github/stars/omercarnacar/print360?style=social)](https://github.com/omercarnacar/print360/stargazers)
+[![Yıldız](https://img.shields.io/github/stars/OmerCarnacar/print360?style=social)](https://github.com/OmerCarnacar/print360/stargazers)
 
 </div>
 
@@ -95,7 +95,7 @@ Print360, çıktıyı sunucuda **PDF'e** çevirir ve RDP oturumu üzerinden kull
 
 ### Adımlar
 
-1. **[⬇ Son sürümü indirin](https://github.com/omercarnacar/print360/releases/latest)** (ZIP).
+1. **[⬇ Son sürümü indirin](https://github.com/OmerCarnacar/print360/releases/latest)** (ZIP).
 2. **Sunucuda** `Print360-Server-Setup.exe` — yönetici olarak çalıştırın.
    Sihirbaz kullanıcıları, yazdırma modunu, portları ve (isterseniz) MSSQL'i sorar.
 3. **Kullanıcı bilgisayarlarında** `Print360-Client-Setup.exe`.
