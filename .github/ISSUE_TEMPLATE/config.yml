@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
-  - name: Güvenlik açığı
-    url: https://github.com/OWNER/REPO/security/policy
-    about: Güvenlik açıklarını herkese açık Issue olarak AÇMAYIN - e-posta gönderin.
+  - name: Güvenlik açığı bildirimi
+    url: https://github.com/omercarnacar/print360/blob/main/SECURITY.md
+    about: Güvenlik açıklarını herkese açık Issue olarak AÇMAYIN — e-posta gönderin.
