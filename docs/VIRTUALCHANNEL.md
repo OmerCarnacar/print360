@@ -1,6 +1,6 @@
-# Print360 — RDP Virtual Channel (TSPrint benzeri) Yol Haritası
+# Print360 — RDP Virtual Channel Yol Haritası
 
-Bu belge, işlerin **RDP sanal kanalı** üzerinden (TSPrint gibi, IP/port/firewall
+Bu belge, işlerin **RDP sanal kanalı** üzerinden (IP/port/firewall
 gerektirmeden) taşınması için hazırlanan **referans iskeletin** derlenmesi,
 kurulması ve test edilmesini anlatır.
 
@@ -25,7 +25,7 @@ kurulması ve test edilmesini anlatır.
 >   ile kanala yazar; sunucu `WTSVirtualChannelRead` ile okuyup **aynı SQL
 >   tablolarına** (Printed / Heartbeat / PrinterHealth) işler. Böylece
 >   `VCMode=1` istemcide ve `VirtualChannel=1` sunucuda açıkken **HTTPS/IP/port/
->   Server ayarı hiç gerekmez** — tam TSPrint gibi. Hepsi derlendi (C++ DLL 122 KB,
+>   Server ayarı hiç gerekmez.** Hepsi derlendi (C++ DLL 122 KB,
 >   C# sunucu+istemci hatasız).
 > - ⏳ Kalan tek adım: **gerçek bir RDS sunucusu + RDP oturumunda uçtan uca test**
 >   (bu tek makinede yapılamaz — çift yönlü kanal gerçek RDP oturumunun iki ucunu
@@ -34,7 +34,7 @@ kurulması ve test edilmesini anlatır.
 
 ## Neden Virtual Channel?
 
-TSPrint, işleri RDP oturumunun **kendi tüneli** içinden taşır — ayrı bağlantı,
+Bu yaklaşımda işler RDP oturumunun **kendi tüneli** içinden taşınır — ayrı bağlantı,
 IP, port, firewall yoktur. Print360'ın mevcut kanalı HTTPS'tir (8443); bu ek
 bileşen aynı "sıfır ayar" deneyimini getirir. Mevcut HTTPS kanalı **değişmez**;
 Virtual Channel yalnızca 1. tercih olarak eklenir, yoksa HTTPS'e düşülür.
@@ -91,7 +91,7 @@ Doğrulama başarısızsa `.part` silinir — **yarım iş asla basılmaz**.
 ### Kanal aktif işareti
 Eklenti kanalı açınca `C:\Print360\vc-outbox\.vc-aktif` dosyasını oluşturur,
 kanal kapanınca siler. İstemci ajanı buna bakarak tahmin yürütmeden karar verir:
-işaret varsa TSPrint modu, yoksa otomatik HTTPS.
+işaret varsa kanal modu, yoksa otomatik HTTPS.
 
 ### Protokol testi (kanal olmadan çalıştırılabilir)
 ```

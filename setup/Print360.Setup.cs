@@ -302,7 +302,7 @@ static class Kurulum
         KopyalaVarsa(Path.Combine(binDir, "Print360.ico"), Path.Combine(BASE, "Print360.ico"));
         Yaz("[2/5] Ajan yerlestirildi.");
 
-        // RDP Virtual Channel eklentisi (TSPrint mantigi)
+        // RDP Virtual Channel eklentisi (kanal mantigi)
         string vcSrc = Path.Combine(binDir, "Print360.VC.dll");
         if (File.Exists(vcSrc))
         {
@@ -321,7 +321,7 @@ static class Kurulum
                 Yaz("[3/5] RDP kanal eklentisi kuruldu (sonraki RDP oturumunda etkinlesir).");
             else
                 Uyari("RDP kanal eklentisi KAYDEDILEMEDI (yonetici yetkisi gerekir). " +
-                      "TSPrint modu devre disi kalir; isler HTTPS kanalindan tasinir.");
+                      "kanal modu devre disi kalir; isler HTTPS kanalindan tasinir.");
         }
         else Uyari("Print360.VC.dll pakette yok - isler HTTPS kanalindan tasinir.");
 
@@ -337,7 +337,7 @@ static class Kurulum
         sb.AppendLine("UseHttps=1");
         sb.AppendLine("YedekMotor=1");
         sb.AppendLine("Arayuz=1");
-        sb.AppendLine("; VCMode: auto = RDP kanali varsa oradan (TSPrint), yoksa HTTPS");
+        sb.AppendLine("; VCMode: auto = RDP kanali varsa oradan (RDP kanali), yoksa HTTPS");
         sb.AppendLine("VCMode=auto");
         sb.AppendLine("SumatraPath=" + Path.Combine(BASE, "SumatraPDF.exe"));
         AyarYaz(Path.Combine(BASE, "Print360.ini"), sb.ToString(), Encoding.UTF8);
@@ -783,7 +783,7 @@ static class Kurulum
     }
 
     // ============================================================
-    //          OTOMATIK BASLATMA (TSPrint mantigi)
+    //          OTOMATIK BASLATMA (kanal mantigi)
     // ============================================================
     static void OtomatikBaslatma()
     {

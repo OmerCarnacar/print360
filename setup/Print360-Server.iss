@@ -107,7 +107,7 @@ begin
     'bu kurulumu tekrar çalıştırarak ekleyebilirsiniz.',
     False, False);
   SqlSecPage.Add('MSSQL veritabanını kur (İSTEĞE BAĞLI — kurulmazsa sistem tam çalışır)');
-  SqlSecPage.Add('İşleri RDP kanalından taşı (TSPrint mantığı — IP/port/firewall gerekmez)');
+  SqlSecPage.Add('İşleri RDP kanalından taşı (kanal mantığı — IP/port/firewall gerekmez)');
   SqlSecPage.Values[0] := False;   { MSSQL artik zorunlu degil - varsayilan KAPALI }
   SqlSecPage.Values[1] := True;    { RDP kanali varsayilan ACIK }
 

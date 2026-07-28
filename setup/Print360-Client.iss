@@ -86,7 +86,7 @@ begin
   SunucuPage.Add('Sunucu sertifika parmak izi (bulut/internet için önerilir; boş geçilebilir):', False);
 
   { Baglanti modu sorusu YOK: ajan "auto" calisir - RDP sanal kanali varsa
-    her sey oradan gider (TSPrint mantigi, ayar gerekmez), yoksa HTTPS'e duser. }
+    her sey oradan gider (kanal mantigi, ayar gerekmez), yoksa HTTPS'e duser. }
 
   { Acik RDP oturumu varsa sunucu alanini otomatik doldur }
   rdp := RdpSunucuBul();

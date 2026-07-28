@@ -25,7 +25,7 @@ static class ServerAgent
 {
     static string user = Environment.UserName;
     static string spoolDir = @"C:\Print360\spool";
-    // Uc sanal yazici / uc spool dosyasi (TSPrint modeli):
+    // Uc sanal yazici / uc spool dosyasi (is turu modeli):
     //  ""    -> <u>.pdf         : atanan/varsayilan yaziciya sessiz baski
     //  "SEC" -> <u>.sec.pdf     : istemcide yazici secim penceresi
     //  "PDF" -> <u>.pdfview.pdf : istemcide PDF olarak ac/kaydet
@@ -318,7 +318,7 @@ static class ServerAgent
 
     // Kullanicinin RDP oturumunda varsayilan yazici = "Print360 Yazici Sec - <kullanici>".
     // Boylece kullanici Ctrl+P -> Yazdir deyince LOKAL PC'sinde kendi yazicilarinin
-    // listesi acilir, istedigini secer ve cikti oradan cikar (TSPrint deneyimi).
+    // listesi acilir, istedigini secer ve cikti oradan cikar (secim deneyimi).
     // Yonetici dogrudan-baski isterse varsayilani "Print360 - <kullanici>" yapabilir;
     // ajan Print360 ailesinden herhangi bir yazici varsayilan ise dokunmaz.
     static void VarsayilanYaziciAyarla()

@@ -126,12 +126,12 @@ static class ClientAgent
     }
 
     // VC modu: Print360.ini'de VCMode=1 ise onay/sayac/heartbeat HTTPS yerine
-    // RDP sanal kanalindan gider (tam TSPrint gibi, IP/port/HTTPS ayari gerekmez).
+    // RDP sanal kanalindan gider (IP/port/HTTPS ayari gerekmez).
     // Mekanizma: mesaj vc-outbox'a .msg olarak birakilir; mstsc icindeki
     // Print360.VC.dll onu kanala yazar; sunucu VChannel.DinlemeyeBasla ile okur.
     // VCMode:  auto (VARSAYILAN) | 1 (zorla VC) | 0 (zorla HTTPS)
     //
-    // auto = TAM TSPRINT MANTIGI, ama tahmine dayanmaz:
+    // auto = TAM KANAL MANTIGI, ama tahmine dayanmaz:
     //   mstsc icindeki Print360.VC.dll kanal acilinca
     //   C:\Print360\vc-outbox\.vc-aktif isaret dosyasini olusturur,
     //   kanal kapaninca siler. Isaret varsa her sey RDP kanalindan gider
@@ -271,7 +271,7 @@ static class ClientAgent
         var cfg = ReadIni();
         string fname = Path.GetFileName(file);
 
-        // Is turu (TSPrint modeli): __PDF -> goruntule/kaydet, __SEC -> yazici sec
+        // Is turu: __PDF -> goruntule/kaydet, __SEC -> yazici sec
         if (fname.IndexOf("__PDF", StringComparison.OrdinalIgnoreCase) >= 0)
         {
             PdfGoruntule(file);
@@ -648,7 +648,7 @@ static class ClientAgent
                               + "\r\nSebep: " + neden, false);
     }
 
-    // TSPrint "PDF" modu: isi masaustune kaydet ve varsayilan PDF goruntuleyiciyle ac
+    // PDF modu: isi masaustune kaydet ve varsayilan PDF goruntuleyiciyle ac
     static void PdfGoruntule(string file)
     {
         string fname = Path.GetFileName(file);
@@ -698,7 +698,7 @@ static class ClientAgent
         catch { return ""; }
     }
 
-    // TSPrint "Printer selection" modu: kullaniciya BU PC'nin yazici listesini goster (STA).
+    // Yazici secim modu: kullaniciya BU PC'nin yazici listesini goster (STA).
     // RDP tam ekran acikken bile gorunmesi icin en-ustte (TopMost) sahip pencereyle acilir.
     static string YaziciSec()
     {

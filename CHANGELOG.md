@@ -84,7 +84,7 @@ Lisans ve hukuki metin sürümü. **Yazılım işlevinde değişiklik yoktur**;
 - Panelden MSSQL'e geçiş yapılabilir
 
 **Taşıma**
-- RDP Virtual Channel (TSPrint mantığı) — IP/port/firewall gerekmez
+- RDP Virtual Channel (kanal mantığı) — IP/port/firewall gerekmez
 - HTTPS kuyruğu (GZip sıkıştırmalı, dosya tabanlı — veritabanı gerekmez)
 - `\\tsclient` sürücü yönlendirmesi (yedek)
 

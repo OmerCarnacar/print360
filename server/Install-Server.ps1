@@ -100,12 +100,12 @@ foreach ($pr in @($httpPort, $httpsPort)) {
     }
 }
 
-# RDP Virtual Channel (TSPrint mantigi) - VARSAYILAN ACIK.
+# RDP Virtual Channel (kanal mantigi) - VARSAYILAN ACIK.
 # Isler RDP tunelinden gider; istemcide eklenti yoksa otomatik HTTPS'e dusulur.
 if ($VC.Trim()) { $vc = if ($VC.Trim() -eq "0") { "0" } else { "1" } }
 elseif ($Quiet) { $vc = "1" }
 else {
-    $vcAns = Read-Host "Isler RDP kanalindan mi tasinsin? (TSPrint mantigi; onerilen) [E/h]"
+    $vcAns = Read-Host "Isler RDP kanalindan mi tasinsin? (kanal mantigi; onerilen) [E/h]"
     $vc = if ($vcAns -match "^[Hh]") { "0" } else { "1" }
 }
 
@@ -263,7 +263,7 @@ if ($panelPwd -ceq "KALDIR") {
     Write-Host "Panel sifresi ayarlandi."
 }
 
-# 3) Kullanici basina UC sanal yazici (TSPrint modeli)
+# 3) Kullanici basina UC sanal yazici (is turu modeli)
 foreach ($u in $Users) {
     $yazicilar = @(
         @{ Ad = "Print360 - $u";            Port = "$spool\$u.pdf";         Aciklama = "atanan yaziciya sessiz baski" },
@@ -314,7 +314,7 @@ Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" `
 Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" `
     -Name "Print360Dashboard" -Value "`"$dashExe`""
 
-# 4b) TSPRINT MANTIGI: Ajan HER ZAMAN ayakta olmali.
+# 4b) KANAL MANTIGI: Ajan HER ZAMAN ayakta olmali.
 # HKLM\Run yalnizca oturum ACILISINDA bir kez calisir; RDP'ye yeniden baglanmada
 # veya ajan cokerse geri gelmez. Zamanlanmis gorev ile:
 #   - her kullanicinin oturum acilisinda

@@ -5,7 +5,7 @@
 //  Lisans      : UCRETSIZ SURUM - para ile satilamaz (bkz. LICENSE)
 //  Telif       : (c) 2026 Omer CARNACAR
 // ============================================================
-//  Print360 - RDP Static Virtual Channel istemci eklentisi (TSPrint mantigi)
+//  Print360 - RDP Static Virtual Channel istemci eklentisi (kanal mantigi)
 //
 //  mstsc.exe (RDP istemcisi) bu DLL'i registry AddIns kaydiyla yukler.
 //  Sunucudaki ServerAgent isi RDP sanal kanalindan ("P360") gonderir;
@@ -52,7 +52,7 @@
 #define OUTBOX "C:\\Print360\\vc-outbox"
 // Kanal acikken olusturulan isaret dosyasi. ClientAgent buna bakarak
 // "RDP kanali gercekten calisiyor mu?" sorusunu tahminsiz yanitlar:
-//   dosya VAR  -> mstsc eklentisi yuklu ve kanal acik  -> TSPrint modu
+//   dosya VAR  -> mstsc eklentisi yuklu ve kanal acik  -> kanal modu
 //   dosya YOK  -> eklenti yok / RDP kapali             -> HTTPS'e dus
 #define AKTIF_ISARET "C:\\Print360\\vc-outbox\\.vc-aktif"
 
@@ -229,7 +229,7 @@ static VOID VCAPITYPE InitEvent(LPVOID pInitHandle, UINT event, LPVOID pData, UI
         UINT rc = g_ep->pVirtualChannelOpen(pInitHandle, &g_openHandle, (PCHAR)KANAL_ADI, OpenEvent);
         if (rc == CHANNEL_RC_OK)
         {
-            // Kanal ACIK: isaret dosyasini birak (ClientAgent TSPrint moduna gecer)
+            // Kanal ACIK: isaret dosyasini birak (ClientAgent kanal moduna gecer)
             CreateDirectoryA("C:\\Print360", NULL);
             CreateDirectoryA(OUTBOX, NULL);
             HANDLE m = CreateFileA(AKTIF_ISARET, GENERIC_WRITE, FILE_SHARE_READ, NULL,

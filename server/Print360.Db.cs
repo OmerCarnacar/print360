@@ -19,7 +19,7 @@ static class Db
     public static string Err;
     // Panel dinleme portlari (db.ini'den okunur; varsayilan 8360/8443)
     public static string HttpPort = "8360", HttpsPort = "8443";
-    // RDP Virtual Channel ile is tasima (TSPrint mantigi) - VARSAYILAN ACIK.
+    // RDP Virtual Channel ile is tasima (kanal mantigi) - VARSAYILAN ACIK.
     // Kanal 1. tercihtir: is RDP tunelinden gider, IP/port/HTTPS/firewall gerekmez.
     // Istemcide eklenti yoksa kanal acilmaz, sistem OTOMATIK HTTPS kuyruguna duser.
     // db.ini'de VirtualChannel=0 ile tamamen kapatilabilir.
