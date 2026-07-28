@@ -12,7 +12,7 @@ AppSupportURL=mailto:omer.carnacar@outlook.com.tr
 AppPublisherURL=https://www.linkedin.com/in/omercarnacar/
 VersionInfoCompany=Ömer ÇARNAÇAR
 VersionInfoDescription=Print360 Server - RDP yazdırma yönetimi (ücretsiz sürüm)
-LicenseFile=..\LICENSE
+LicenseFile=LICENSE-kurulum.txt
 DefaultDirName={commonpf}\Print360
 DisableProgramGroupPage=yes
 ; Baslat menusu grubu (kaldirma kisayolu icin gerekli)

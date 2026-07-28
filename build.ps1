@@ -150,6 +150,14 @@ if (Test-Path $vcDll) {
 # NOT: Urun UCRETSIZ surumdur; lisans anahtari uretimi (vendor\KeyGen) artik
 # yapim akisinda degildir. Kaynagi tarihsel olarak vendor\ altinda durur.
 Adim "2/3  Kurulum paketleri uretiliyor (Inno Setup)"
+# Inno Setup, BOM'suz duz metni secili dilin ANSI kod sayfasiyla okur; UTF-8
+# olan LICENSE dosyasi sihirbazda bozuk Turkce karakterle cikar. BOM'lu bir
+# kopya uretip .iss dosyalari bunu gosteriyor.
+[System.IO.File]::WriteAllText(
+    "$root\setup\LICENSE-kurulum.txt",
+    [System.IO.File]::ReadAllText("$root\LICENSE", [System.Text.Encoding]::UTF8),
+    (New-Object System.Text.UTF8Encoding($true)))
+Ok "Lisans metni sihirbaz icin hazirlandi (UTF-8 BOM)"
 & $iscc /Q "$root\setup\Print360-Server.iss"
 if ($LASTEXITCODE -ne 0) { throw "Server Setup uretimi basarisiz." }
 Ok "Print360-Server-Setup.exe"

@@ -194,11 +194,38 @@ Süre dolunca otomatik temizlenir.
 
 ---
 
-## Lisans
+## Lisans ve sorumluluk reddi
 
-**Ücretsiz sürüm.** Sınırsız kullanılabilir, bedelsiz dağıtılabilir.
-**Para karşılığı satılamaz**, kiralanamaz, ücretli bir ürünün parçası olarak sunulamaz.
-Ayrıntılar: [LICENSE](LICENSE)
+**Lisans türü:** Kaynağı açık, ücretsiz, **tescilli (proprietary)** lisans.
+
+> ⚠️ Bu bir **açık kaynak lisansı değildir.** Kaynak kodu herkese açıktır ve
+> incelenebilir; ancak satış yasağı içerdiği için OSI'nin açık kaynak tanımını
+> karşılamaz. MIT / GPL / Apache **değildir**.
+
+| | |
+|---|---|
+| ✅ Serbest | Kişisel, kurumsal ve ticari ortamlarda **ücretsiz** kullanmak; bedelsiz kopyalayıp dağıtmak; kaynağı inceleyip kendi ihtiyacınıza göre değiştirmek |
+| ❌ Yasak | **Para karşılığı satmak**, kiralamak, abonelikle sunmak, ücretli bir ürünün parçası olarak vermek, geliştirici bilgisini kaldırmak |
+
+### Sorumluluk reddi
+
+Bu yazılım **hiçbir bedel alınmadan**, **"olduğu gibi"** sunulmaktadır.
+**Geliştirici hiçbir sorumluluk üstlenmez** ve hiçbir garanti vermez.
+
+Yazılımın kullanılmasından, kullanılamamasından veya hatalı çalışmasından doğabilecek
+**hiçbir zarardan** — veri/belge kaybı, çıktının yanlış yazıcıya gitmesi, iş kesintisi,
+kâr kaybı, sarf malzemesi maliyeti ve benzerleri dahil — geliştirici sorumlu tutulamaz.
+Destek, bakım veya güncelleme sağlama yükümlülüğü de yoktur.
+
+**Kullanmadan önce:** üretim ortamına almadan mutlaka kendi ortamınızda test edin ve
+kurulum öncesi sistem yedeği alın. Yazılım yazıcı, kayıt defteri ve zamanlanmış görev
+ayarlarını değiştirir.
+
+**Kişisel veriler:** Print360 kullanıcı adı, bilgisayar adı, belge adı ve sayfa sayısı
+kaydeder. KVKK/GDPR kapsamında **veri sorumlusu yazılımı kuran kurumdur**, geliştirici
+değildir. Yazılım dışarıya hiçbir veri göndermez.
+
+Tam metin: **[LICENSE](LICENSE)**
 
 ---
 
