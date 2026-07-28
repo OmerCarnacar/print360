@@ -6,6 +6,26 @@ paket adında üretim tarihi de yer alır (`v1.1.49-2707-2141`).
 
 ---
 
+## [1.1.3] — 2026-07-28
+
+### Eklenenler
+
+- **Tepsi simgesi ipucu canlı durum gösteriyor.** Fareyle simgenin üzerine
+  gelindiğinde üç satır görünüyor: bağlantı durumu (birden fazla sunucuya
+  bağlıysa sayısıyla), çıktının gideceği yazıcı ve bekleyen iş sayısı —
+  bekleyen iş yoksa son temas saati. Bağlantı yokken `Sunucu araniyor` /
+  `RDP bekleniyor` yazıyor. İpucu 4 saniyede bir tazeleniyor.
+
+  Önceden ipucu yalnızca bağlantı durumu değiştiğinde güncelleniyor ve
+  tek satır (`Print360 - Bagli`) gösteriyordu.
+
+  Not: Windows tepsi ipucu alanı .NET tarafında 63 karakterle sınırlıdır;
+  sabit satırlar yazıldıktan sonra yazıcı adı kalan yere göre kısaltılır.
+  Bu nedenle bazı etiketler kısaltıldı (`Son temas` artık saniye
+  göstermiyor).
+
+---
+
 ## [1.1.2] — 2026-07-28
 
 Bakım sürümü. **Yazılım işlevinde değişiklik yoktur.**

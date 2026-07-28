@@ -84,6 +84,7 @@ static class ClientAgent
     static DateTime durumZaman;          // son basarili temas
     static string sonYaziciRapor = "";   // HeartbeatLoop'ta uretilen WMI raporu (cache)
     static bool rdpAcik;                 // su an aktif RDP oturumu var mi (RdpIzleyici gunceller)
+    static int sunucuBagli;              // su an ulasilabilen sunucu sayisi (tepsi ipucunda gosterilir)
     static bool sonBildirilen;           // en son balon bildirimi yapilan durum
     static bool bildirimBasladi;         // ilk bildirim yapildi mi
 
@@ -99,11 +100,9 @@ static class ClientAgent
         {
             durumOk = ok;
             if (tepsi == null) return;   // arayuz kapaliysa (Arayuz=0) sessiz gec
-            string ipucu = "Print360 - " + (ok ? "Bagli" : "Baglanti yok");
-            if (ipucu.Length > 62) ipucu = ipucu.Substring(0, 62);
             // Tepsi ipucu ve balon arayuz is parcacigina aittir (bkz. Bildir)
             var s = senkron;
-            Action ipucuYaz = delegate { try { tepsi.Text = ipucu; } catch { } };
+            Action ipucuYaz = delegate { TepsiIpucuGuncelle(); };
             if (s != null && s.IsHandleCreated && s.InvokeRequired) s.BeginInvoke(ipucuYaz);
             else ipucuYaz();
 
@@ -1148,6 +1147,7 @@ static class ClientAgent
                             + string.Join(", ", basarili.ToArray()) + ")");
                     lastOk = true;
                     durumZaman = DateTime.Now;
+                    sunucuBagli = basarili.Count;   // tepsi ipucu bunu gosterir
                     durumKanal = basarili.Count == 1 ? basarili[0]
                                : basarili.Count + " sunucu: " + string.Join(" , ", basarili.ToArray());
                     durumMetin = "Baglanti: " + basarili.Count + " sunucuya baglandi"
@@ -1163,6 +1163,7 @@ static class ClientAgent
                     if (lastOk || first)
                         Log("BAGLANTI: Hicbir sunucuya ulasilamadi (" + sunucular.Count + " adres denendi): " + sonHataMesaji);
                     lastOk = false;
+                    sunucuBagli = 0;
                     durumKanal = sunucular.Count + " adres denendi: " + string.Join(" , ", sunucular.ToArray());
                     if (rdpAcik)
                     {
@@ -1340,6 +1341,53 @@ static class ClientAgent
         return System.Drawing.SystemIcons.Application;
     }
 
+    // Tepsi simgesinin ipucu: fareyle uzerine gelindiginde CANLI durum gorunur.
+    //   1. satir : bagli mi, kac sunucuya
+    //   2. satir : hangi yaziciya basacak
+    //   3. satir : bekleyen is varsa sayisi, yoksa son temas saati
+    // NotifyIcon.Text .NET'te EN FAZLA 63 karakter kabul eder (asilirsa istisna
+    // atar). Bu yuzden sabit satirlar once yazilir, yazici adi kalan yere gore
+    // kisaltilir. UI is parcacigindan cagrilmalidir.
+    const int IPUCU_SINIR = 63;
+
+    static void TepsiIpucuGuncelle()
+    {
+        var t = tepsi;
+        if (t == null) return;
+        try
+        {
+            string s1 = "Print360 - " + (durumOk ? "BAGLI" : "BAGLANTI YOK");
+            if (durumOk && sunucuBagli > 1) s1 += " (" + sunucuBagli + " sunucu)";
+
+            int bekleyen = 0;
+            try { bekleyen = Directory.GetFiles(jobsDir).Length; } catch { }
+
+            string s3;
+            // Kisa tutuluyor: her karakter yazici adindan calinir (bkz. IPUCU_SINIR)
+            if (bekleyen > 0) s3 = "Bekleyen: " + bekleyen + " is";
+            else if (durumOk && durumZaman > DateTime.MinValue) s3 = "Son temas: " + durumZaman.ToString("HH:mm");
+            else if (rdpAcik) s3 = "Sunucu araniyor";
+            else s3 = "RDP bekleniyor";
+
+            string yazici = "";
+            try { var l = KisiselYaziciListesi(); if (l.Count > 0) yazici = l[0]; } catch { }
+            if (yazici.Length == 0) yazici = "(secilmedi)";
+
+            // Yazici satirina kalan yer: sinir - digerleri - iki satir sonu - etiket
+            int yer = IPUCU_SINIR - s1.Length - s3.Length - 2 - 8;   // "Yazici: " = 8
+            if (yer < 6) { IpucuYaz(t, s1 + "\n" + s3); return; }    // sigmiyorsa yazici satirini atla
+            if (yazici.Length > yer) yazici = yazici.Substring(0, yer - 2) + "..";
+            IpucuYaz(t, s1 + "\nYazici: " + yazici + "\n" + s3);
+        }
+        catch { }
+    }
+
+    static void IpucuYaz(System.Windows.Forms.NotifyIcon t, string s)
+    {
+        if (s.Length > IPUCU_SINIR) s = s.Substring(0, IPUCU_SINIR);
+        try { t.Text = s; } catch { }
+    }
+
     static void ArayuzuCalistir()
     {
         System.Windows.Forms.Application.EnableVisualStyles();
@@ -1368,6 +1416,15 @@ static class ClientAgent
         senkron.StartPosition = System.Windows.Forms.FormStartPosition.Manual;
         senkron.Location = new System.Drawing.Point(-32000, -32000);
         var zorla = senkron.Handle;   // handle olussun (Invoke icin sart)
+
+        // Tepsi ipucu duzenli tazelensin: kullanici fareyle uzerine geldiginde
+        // bekleyen is sayisi ve son temas saati guncel gorunsun. Zamanlayici bu
+        // (UI) is parcaciginda calisir; tepsi.Text dogrudan yazilabilir.
+        var ipucuSaati = new System.Windows.Forms.Timer();
+        ipucuSaati.Interval = 4000;
+        ipucuSaati.Tick += delegate { TepsiIpucuGuncelle(); };
+        ipucuSaati.Start();
+        TepsiIpucuGuncelle();
 
         // Ikinci kez calistirilirsa (kisayol) mevcut ornek pencereyi acsin
         new Thread(GosterSinyaliniDinle) { IsBackground = true }.Start();
