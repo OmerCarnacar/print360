@@ -28,6 +28,9 @@ jobs:
       - name: Surum dosyalarini uret
         shell: pwsh
         run: |
+          # csc, Win32 kaynagini cikti klasorunde gecici dosyaya yazar;
+          # klasor yoksa "CS1567: Error generating Win32 resource" verir.
+          New-Item -ItemType Directory -Force out | Out-Null
           $ver = "1.1.0"
           @"
           static class Surum
