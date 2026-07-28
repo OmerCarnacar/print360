@@ -6,6 +6,27 @@ paket adında üretim tarihi de yer alır (`v1.1.49-2707-2141`).
 
 ---
 
+## [1.1.4] — 2026-07-28
+
+### Eklenenler
+
+- **Panelde bağlı yazıcılar yeşil "Aktif" rozetiyle görünüyor.** Yazıcı
+  Sağlığı sayfasına **Bağlantı** sütunu ve kartlara **● Aktif (bağlı)**
+  sayacı eklendi. Dört durum var: 🟢 Aktif · 🟡 Sorunlu · 🔴 Çevrimdışı ·
+  ⚪ Pasif. Yeşil noktanın nabız animasyonu canlı bağlantıyı gözle ayırt
+  etmeyi kolaylaştırır.
+
+  "Aktif" için **iki şart birden** aranır: istemci ajanının raporu taze
+  olmalı (son 5 dakika) **ve** yazıcı yazdırmaya hazır olmalı. Ajan
+  durduğunda yazıcı "Hazir" görünse bile rozet **Pasif**'e düşer — çünkü o
+  an gerçekten yazdırılamaz. Yalnızca son bilinen duruma bakmak, panelde
+  yeşil görünen ama çıktı vermeyen yazıcılara yol açardı.
+
+- Genel Bakış → **Bağlı İstemciler** tablosundaki düz "● Çevrimiçi" metni
+  aynı rozet diline geçirildi.
+
+---
+
 ## [1.1.3] — 2026-07-28
 
 ### Eklenenler

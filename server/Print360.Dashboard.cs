@@ -1196,8 +1196,8 @@ static class Dashboard
               .Append("<td>").Append(c[2].Length > 0 ? H(c[2]) : "&mdash;").Append("</td>")
               .Append("<td>").Append(c[3].Length > 0 ? H(c[3]) : "&mdash;").Append("</td>")
               .Append("<td>").Append(H(c[5])).Append("</td>")
-              .Append(onl ? "<td class='ok'>&#9679; &Ccedil;evrimi&ccedil;i</td>"
-                          : "<td class='mut'>&Ccedil;evrimd&#305;&#351;&#305;</td>")
+              .Append(onl ? "<td><span class='rz rz-ak' title='Kalp at&#305;&#351;&#305; al&#305;n&#305;yor'><i></i>Aktif</span></td>"
+                          : "<td><span class='rz rz-ps' title='Kalp at&#305;&#351;&#305; kesildi'><i></i>&Ccedil;evrimd&#305;&#351;&#305;</span></td>")
               .Append("</tr>");
         }
         if (istemciler.Count == 0)
@@ -1253,6 +1253,39 @@ static class Dashboard
         return sb.ToString();
     }
 
+    // Bir yazici "AKTIF" sayilir mi?  Iki sart birden aranir:
+    //   1) Raporu TAZE olmali (istemci ajani <=5 dk once temas etmis) -> baglanti canli
+    //   2) Yazicinin kendisi hazir/yazdiriyor olmali ve hata bildirmemis
+    // Ajan durduysa yazici "Hazir" gorunse bile rapor eskir; o yuzden ikisi de sart.
+    // kayit dizisi: [makine, yazici, durum, hata, kuyruk, guncelleme]
+    const int TAZELIK_DK = 5;
+
+    static bool RaporTaze(string guncelleme)
+    {
+        DateTime g;
+        if (!DateTime.TryParse(guncelleme, out g)) return false;
+        return g > DateTime.Now.AddMinutes(-TAZELIK_DK);
+    }
+
+    static bool YaziciAktif(string[] r)
+    {
+        return RaporTaze(r[5]) && r[3].Length == 0 && (r[2] == "Hazir" || r[2] == "Yazdiriyor");
+    }
+
+    // Yazicinin baglanti rozeti: yesil AKTIF / sari SORUN / kirmizi CEVRIMDISI / gri PASIF
+    static string YaziciRozet(string[] r)
+    {
+        bool taze = RaporTaze(r[5]);
+        if (!taze)
+            return "<span class='rz rz-ps' title='&#304;stemci ajan&#305; " + TAZELIK_DK
+                 + " dakikad&#305;r rapor g&ouml;ndermedi'><i></i>Pasif</span>";
+        if (r[2] == "Cevrimdisi")
+            return "<span class='rz rz-kp' title='Yaz&#305;c&#305; &ccedil;evrimd&#305;&#351;&#305;'><i></i>&Ccedil;evrimd&#305;&#351;&#305;</span>";
+        if (r[3].Length > 0 || r[2] == "Durduruldu")
+            return "<span class='rz rz-uy' title='" + H(r[3].Length > 0 ? r[3] : r[2]) + "'><i></i>Sorunlu</span>";
+        return "<span class='rz rz-ak' title='Ba&#287;l&#305; ve yazd&#305;rmaya haz&#305;r'><i></i>Aktif</span>";
+    }
+
     // Yazici sagligi sayfasi
     static string PagePrinters()
     {
@@ -1272,22 +1305,28 @@ static class Dashboard
             kayit.Sort((a, b) => string.Compare(a[0] + "|" + a[1], b[0] + "|" + b[1], StringComparison.OrdinalIgnoreCase));
         }
 
-        int toplam = kayit.Count, sorunlu = 0, cevrimdisi = 0, kuyrukToplam = 0;
+        int toplam = kayit.Count, sorunlu = 0, cevrimdisi = 0, kuyrukToplam = 0, aktif = 0;
         foreach (var r in kayit)
         {
             if (r[3].Length > 0 || r[2] == "Durduruldu") sorunlu++;
             if (r[2] == "Cevrimdisi") cevrimdisi++;
             int q; int.TryParse(r[4], out q); kuyrukToplam += q;
+            if (YaziciAktif(r)) aktif++;
         }
         sb.Append("<div class='info'>&#304;stemci ajanlar&#305; yerel yaz&#305;c&#305;lar&#305;n&#305; dakikada bir tarar (WMI). ")
+          .Append("<b>&#9679; Aktif</b> = istemci ajan&#305; son ").Append(TAZELIK_DK)
+          .Append(" dakika i&ccedil;inde rapor g&ouml;nderdi <i>ve</i> yaz&#305;c&#305; yazd&#305;rmaya haz&#305;r. ")
+          .Append("Ajan durursa yaz&#305;c&#305; <b>Pasif</b>'e d&uuml;&#351;er &mdash; &ccedil;&uuml;nk&uuml; o an ger&ccedil;ekten yazd&#305;r&#305;lamaz. ")
           .Append("Sorun olu&#351;tu&#287;u anda Uyar&#305;lar'a d&uuml;&#351;er; d&uuml;zelme ba&#287;lant&#305; loglar&#305;na yaz&#305;l&#305;r.</div>");
         sb.Append("<div class='cards'>");
         Card(sb, toplam.ToString(), "Toplam Yaz&#305;c&#305;");
+        Card(sb, aktif.ToString(), "&#9679; Aktif (ba&#287;l&#305;)");
         Card(sb, sorunlu.ToString(), "Sorunlu");
         Card(sb, cevrimdisi.ToString(), "&Ccedil;evrimd&#305;&#351;&#305;");
         Card(sb, kuyrukToplam.ToString(), "Kuyruktaki &#304;&#351;");
         sb.Append("</div>");
-        sb.Append("<table><tr><th>Makine</th><th>Yaz&#305;c&#305;</th><th>Durum</th><th>Sorun</th><th>Kuyruk</th><th>Son G&uuml;ncelleme</th></tr>");
+        sb.Append("<table><tr><th>Ba&#287;lant&#305;</th><th>Makine</th><th>Yaz&#305;c&#305;</th><th>Durum</th>")
+          .Append("<th>Sorun</th><th>Kuyruk</th><th>Son G&uuml;ncelleme</th></tr>");
         foreach (var r in kayit)
         {
             string d = r[2], h = r[3];
@@ -1295,7 +1334,8 @@ static class Dashboard
             bool eski = g != DateTime.MinValue && g < DateTime.Now.AddMinutes(-5);
             string dCls = d == "Hazir" || d == "Yazdiriyor" ? "ok" : (d == "Cevrimdisi" || d == "Durduruldu" ? "wait" : "mut");
             int q; int.TryParse(r[4], out q);
-            sb.Append("<tr><td>").Append(H(r[0]))
+            sb.Append("<tr><td>").Append(YaziciRozet(r))
+              .Append("</td><td>").Append(H(r[0]))
               .Append("</td><td>").Append(H(r[1]))
               .Append("</td><td class='").Append(dCls).Append("'>").Append(H(d))
               .Append("</td><td>").Append(h.Length > 0 ? "<span style='color:#c0392b;font-weight:600'>" + H(h) + "</span>" : "&mdash;")
@@ -1304,7 +1344,7 @@ static class Dashboard
               .Append(g == DateTime.MinValue ? "" : g.ToString("yyyy-MM-dd HH:mm:ss")).Append(eski ? " (eski)" : "")
               .Append("</td></tr>");
         }
-        if (toplam == 0) sb.Append("<tr><td colspan='6' class='mut'>Hen&uuml;z yaz&#305;c&#305; raporu gelmedi. &#304;stemci ajanlar&#305;n&#305;n g&uuml;ncel s&uuml;r&uuml;mde ve sunucu adresinin tan&#305;ml&#305; oldu&#287;undan emin olun.</td></tr>");
+        if (toplam == 0) sb.Append("<tr><td colspan='7' class='mut'>Hen&uuml;z yaz&#305;c&#305; raporu gelmedi. &#304;stemci ajanlar&#305;n&#305;n g&uuml;ncel s&uuml;r&uuml;mde ve sunucu adresinin tan&#305;ml&#305; oldu&#287;undan emin olun.</td></tr>");
         sb.Append("</table>");
         return sb.ToString();
     }
@@ -2234,6 +2274,16 @@ static class Dashboard
         // --- Durum renkleri ---
         sb.Append(".ok{color:var(--yesil);font-weight:600}.wait{color:var(--turuncu);font-weight:600}");
         sb.Append(".mut{color:#94a3b8}");
+        // --- Baglanti rozeti: yazici AKTIF mi (ajan canli + yazici hazir) ---
+        sb.Append(".rz{display:inline-flex;align-items:center;gap:6px;padding:3px 10px 3px 8px;border-radius:999px;");
+        sb.Append("font-size:12px;font-weight:600;white-space:nowrap;border:1px solid transparent}");
+        sb.Append(".rz i{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}");
+        sb.Append(".rz-ak{background:#dcfce7;color:#15803d;border-color:#86efac}");
+        sb.Append(".rz-ak i{background:#16a34a;box-shadow:0 0 0 3px rgba(22,163,74,.18);animation:nb 2s ease-in-out infinite}");
+        sb.Append(".rz-uy{background:#fef3c7;color:#b45309;border-color:#fcd34d}.rz-uy i{background:#f59e0b}");
+        sb.Append(".rz-kp{background:#fee2e2;color:#b91c1c;border-color:#fca5a5}.rz-kp i{background:#dc2626}");
+        sb.Append(".rz-ps{background:#f1f5f9;color:#64748b;border-color:#e2e8f0}.rz-ps i{background:#94a3b8}");
+        sb.Append("@keyframes nb{0%,100%{opacity:1}50%{opacity:.35}}");
         // --- Bilgi / uyari kutulari ---
         sb.Append(".info{background:var(--acik);border:1px solid #c7d2fe;border-left:4px solid var(--mrk);");
         sb.Append("border-radius:11px;padding:13px 16px;font-size:13.5px;margin-bottom:16px;line-height:1.55}");
