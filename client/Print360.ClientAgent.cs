@@ -876,7 +876,7 @@ static class ClientAgent
         };
 
         // Server= elle verilmisse: VIRGULLE birden fazla sunucu yazilabilir
-        //   ornek:  Server=SRV01,SRV02,10.2.0.45
+        //   ornek:  Server=SRV01,SRV02,SRV03
         if (server.Length > 0 && !server.Equals("auto", StringComparison.OrdinalIgnoreCase))
         {
             foreach (var s in server.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
