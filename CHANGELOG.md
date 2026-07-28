@@ -6,6 +6,24 @@ paket adında üretim tarihi de yer alır (`v1.1.49-2707-2141`).
 
 ---
 
+## [1.1.2] — 2026-07-28
+
+Bakım sürümü. **Yazılım işlevinde değişiklik yoktur.**
+
+### Değişenler
+
+- Başka bir ürünün **ticari markasına** yapılan tüm atıflar (26 satır) kod
+  yorumlarından, belgelerden, kurulum sihirbazı metinlerinden ve depo
+  konularından kaldırıldı; nötr ifadelerle değiştirildi ("kanal mantığı",
+  "iş türü modeli", "PDF modu", "yazıcı seçim modu").
+- Depodaki **ekran görüntülerinden** geliştirme ortamına ait makine adı,
+  sunucu IP'si ve ağdaki gerçek yazıcının adı kaldırıldı; örnek değerlerle
+  (`OFIS-PC`, `SUNUCU01`, `OFIS-YAZICI`) yeniden çizildi.
+- `Print360.ClientAgent.cs` içindeki çoklu sunucu örneği gerçek bir sunucu
+  adresi içeriyordu; jenerik `SRV01,SRV02,SRV03` ile değiştirildi.
+
+---
+
 ## [1.1.1] — 2026-07-28
 
 Lisans ve hukuki metin sürümü. **Yazılım işlevinde değişiklik yoktur**;
