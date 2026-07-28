@@ -6,6 +6,46 @@ paket adında üretim tarihi de yer alır (`v1.1.49-2707-2141`).
 
 ---
 
+## [1.1.1] — 2026-07-28
+
+Lisans ve hukuki metin sürümü. **Yazılım işlevinde değişiklik yoktur**;
+1.1 kullananların güncellemesi zorunlu değildir.
+
+### Değişenler
+
+**Lisans**
+- Lisans **türü** açıkça belirtildi: kaynağı açık, ücretsiz, **tescilli
+  (proprietary)**. Satış yasağı içerdiği için OSI'nin Açık Kaynak Tanımı'nı
+  karşılamadığı, MIT/GPL/Apache **olmadığı** ayrıca yazıldı.
+- **Garanti reddi** genişletildi: uyumluluk, kesintisiz çalışma ve çıktının
+  üretileceği garantisi verilmediği kapsama alındı.
+- **Sorumluluk reddi** ayrı bölüm oldu. Ürün bedelsiz sunulduğu için toplam
+  sorumluluk **sıfır**; veri/belge kaybı, çıktının yanlış yazıcıya gitmesi ve
+  doğan gizlilik ihlali, iş kesintisi, kâr kaybı, sarf malzemesi maliyeti ve
+  üçüncü kişi zararları açıkça kapsam dışında bırakıldı.
+- **Kullanıcının sorumluluğu** eklendi: üretim öncesi test, sistem yedeği,
+  güvenlik ve mevzuat uyumu.
+- **KVKK / GDPR**: kayıt altına alınan kullanıcı adı, bilgisayar adı, belge
+  adı ve sayfa sayısı için **veri sorumlusunun yazılımı kuran kurum** olduğu
+  belirtildi. Yazılım dışarıya veri göndermez.
+- **Destek yükümlülüğü bulunmadığı** ve geliştirmenin haber verilmeksizin
+  durdurulabileceği belirtildi.
+- İngilizce bölüm özet olmaktan çıkarılıp **tam çeviriye** dönüştürüldü
+  (uyuşmazlıkta Türkçe metin asıldır).
+
+### Düzeltilenler
+
+- Kurulum sihirbazının **lisans sayfasında Türkçe karakterler bozuk**
+  görünüyordu. Inno Setup, BOM'suz düz metni seçili dilin ANSI kod sayfasıyla
+  okuyor; UTF-8 olan lisans dosyası bu yüzden okunaksız çıkıyordu. Derleme
+  artık sihirbaz için BOM'lu bir kopya üretiyor.
+- Sürekli tümleştirme (GitHub Actions) derlemesi `CS1567: Error generating
+  Win32 resource` ile başarısız oluyordu; `csc.exe` varsayılan Win32
+  kaynağını çıktı klasöründe geçici dosyaya yazdığı hâlde klasör
+  oluşturulmuyordu.
+
+---
+
 ## [1.1] — 2026-07
 
 İlk açık sürüm.
