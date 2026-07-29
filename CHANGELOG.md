@@ -6,6 +6,24 @@ paket adında üretim tarihi de yer alır (`v1.1.49-2707-2141`).
 
 ---
 
+## [1.1.5] — 2026-07-28
+
+Belge ve depo politikası sürümü. **Yazılımda değişiklik yoktur**; kurulum
+paketi v1.1.4 ile aynıdır.
+
+### Değişenler
+
+- **`main` dalı korumaya alındı.** Doğrudan gönderim kapatıldı; değişiklikler
+  pull request ile gelir. Zorla gönderim (force push) ve dal silme engellendi.
+  Depo sahibi baypas edebilir, böylece sürüm çıkarma akışı bozulmaz.
+- **Katkı yolu netleştirildi:** katkı vermek için depoyu **çatallamak (fork)**
+  gerekiyor. README'ye uyarı kutusu, CONTRIBUTING'e `fork → dal → PR` akışı
+  kopyalanabilir komutlarla eklendi.
+- CONTRIBUTING'e, fork'un katkı verenin kendisine ait olduğu ve lisans
+  koşulları içinde kendi sürümünü geliştirip dağıtabileceği yazıldı.
+
+---
+
 ## [1.1.4] — 2026-07-28
 
 ### Eklenenler
