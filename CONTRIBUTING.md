@@ -1,7 +1,34 @@
 # Katkıda Bulunma
 
-Katkılarınız memnuniyetle karşılanır. Küçük düzeltmeler için doğrudan PR
-açabilirsiniz; büyük değişikliklerden önce bir **Issue** açıp konuşalım.
+Katkılarınız memnuniyetle karşılanır.
+
+## Önce şunu bilin: `main` dalına doğrudan gönderim yapılamaz
+
+Bu deponun `main` dalı **korumalıdır** ve yalnızca depo sahibi tarafından
+yönetilir. Katkı vermek için **çatallamanız (fork)** gerekir — başka bir yol
+yoktur ve bu bilinçli bir tercihtir.
+
+```bash
+# 1) GitHub'da sağ üstten "Fork" düğmesine basın, sonra:
+git clone https://github.com/<kullanici-adiniz>/print360.git
+cd print360
+
+# 2) Kendi dalınızda çalışın (fork'unuzun main'inde değil)
+git switch -c duzeltme/yazici-secimi
+
+# 3) Değişikliği yapıp kendi fork'unuza gönderin
+git push origin duzeltme/yazici-secimi
+
+# 4) GitHub kendiliğinden "Compare & pull request" önerecek;
+#    hedef: OmerCarnacar/print360  ->  main
+```
+
+Küçük düzeltmeler için doğrudan PR açabilirsiniz. Büyük değişikliklerden önce
+bir **Issue** açıp konuşalım — emeğiniz boşa gitmesin.
+
+**Fork'unuz sizindir.** İsterseniz kendi sürümünüzü geliştirip dağıtabilirsiniz;
+lisans buna izin verir (satmamak ve geliştirici bilgisini korumak kaydıyla —
+bkz. [LICENSE](LICENSE)).
 
 ## Geliştirme ortamı
 

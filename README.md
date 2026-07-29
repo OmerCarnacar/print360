@@ -194,6 +194,19 @@ Süre dolunca otomatik temizlenir.
 
 ---
 
+## Katkı
+
+Katkılara açığım — hata bildirimi, öneri, kod ya da sadece farklı bir ortamda
+deneyip sonucu paylaşmanız bile değerli.
+
+> ⚠️ **`main` dalı korumalıdır ve yalnızca depo sahibi tarafından yönetilir.**
+> Doğrudan gönderim yapılamaz. Katkı için depoyu **çatallayın (fork)**, kendi
+> dalınızda çalışın ve buraya bir **pull request** açın.
+
+Adım adım anlatım: [CONTRIBUTING.md](CONTRIBUTING.md)
+
+---
+
 ## Lisans ve sorumluluk reddi
 
 **Lisans türü:** Kaynağı açık, ücretsiz, **tescilli (proprietary)** lisans.
