@@ -1,0 +1,54 @@
+Print360 — Dosya Doğrulama (SHA-256)
+=====================================
+
+Sürüm : v1.1.4 / v1.1.5 (paket: Print360-Kurulum-v1.1.54-2807-1708.zip)
+Tarih : 28.07.2026
+
+İndirdiğiniz dosyanın yolda değiştirilmediğini doğrulamak için aşağıdaki
+özetleri kullanın. Değerler birebir tutmuyorsa dosyayı KULLANMAYIN, yeniden
+indirin.
+
+8B4EE25FF11E9F7E767315EA4B155E7AE5FDDAD8D1DCDE98A6FE198F494C6599  Print360-Kurulum-v1.1.54-2807-1708.zip
+65A8BB81D900E64B48D2C7531C8B695D7AE57A7D53425F659A70A86C483D9276  Print360-Server-Setup.exe
+F9E9106BFD21C2F42A06356E43A974BF89A3A1B0324B1BD2D62242CAC3B6334E  Print360-Client-Setup.exe
+
+
+NASIL DOĞRULANIR
+----------------
+PowerShell'de indirdiğiniz dosyanın bulunduğu klasörde:
+
+    Get-FileHash .\Print360-Kurulum-v1.1.54-2807-1708.zip -Algorithm SHA256
+
+Çıkan Hash değeri, yukarıdaki satırla aynı olmalıdır.
+
+Komut isteminde (cmd) aynı işlem:
+
+    certutil -hashfile Print360-Kurulum-v1.1.54-2807-1708.zip SHA256
+
+
+VIRUSTOTAL
+----------
+Yukarıdaki özet değerlerini virustotal.com adresindeki arama kutusuna
+yapıştırarak, dosyanın daha önce yapılmış taramasını görebilirsiniz.
+Dosyayı yüklemenize gerek yoktur; özet değeriyle sorgulamak yeterlidir.
+
+
+KOD İMZASI HAKKINDA
+-------------------
+Kurulum dosyaları kod imzalı DEĞİLDİR. Kod imzalama sertifikası ücretli
+olduğu ve bu proje ücretsiz dağıtıldığı için imzalama yapılmamıştır.
+
+Bunun iki sonucu vardır:
+
+1. Windows SmartScreen kurulumda uyarı gösterir. "Daha fazla bilgi" -
+   "Yine de çalıştır" ile devam edilebilir.
+
+2. İmzasız yürütülebilir dosyalar, bazı virüs tarayıcılarında sezgisel
+   (heuristic) analiz nedeniyle uyarı üretebilir. Bu tür uyarılar
+   "yanlış pozitif" olarak adlandırılır ve imzasız kurulum dosyalarında
+   yaygındır. Kaynak kodun tamamı bu depoda açıktır; şüphe duyulması
+   halinde kod incelenebilir ve kurulum paketi kaynaktan yeniden
+   derlenebilir (bkz. README, "Kaynaktan derleme").
+
+Yazılım hiçbir veriyi dışarıya göndermez; internet bağlantısı gerektirmez.
+Tüm iletişim, yerel ağdaki sunucunuz ile istemciler arasında gerçekleşir.

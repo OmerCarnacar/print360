@@ -194,6 +194,29 @@ Süre dolunca otomatik temizlenir.
 
 ---
 
+## Dosya doğrulama ve güvenlik
+
+Kurulum dosyalarının yolda değiştirilmediğini **SHA-256** özetiyle
+doğrulayabilirsiniz. Değerler: **[SHA256SUMS.txt](SHA256SUMS.txt)**
+
+```powershell
+Get-FileHash .\Print360-Kurulum-v1.1.54-2807-1708.zip -Algorithm SHA256
+```
+
+Aynı özet değerini VirusTotal arama kutusuna yapıştırarak dosyanın taramasını
+görebilirsiniz — dosyayı yüklemenize gerek yoktur.
+
+> ⚠️ **Kurulum dosyaları kod imzalı değildir.** Kod imzalama sertifikası ücretli
+> olduğu ve proje ücretsiz dağıtıldığı için imzalanmamıştır. Bu nedenle Windows
+> SmartScreen uyarı gösterir; imzasız dosyalar bazı tarayıcılarda sezgisel analiz
+> sonucu **yanlış pozitif** üretebilir. Şüphe duyarsanız kaynak kod bu depoda
+> açıktır ve paketi kendiniz derleyebilirsiniz.
+
+Yazılım **dışarıya hiçbir veri göndermez** ve internet bağlantısı gerektirmez.
+Tüm iletişim, yerel ağınızdaki sunucu ile istemciler arasında gerçekleşir.
+
+---
+
 ## Katkı
 
 Katkılara açığım — hata bildirimi, öneri, kod ya da sadece farklı bir ortamda
