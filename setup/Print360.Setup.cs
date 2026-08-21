@@ -94,6 +94,21 @@ static class Kurulum
             foreach (var u in _uyarilar) Console.WriteLine("UYARI: " + u);
         }
         else Yaz("Kurulum sorunsuz tamamlandi.");
+
+        // KANIT DOSYASI: Kurulum sihirbazi, yapilandirmanin GERCEKTEN calistigini
+        // bu dosyadan anlar. Sihirbaz her calismada benzersiz bir isaret uretip
+        // --marker ile gecer; buraya yazilmazsa sihirbaz kullaniciya "yapilandirma
+        // calismadi" uyarisi gosterir. Boylece "kurulum bitti dedi ama hicbir sey
+        // olmadi" durumu sessiz kalmiyor.
+        try
+        {
+            string isaret = Al(p, "marker");
+            if (isaret.Length > 0)
+                File.WriteAllText(Path.Combine(BASE, "logs", "son-kurulum.txt"),
+                    isaret + "|" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), Encoding.ASCII);
+        }
+        catch { }
+
         try { if (_log != null) _log.Flush(); } catch { }
         // Takilmis bir arka plan cagrisi (spooler/COM) surecin kapanmasini
         // geciktirmesin - Setup burada bekler kalirdi.
@@ -692,8 +707,16 @@ static class Kurulum
     static void AgHazirla(string httpPort, string httpsPort)
     {
         // Panel yonetici olmadan da portu dinleyebilsin (WD = herkes, dil bagimsiz)
-        Calistir("netsh.exe", "http add urlacl url=http://+:" + httpPort + "/ sddl=\"D:(A;;GX;;;WD)\"");
-        Calistir("netsh.exe", "http add urlacl url=https://+:" + httpsPort + "/ sddl=\"D:(A;;GX;;;WD)\"");
+        // NOT: Ayrim zaten varsa netsh 183 (ERROR_ALREADY_EXISTS) doner. Bu bir HATA
+        // DEGILDIR - istenen sonuc zaten saglanmis demektir. Once silip yeniden
+        // ekliyoruz; boylece gunluge yanilticii hata satiri dusmuyor.
+        foreach (var pr in new[] { httpPort, httpsPort })
+        {
+            string sema = (pr == httpsPort) ? "https" : "http";
+            Calistir("netsh.exe", "http delete urlacl url=" + sema + "://+:" + pr + "/", 20);
+            int rc = Calistir("netsh.exe", "http add urlacl url=" + sema + "://+:" + pr + "/ sddl=\"D:(A;;GX;;;WD)\"");
+            if (rc != 0) Yaz("  Port ayrimi (" + sema + " " + pr + ") eklenemedi; mevcut ayrim kullanilacak.");
+        }
         // Guvenlik duvari
         foreach (var pr in new[] { httpPort, httpsPort })
         {
@@ -900,7 +923,10 @@ static class Kurulum
         // /T KULLANILMAZ: arsiv/kuyruk klasorlerinde binlerce dosya olabilir ve
         // agaci dolasmak kurulumu dakikalarca yavaslatirdi. (OI)(CI) mirasi
         // zaten alt ogelere uygulanir - klasore bir kez yazmak yeterli.
-        Calistir("icacls.exe", "\"" + yol + "\" /grant \"*S-1-5-32-545:(OI)(CI)M\" /C /Q", 30);
+        // NOT: Buyuk bir C:\Print360 agacinda icacls binlerce dosyada gezinip 30 sn'yi
+        // asabiliyor ve her kurulumda "zaman asimi" uyarisi dusuyordu. Izin yalnizca
+        // KLASORUN KENDISINE veriliyor (/T yok); alt ogeler kalitimla aliyor.
+        Calistir("icacls.exe", "\"" + yol + "\" /grant \"*S-1-5-32-545:(OI)(CI)M\" /C /Q", 60);
     }
     static void SadeceYoneticiOkunur(string dosya)
     {

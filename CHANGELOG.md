@@ -6,6 +6,32 @@ paket adında üretim tarihi de yer alır (`v1.1.49-2707-2141`).
 
 ---
 
+## [1.1.7] — 2026-08-21
+
+### Eklenenler
+
+- **Kurulum sessizce hiçbir şey yapmadığında artık uyarıyor.** Sihirbaz
+  dosyaları kopyalayıp "tamamlandı" diyebiliyor, ancak asıl işi yapan
+  yapılandırma adımı hiç çalışmamış olabiliyordu; kullanıcının bunu anlamasının
+  tek yolu günlüğe bakmaktı.
+
+  Sihirbaz artık her çalışmada benzersiz bir işaret üretip yapılandırıcıya
+  geçiriyor. Yapılandırıcı işini bitirince bu işareti
+  `C:\Print360\logs\son-kurulum.txt` dosyasına yazıyor; sihirbaz kurulum
+  sonunda dosyayı okuyup işareti arıyor. Bulamazsa **ne olmadığını ve ne
+  yapılması gerektiğini** anlatan bir uyarı gösteriyor. Hem sunucu hem istemci
+  kurulumunda geçerli.
+
+### Düzeltilenler
+
+- **Kurulum günlüğündeki iki yanıltıcı uyarı.** `netsh urlacl` port ayrımı zaten
+  varsa 183 (`ERROR_ALREADY_EXISTS`) dönüyordu; bu bir hata değil, istenen sonuç
+  zaten sağlanmış demek. Artık önce siliniyor sonra ekleniyor, günlüğe hata
+  satırı düşmüyor. `icacls` adımının zaman aşımı 30 saniyeden 60'a çıkarıldı —
+  büyük klasörlerde her kurulumda "zaman aşımına uğradı" uyarısı düşüyordu.
+
+---
+
 ## [1.1.6] — 2026-08-21
 
 ### 🔒 Güvenlik

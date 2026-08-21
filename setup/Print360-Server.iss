@@ -80,9 +80,14 @@ var
   SqlSecPage: TInputOptionWizardPage;     { MSSQL kurulsun mu + VC }
   ModPage: TInputOptionWizardPage;        { yazdirma modu (varsayilan yazici) }
   PanelPage: TInputQueryWizardPage;       { panel yoneticisi ve erisim sifresi }
+  Isaret: String;                         { yapilandiricinin gercekten calistigini kanitlar }
 
 procedure InitializeWizard;
 begin
+  { Her kurulumda benzersiz bir isaret: yapilandirici bunu dosyaya yazar,
+    kurulum sonunda dogrulariz. Yazilmadiysa kullanici uyarilir. }
+  Isaret := GetDateTimeString('yyyymmddhhnnss', #0, #0);
+
   KullaniciPage := CreateInputQueryPage(wpSelectDir,
     'Kullanıcılar ve Panel Portları', 'Sanal yazıcılar kimler için oluşturulsun?',
     'Her kullanıcı için TEK bir sanal yazıcı oluşturulur: "Print360 - <kullanıcı>". ' +
@@ -166,7 +171,8 @@ begin
     + ' --sqlpwd "'       + SqlPage.Values[2] + '"'
     + ' --paneladmin "'   + PanelPage.Values[0] + '"'
     + ' --paneladminpwd "'+ PanelPage.Values[1] + '"'
-    + ' --panelpwd "'     + PanelPage.Values[2] + '"';
+    + ' --panelpwd "'     + PanelPage.Values[2] + '"'
+    + ' --marker "'       + Isaret + '"';
   klar := Trim(KullaniciPage.Values[0]);
   if klar <> '' then Result := Result + ' --users "' + klar + '"';
 end;
@@ -174,6 +180,29 @@ end;
 function PanelYolu(Param: string): string;
 begin
   Result := 'C:\Print360\Print360.Panel.exe';
+end;
+
+{ Kurulum bitince yapilandiricinin GERCEKTEN calistigini dogrula.
+  Calismadiysa sihirbaz "tamamlandi" der ama sistemde hicbir sey degismez;
+  kullanici bunu ancak gunluge bakarak anlayabilirdi. Artik acikca soyluyoruz. }
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Icerik: AnsiString;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    if not LoadStringFromFile('C:\Print360\logs\son-kurulum.txt', Icerik) then Icerik := '';
+    if Pos(Isaret, String(Icerik)) = 0 then
+      MsgBox('Dosyalar kopyalandi, ANCAK yapilandirma adimi calismadi.' + #13#10#13#10 +
+             'Bu yuzden sanal yazicilar olusturulmamis, ajanlar baslatilmamis ve' + #13#10 +
+             'panel guncellenmemis olabilir. Sistem eski haliyle calismaya devam eder.' + #13#10#13#10 +
+             'Yapilacaklar:' + #13#10 +
+             '  1. Kurulumu KAPATIN.' + #13#10 +
+             '  2. Kurulum dosyasina SAG TIKLAYIP "Yonetici olarak calistir" secin.' + #13#10 +
+             '  3. Sihirbazi sonuna kadar tamamlayin (Kur dugmesine basin).' + #13#10#13#10 +
+             'Ayrinti icin: C:\Print360\logs\kurulum.log',
+             mbCriticalError, MB_OK);
+  end;
 end;
 
 // Sunucu bileseni yalnizca Windows Server sistemlerine kurulabilir.

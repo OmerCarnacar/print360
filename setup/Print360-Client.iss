@@ -42,6 +42,7 @@ Source: "bin-client\Print360.Setup.exe";       DestDir: "{app}"; Flags: ignoreve
 [Code]
 var
   SunucuPage: TInputQueryWizardPage;
+  Isaret: String;   { yapilandiricinin gercekten calistigini kanitlar }
 
 { Acik bir RDP oturumu varsa uzak sunucunun IP'sini netstat ciktisindan bul.
   Boylece kullanici kurulumda sunucu adresini elle yazmak zorunda kalmaz. }
@@ -75,6 +76,8 @@ procedure InitializeWizard;
 var
   rdp: String;
 begin
+  Isaret := GetDateTimeString('yyyymmddhhnnss', #0, #0);
+
   SunucuPage := CreateInputQueryPage(wpSelectDir,
     'Print360 Ayarları', 'Sunucu ve yazıcı bilgileri',
     'RDP sunucusunun adını/IP''sini girin (merkezi sayaç için önerilir, boş geçilebilir). ' +
@@ -114,7 +117,8 @@ begin
     + ' --printer "'  + SunucuPage.Values[1] + '"'
     + ' --clientkey "'+ SunucuPage.Values[2] + '"'
     + ' --port "'     + SunucuPage.Values[3] + '"'
-    + ' --certhash "' + SunucuPage.Values[4] + '"';
+    + ' --certhash "' + SunucuPage.Values[4] + '"'
+    + ' --marker "'   + Isaret + '"';
 end;
 
 [Run]
@@ -134,3 +138,23 @@ Filename: "{app}\Print360.Setup.exe"; Parameters: "--kaldir-istemci"; \
 ; Kaldirmada masaustu kisayolunu da sil
 [UninstallDelete]
 Type: files; Name: "{commondesktop}\Print360 Durum.lnk"
+
+[Code]
+{ Kurulum bitince yapilandiricinin GERCEKTEN calistigini dogrula. }
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Icerik: AnsiString;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    if not LoadStringFromFile('C:\Print360\logs\son-kurulum.txt', Icerik) then Icerik := '';
+    if Pos(Isaret, String(Icerik)) = 0 then
+      MsgBox('Dosyalar kopyalandi, ANCAK yapilandirma adimi calismadi.' + #13#10#13#10 +
+             'Bu yuzden ajan baslatilmamis ve otomatik baslatma kaydi' + #13#10 +
+             'yazilmamis olabilir.' + #13#10#13#10 +
+             'Kurulum dosyasina SAG TIKLAYIP "Yonetici olarak calistir" secip' + #13#10 +
+             'sihirbazi sonuna kadar tamamlayin.' + #13#10#13#10 +
+             'Ayrinti icin: C:\Print360\logs\kurulum.log',
+             mbCriticalError, MB_OK);
+  end;
+end;
