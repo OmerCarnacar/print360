@@ -1,8 +1,50 @@
 # Değişiklik Günlüğü
 
-Bu proje [Semantic Versioning](https://semver.org/lang/tr/) benzeri bir
-`ANA.ALT.YAPIM` şeması kullanır. Yapım numarası her derlemede artar ve
-paket adında üretim tarihi de yer alır (`v1.1.49-2707-2141`).
+Sürüm numarası **üretim tarihidir**: `YIL.AY.GÜN.SAATDK`
+(örnek: `2026.08.21.1904` → 21 Ağustos 2026, saat 19:04).
+
+Sunucu ve istemci bileşenlerinin **tamamı aynı numarayı taşır**; farklı
+numaralar görüyorsanız taraflardan biri güncellenmemiş demektir.
+
+_2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
+
+---
+
+## [2026.08.21.1904]
+
+### Değişenler
+
+- **Sürüm numarası artık üretim tarihi.** `YIL.AY.GÜN.SAATDK` biçiminde
+  (`2026.08.21.1904`). Elle artan `1.1.58` gibi bir numara, bir kurulumun ne
+  zaman üretildiğini söylemiyordu; sahada "güncelledim" denip eski paketin
+  kurulması tekrar tekrar yaşandı. Tarih tabanlı sürümde hangi paketin daha yeni
+  olduğu bakışla anlaşılır.
+
+- **Sürüm her alanda aynı.** Kurulum sihirbazlarının `AppVersion` alanı artık
+  derlemeden geliyor; `.iss` dosyalarında elle `1.1` yazıyordu ve güncelliğini
+  yitirmişti. Paket adı da sadeleşti: `Print360-Kurulum-v<sürüm>.zip`.
+
+- **Sürüm tutarlılık denetimi.** Derlemenin sonunda beş bileşen ve iki kurulum
+  dosyasının aynı numarayı taşıdığı denetleniyor; sapan varsa yapım durduruluyor.
+  Kısmi bir derleme, sunucu ile istemcinin farklı sürümde kalmasına yol
+  açabiliyordu.
+
+- **`SURUM.txt` artık üretiliyor.** Statik bir dosyaydı: sürümü "1.1" diyor,
+  özellik listesinde kaldırılmış bileşenlerden ve zorunlu olmayan MSSQL'den
+  bahsediyordu.
+
+### Düzeltilenler
+
+- **İşler istemciye inmiyordu — asıl sebep bulundu.** Ölçüm: TCP el sıkışması
+  ~25 ms, ama **ilk HTTPS isteği 17-27 saniye**; sonraki istekler ~70 ms. Maliyet
+  TLS el sıkışmasındaki sertifika zinciri doğrulamasında (kendinden imzalı
+  sertifikanın iptal listesine ulaşılamıyor, Windows zaman aşımını bekliyor).
+
+  Bir önceki sürümde keep-alive kapatılmıştı; bu, her isteği yeni bağlantıya
+  zorlayarak o bedeli her yoklamada ödetti ve istekler 20 saniyelik sınırda
+  zaman aşımına uğradı. **Keep-alive geri açıldı**, zaman aşımı 60 saniyeye
+  çıkarıldı ve keep-alive'ın bilinen riski (sunucunun boşta kalan bağlantıyı
+  kapatması) için tek seferlik yeniden deneme eklendi.
 
 ---
 

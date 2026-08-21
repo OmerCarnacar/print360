@@ -1,10 +1,16 @@
 ﻿; Print360 ISTEMCI kurulum paketi (Inno Setup)
 ; Derleme: ISCC.exe Print360-Client.iss  ->  dist\Print360-Client-Setup.exe
+; Surum build.ps1 tarafindan verilir (ISCC /DP360Ver=...).
+; Elle derlenirse asagidaki varsayilan kullanilir.
+#ifndef P360Ver
+  #define P360Ver "0.0.0.0"
+#endif
+
 [Setup]
 AppId={{7A3F2B10-360A-4B3B-9E01-PRINT360CLI}
 AppName=Print360 Client
-AppVersion=1.1
-AppVerName=Print360 Client 1.1
+AppVersion={#P360Ver}
+AppVerName=Print360 Client {#P360Ver}
 AppPublisher=Ömer ÇARNAÇAR
 AppContact=omer.carnacar@outlook.com.tr
 AppSupportURL=mailto:omer.carnacar@outlook.com.tr

@@ -30,18 +30,22 @@ $iscc = @(
 ) | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $iscc) { throw "Inno Setup (ISCC.exe) bulunamadi. https://jrsoftware.org/isdl.php adresinden kurun." }
 
-# Her build'de otomatik artan build numarasi -> tam surum X.Y.build
-$buildFile = Join-Path $root "setup\buildno.txt"
+# SURUM = URETIM TARIHI:  YIL.AY.GUN.SAATDK   (ornek: 2026.08.21.1905)
+# Sebep: elle artan "1.1.58" gibi bir numara bir kurulumun ne zaman uretildigini
+# soylemiyordu; sahada "guncelledim" denip eski paketin kurulmasi tekrar tekrar
+# yasandi. Tarih tabanli surumde hangi paketin daha yeni oldugu bakisla anlasilir.
+# Dort parca da AssemblyVersion sinirinin (65534) altinda kalir.
+$simdi      = Get-Date
+$fullVer    = $simdi.ToString("yyyy.MM.dd.HHmm")
+$yapimDamga = $simdi.ToString("dd.MM HH:mm")
+$yapimTam   = $simdi.ToString("dd.MM.yyyy HH:mm:ss")
+$yapimKisa  = $simdi.ToString("ddMM-HHmm")
+# Yapim sayaci yalnizca kac kez derlendigini gostermek icin tutulur.
+$buildFile = Join-Path $root (Join-Path "setup" "buildno.txt")
 $buildNo = 0
 if (Test-Path $buildFile) { [int]::TryParse((Get-Content $buildFile -Raw).Trim(), [ref]$buildNo) | Out-Null }
 $buildNo++
 Set-Content $buildFile $buildNo -Encoding ascii
-$fullVer = "$Version.$buildNo"
-# Yapim damgasi: GUN.AY SAAT:DK -> hangi paketin ne zaman uretildigi bir bakista
-# anlasilsin (surum numarasi tek basina ayirt edici degildi).
-$yapimDamga = (Get-Date).ToString("dd.MM HH:mm")
-$yapimTam   = (Get-Date).ToString("dd.MM.yyyy HH:mm:ss")
-$yapimKisa  = (Get-Date).ToString("ddMM-HHmm")
 @"
 // build.ps1 tarafindan otomatik uretildi - elle duzenlemeyin.
 static class Surum
@@ -64,8 +68,8 @@ using System.Reflection;
 [assembly: AssemblyCompany("Omer CARNACAR")]
 [assembly: AssemblyCopyright("(c) 2026 Omer CARNACAR - Ucretsiz surum, para ile satilamaz")]
 [assembly: AssemblyTrademark("omer.carnacar@outlook.com.tr")]
-[assembly: AssemblyVersion("$fullVer.0")]
-[assembly: AssemblyFileVersion("$fullVer.0")]
+[assembly: AssemblyVersion("$fullVer")]
+[assembly: AssemblyFileVersion("$fullVer")]
 "@ | Set-Content $asmCs -Encoding utf8
 
 Write-Host "============================================================"
@@ -158,10 +162,10 @@ Adim "2/3  Kurulum paketleri uretiliyor (Inno Setup)"
     [System.IO.File]::ReadAllText("$root\LICENSE", [System.Text.Encoding]::UTF8),
     (New-Object System.Text.UTF8Encoding($true)))
 Ok "Lisans metni sihirbaz icin hazirlandi (UTF-8 BOM)"
-& $iscc /Q "$root\setup\Print360-Server.iss"
+& $iscc /Q "/DP360Ver=$fullVer" "$root\setup\Print360-Server.iss"
 if ($LASTEXITCODE -ne 0) { throw "Server Setup uretimi basarisiz." }
 Ok "Print360-Server-Setup.exe"
-& $iscc /Q "$root\setup\Print360-Client.iss"
+& $iscc /Q "/DP360Ver=$fullVer" "$root\setup\Print360-Client.iss"
 if ($LASTEXITCODE -ne 0) { throw "Client Setup uretimi basarisiz." }
 Ok "Print360-Client-Setup.exe"
 
@@ -170,6 +174,68 @@ Adim "3/3  Dagitim paketi olusturuluyor"
 # Lisans metni pakete dahil (ucretsiz surum kosullari kullaniciya ulassin)
 Copy-Item "$root\LICENSE" (Join-Path $dist "LICENSE.txt") -Force
 Ok "LICENSE.txt pakete eklendi"
+
+# SURUM.txt paketle birlikte uretilir - eskiden elle yazilmis statik bir dosyaydi
+# ve surum numarasi ("1.1") ile ozellik listesi guncelligini yitirmisti.
+$surumTxt = @"
+Print360 - RDP Yazdirma Cozumu
+Surum $fullVer   ($yapimTam)
+
+Surum numarasi = URETIM TARIHI:  yil.ay.gun.saatdk
+Sunucu ve istemci bilesenlerinin TAMAMI ayni numarayi tasir; farkli
+numaralar goruyorsaniz taraflardan biri guncellenmemis demektir.
+
+------------------------------------------------------------------------
+ GELISTIRICI VE LISANS
+------------------------------------------------------------------------
+  Gelistirici : Omer CARNACAR
+  Iletisim    : omer.carnacar@outlook.com.tr
+  LinkedIn    : https://www.linkedin.com/in/omercarnacar/
+
+  UCRETSIZ SURUM - Bu yazilim bedelsizdir.
+  Sinirsiz kullanilabilir; lisans anahtari gerekmez, cikti limiti yoktur.
+  PARA ILE SATILAMAZ, kiralanamaz, ucretli bir urunun parcasi olarak
+  sunulamaz. Ayrintilar icin LICENSE.txt dosyasina bakiniz.
+  Telif Hakki (c) 2026 Omer CARNACAR
+
+Paket icerigi:
+  Print360-Server-Setup.exe   RDP sunucusu kurulumu
+  Print360-Client-Setup.exe   Kullanici bilgisayari kurulumu
+  KURULUM.txt                 Kurulum ve kullanim kilavuzu
+  LICENSE.txt                 Lisans (ucretsiz surum kosullari)
+
+Ozellikler:
+  - Surucusuz RDP yazdirma (sunucuya yazici surucusu kurulmaz)
+  - Uc yazdirma modu: dogrudan varsayilan yazici / yazici sec / PDF
+  - Kullanici bazli yazici onceligi (1. yazici kapaliysa yedege duser)
+  - RDP sanal kanali uzerinden tasima; olmazsa HTTPS kuyruguna duser
+  - Veritabani ISTEGE BAGLI: MSSQL varsa kullanilir, yoksa SQLite
+  - Web paneli + masaustu paneli (saf WPF, harici bilesen yok)
+  - Makine / kullanici / kagit / yazici bazli sayaclar ve maliyet
+  - Yazici saglik takibi, baglanti gostergesi ve uyarilar
+  - PDF arsivi (panelden cikti indirme), gunluk e-posta raporu
+  - Tani sayfasi: yazdirma sorununu adim adim gosterir
+  - Istemci kimlik dogrulama ve baglanti loglari
+"@
+Set-Content (Join-Path $dist "SURUM.txt") $surumTxt -Encoding utf8
+Ok "SURUM.txt uretildi (v$fullVer)"
+
+# TUM bilesenler ayni surumu tasimali. Kismi bir derleme (orn. tek exe yeniden
+# uretilmesi) sunucu ile istemcinin farkli surumde kalmasina yol acabilir; bu da
+# sahada "guncelledim ama eski surum calisiyor" karisikligini doguruyordu.
+$beklenen = $fullVer
+$sapan = @()
+Get-ChildItem "$binS\*.exe", "$binC\*.exe", "$dist\*.exe" -ErrorAction SilentlyContinue | ForEach-Object {
+    $v = $_.VersionInfo.ProductVersion
+    if ($v) { $v = $v.Trim() }
+    if ($v -ne $beklenen) { $sapan += ("{0} -> {1}" -f $_.Name, $v) }
+}
+if ($sapan.Count -gt 0) {
+    Write-Host "    [DUR] Bilesen surumleri ayni degil:" -ForegroundColor Red
+    $sapan | Sort-Object -Unique | ForEach-Object { Write-Host "      $_" }
+    throw "Surum tutarsizligi: tum bilesenler $beklenen olmali."
+}
+Ok "Surum tutarli: tum bilesenler $beklenen"
 # dist'e hassas dosya sizmis mi?
 $hassas = Get-ChildItem $dist -Recurse -Include *.cs, *.key, *.xml, *.iss -ErrorAction SilentlyContinue
 if ($hassas) {
@@ -181,7 +247,7 @@ Ok "dist temiz (kaynak kod / ozel anahtar yok)"
 
 # Paket adinda TAM SURUM olsun: ayni adli eski bir kopyanin yanlislikla
 # kurulmasi (ve "kurdum ama eski surum calisiyor" karisikligi) onlensin.
-$zip = Join-Path $root "Print360-Kurulum-v$fullVer-$yapimKisa.zip"
+$zip = Join-Path $root "Print360-Kurulum-v$fullVer.zip"
 Get-ChildItem $root -Filter "Print360-Kurulum-v*.zip" -File -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -ne (Split-Path $zip -Leaf) } |
     ForEach-Object { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue }

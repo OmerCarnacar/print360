@@ -1,10 +1,16 @@
 ﻿; Print360 SUNUCU kurulum paketi (Inno Setup)
 ; Derleme: ISCC.exe Print360-Server.iss  ->  dist\Print360-Server-Setup.exe
+; Surum build.ps1 tarafindan verilir (ISCC /DP360Ver=...).
+; Elle derlenirse asagidaki varsayilan kullanilir.
+#ifndef P360Ver
+  #define P360Ver "0.0.0.0"
+#endif
+
 [Setup]
 AppId={{7A3F2B10-360A-4B3B-9E01-PRINT360SRV}
 AppName=Print360 Server
-AppVersion=1.1
-AppVerName=Print360 Server 1.1
+AppVersion={#P360Ver}
+AppVerName=Print360 Server {#P360Ver}
 AppPublisher=Ömer ÇARNAÇAR
 AppCopyright=Copyright (c) 2026 Ömer ÇARNAÇAR - Ücretsiz sürüm, para ile satılamaz
 AppContact=omer.carnacar@outlook.com.tr

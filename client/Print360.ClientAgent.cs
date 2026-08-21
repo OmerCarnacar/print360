@@ -1024,14 +1024,34 @@ static class ClientAgent
         }
     }
 
+    // Keep-alive acik oldugu icin sunucu bosta kalan baglantiyi kapatmis olabilir;
+    // .NET bunu ilk istekte anlar ve "baglanti kapatildi" hatasi verir. Bu, gecici
+    // ve kendini duzelten bir durumdur: ikinci deneme taze baglanti acar. Bu yuzden
+    // TEK SEFERLIK yeniden deneme yapiyoruz. Zaman asimi gibi gercek hatalarda
+    // tekrar denemiyoruz - sadece dongunun bir sonraki turunu bekliyoruz.
     static bool FetchOneJob(string baseUrl, string key)
+    {
+        try { return FetchOneJobTek(baseUrl, key); }
+        catch (WebException ex)
+        {
+            // NOT: istisna filtresi (catch ... when) bu derleyicide yok; durumu
+            // govde icinde denetleyip ilgisiz hatalari yeniden firlatiyoruz.
+            if (ex.Status != WebExceptionStatus.KeepAliveFailure &&
+                ex.Status != WebExceptionStatus.ConnectionClosed) throw;
+            Thread.Sleep(300);
+            return FetchOneJobTek(baseUrl, key);   // taze baglantiyla bir kez daha
+        }
+    }
+
+    static bool FetchOneJobTek(string baseUrl, string key)
     {
         string qs = "?machine=" + Uri.EscapeDataString(Environment.MachineName) + "&key=" + Uri.EscapeDataString(key);
         var req = (HttpWebRequest)WebRequest.Create(baseUrl + "/api/jobs" + qs);
         req.Method = "GET";
-        req.Timeout = 20000;
-        req.ReadWriteTimeout = 60000;   // buyuk is indirmesi yavas hatta takilmasin
-        req.KeepAlive = false;          // bayat baglanti yeniden kullanilmasin (bkz. P360WebClient)
+        // ILK baglanti TLS dogrulamasi yuzunden 20+ saniye surebiliyor (bkz.
+        // P360WebClient aciklamasi); eski 20 sn'lik sinir bu yuzden yetmiyordu.
+        req.Timeout = 60000;
+        req.ReadWriteTimeout = 120000;
         try
         {
             using (var resp = (HttpWebResponse)req.GetResponse())
@@ -1348,19 +1368,26 @@ static class ClientAgent
     }
 
 
-    // Yoklama yapan bir istemcide KEEP-ALIVE bagliligi sorun cikariyor:
-    // sunucu bosta kalan baglantiyi kapatiyor, .NET ise onu hala canli sanip
-    // yeniden kullaniyor ve istek "Canli tutulacagi beklenen bir baglanti sunucu
-    // tarafindan kapatildi" hatasiyla dusuyor. Sahada isler bu yuzden sunucu
-    // kuyrugunda birikip kaldi. Her istek icin TAZE baglanti aciyoruz; maliyeti
-    // ihmal edilebilir, kazanci kararlilik.
+    // BAGLANTI MALIYETI OLCULDU: TCP el sikismasi ~25 ms, ama ILK HTTPS istegi
+    // ~17-27 SANIYE suruyor. Sebep TLS el sikismasindaki sertifika zinciri
+    // dogrulamasi: kendinden imzali sertifikanin iptal listesine ulasilamiyor ve
+    // Windows zaman asimini bekliyor. Sonraki istekler ~70 ms - cunku baglanti
+    // ve dogrulama sonucu yeniden kullaniliyor.
+    //
+    // Bu yuzden KEEP-ALIVE ACIK olmalidir: bedel bir kez odenir. Baglantiyi her
+    // istekte kapatmak, her yoklamada 20+ saniyelik el sikismasi demek olur ve
+    // istekler zaman asimina ugrar. (Bir sure oyle denendi, isler inmedi.)
+    //
+    // Keep-alive'in bilinen riski, sunucunun bosta kalan baglantiyi kapatmasi ve
+    // .NET'in onu hala canli sanmasidir; bu FetchOneJob icinde tek seferlik
+    // yeniden deneme ile karsilanir.
     class P360WebClient : WebClient
     {
         protected override WebRequest GetWebRequest(Uri adres)
         {
             var r = base.GetWebRequest(adres);
             var h = r as HttpWebRequest;
-            if (h != null) { h.KeepAlive = false; h.Timeout = 30000; h.ReadWriteTimeout = 60000; }
+            if (h != null) { h.Timeout = 60000; h.ReadWriteTimeout = 120000; }
             return r;
         }
     }
