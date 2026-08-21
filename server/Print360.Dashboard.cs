@@ -35,7 +35,6 @@ static class Dashboard
     static string connLog = @"C:\Print360\logs\connections.log";
     static string rulesCsv = @"C:\Print360\rules.csv";
     static Dictionary<string, DateTime> sessions = new Dictionary<string, DateTime>();
-    static string lisansMesaj;
     static object hbLock = new object();
     static Dictionary<string, bool> pingCache; static DateTime pingTime = DateTime.MinValue;
 
@@ -898,6 +897,24 @@ static class Dashboard
         string path = (req.Url.AbsolutePath ?? "/").TrimEnd('/').ToLowerInvariant();
         if (path == "") path = "/";
 
+        // GUVENLIK: Panel korumasizsa (ne PanelUsers ne panel.pwd tanimli) yalnizca
+        // SUNUCUNUN KENDISINDEN erisilebilir. Aksi halde agdaki herkes bask' gecmisini,
+        // belge adlarini ve arsivlenmis PDF'leri parolasiz okuyabilirdi.
+        // Istemci ajanlarinin /api/* uc noktalari bu kontrolden ONCE karsilandigi icin
+        // yazdirma isleyisi etkilenmez.
+        if (!AuthAktif() && !req.IsLocal)
+        {
+            Log("Guvenlik: parolasiz panele uzaktan erisim reddedildi - " +
+                (req.RemoteEndPoint != null ? req.RemoteEndPoint.Address.ToString() : "?"));
+            return "<div class='warn'><b>Panel korumas&#305;z oldu&#287;u i&ccedil;in uzaktan eri&#351;ime kapal&#305;.</b><br><br>"
+                 + "Bu sunucuda panel eri&#351;im parolas&#305; tan&#305;ml&#305; de&#287;il. Parolas&#305;z bir panel, "
+                 + "a&#287;daki herkese bask&#305; ge&ccedil;mi&#351;ini, belge adlar&#305;n&#305; ve ar&#351;ivlenmi&#351; "
+                 + "&ccedil;&#305;kt&#305;lar&#305; a&ccedil;ard&#305;. Bu nedenle yaln&#305;zca sunucunun kendisinden "
+                 + "(localhost) a&ccedil;&#305;labilir.<br><br>"
+                 + "<b>A&ccedil;mak i&ccedil;in:</b> kurulumu tekrar &ccedil;al&#305;&#351;t&#305;r&#305;p "
+                 + "<i>Y&ouml;netim Paneli</i> sayfas&#305;ndaki <i>Panel eri&#351;im parolas&#305;</i> alan&#305;n&#305; doldurun.</div>";
+        }
+
         if (AuthAktif())
         {
             if (path == "/login") return HandleLogin(ctx);
@@ -924,27 +941,6 @@ static class Dashboard
             case "/isler": return Page("isler", PageJobs(req));
             case "/yetki": return Page("yetki", PageRules(null));
             case "/yetki/kaydet": return SaveRules(ctx);
-            case "/yetki/lisans":
-                if (req.HttpMethod == "POST")
-                {
-                    string bodyL;
-                    using (var srL = new StreamReader(req.InputStream, Encoding.UTF8)) bodyL = srL.ReadToEnd();
-                    string anahtar = "";
-                    foreach (var kvL in bodyL.Split('&'))
-                    {
-                        var pL = kvL.Split(new[] { '=' }, 2);
-                        if (pL.Length == 2 && pL[0] == "key") anahtar = WebUtility.UrlDecode(pL[1].Replace('+', ' '));
-                    }
-                    if (Lisans.Kaydet(anahtar))
-                    {
-                        lisansMesaj = "Lisans etkinle&#351;tirildi: " + H(Lisans.Musteri);
-                        Db.Alert("Lisans", "Lisans etkinlestirildi: " + Lisans.Musteri);
-                        Log("Lisans etkinlestirildi: " + Lisans.Musteri);
-                    }
-                    else lisansMesaj = "<span style='color:#c0392b;font-weight:600'>Ge&ccedil;ersiz lisans anahtar&#305;!</span>";
-                }
-                Redirect(ctx, "/yetki");
-                return null;
             case "/yetki/maliyet":
                 if (req.HttpMethod == "POST")
                 {
@@ -1157,14 +1153,12 @@ static class Dashboard
         int bagliSayi = istemciler.Count(x => x[6] == "1");
 
         var sb = new StringBuilder();
-        Lisans.Yukle();
-        if (!Lisans.Gecerli)
-            sb.Append("<div class='warn'><b>DENEME S&Uuml;R&Uuml;M&Uuml;</b> &mdash; toplam ")
-              .Append(Lisans.DenemeLimiti).Append(" &ccedil;&#305;kt&#305; limiti (kullan&#305;lan: ")
-              .Append(sent.Count).Append("/").Append(Lisans.DenemeLimiti)
-              .Append("). Lisans anahtar&#305;n&#305;z&#305; <a href='/yetki'>Yetkiler &rarr; Lisans</a> b&ouml;l&uuml;m&uuml;nden girin.</div>");
-        else
-            sb.Append("<div class='info'>&#128273; ").Append(H(Lisans.DurumMetni())).Append("</div>");
+        if (!AuthAktif())
+            sb.Append("<div class='warn'><b>&#9888; Bu panel parolas&#305;z.</b> &#350;u anda yaln&#305;zca bu "
+                    + "sunucudan a&ccedil;&#305;labiliyor; a&#287;daki di&#287;er bilgisayarlardan eri&#351;im "
+                    + "reddediliyor. Uzaktan y&ouml;netmek i&ccedil;in kurulumu tekrar &ccedil;al&#305;&#351;t&#305;r&#305;p "
+                    + "panel eri&#351;im parolas&#305;n&#305; tan&#305;mlay&#305;n.</div>");
+        sb.Append("<div class='info'>&#128273; ").Append(H(Lisans.DurumMetni())).Append("</div>");
         sb.Append("<div class='cards'>");
         Card(sb, sent.Count.ToString(), "Toplam &Ccedil;&#305;kt&#305;");
         Card(sb, sent.Count(s => printed.ContainsKey(s.File)).ToString(), "Bas&#305;ld&#305; (onayl&#305;)");
@@ -1483,18 +1477,6 @@ static class Dashboard
         sb.Append("</table></div></div>");
         sb.Append("<div style='margin-top:16px'><button type='submit' class='dateform' style='background:#1f3a5f;color:#fff;border:0;border-radius:8px;padding:10px 26px;font-size:14px;cursor:pointer'>Kaydet</button></div>");
         sb.Append("</form>");
-
-        // Lisans yonetimi
-        sb.Append("<h2>Lisans</h2>");
-        Lisans.Yukle();
-        if (Lisans.Gecerli)
-            sb.Append("<div class='info'>&#128273; ").Append(H(Lisans.DurumMetni())).Append("</div>");
-        else
-            sb.Append("<div class='warn'>").Append(H(Lisans.DurumMetni())).Append("</div>");
-        if (lisansMesaj != null) sb.Append("<div class='info'>").Append(lisansMesaj).Append("</div>");
-        sb.Append("<form method='post' action='/yetki/lisans'>")
-          .Append("<textarea name='key' rows='3' style='width:100%;max-width:640px;font-family:monospace;font-size:12px;border:1px solid #cdd7e5;border-radius:8px;padding:8px' placeholder='Lisans anahtar&#305;n&#305; buraya yap&#305;&#351;t&#305;r&#305;n...'></textarea>")
-          .Append("<div style='margin-top:8px'><button type='submit' style='background:#1f3a5f;color:#fff;border:0;border-radius:8px;padding:8px 22px;font-size:13px;cursor:pointer'>Lisans&#305; Etkinle&#351;tir</button></div></form>");
 
         // Maliyet tanimlari (kagit turu basina sayfa fiyati)
         sb.Append("<h2>Maliyet Tan&#305;mlar&#305; (sayfa ba&#351;&#305;na &#8378;)</h2>");
@@ -2628,9 +2610,26 @@ static class Dashboard
         return rows;
     }
 
+    // Gunluk dosyasi 5 MB'i gecince .1 uzantisiyla devreder; iki kusak tutulur.
+    // Boylece yogun sunucularda gunluk suresiz buyuyup diski doldurmaz.
+    const long LOG_SINIR = 5 * 1024 * 1024;
+
+    static void LogDevret(string dosya)
+    {
+        try
+        {
+            var fi = new FileInfo(dosya);
+            if (!fi.Exists || fi.Length < LOG_SINIR) return;
+            string eski = dosya + ".1";
+            if (File.Exists(eski)) File.Delete(eski);
+            File.Move(dosya, eski);
+        }
+        catch { }
+    }
+
     static void Log(string msg)
     {
-        try { File.AppendAllText(logFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + msg + "\r\n"); }
+        try { LogDevret(logFile); File.AppendAllText(logFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + msg + "\r\n"); }
         catch { }
     }
 }

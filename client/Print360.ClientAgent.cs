@@ -1318,9 +1318,26 @@ static class ClientAgent
         return d;
     }
 
+    // Gunluk dosyasi 5 MB'i gecince .1 uzantisiyla devreder; iki kusak tutulur.
+    // Boylece yogun sunucularda gunluk suresiz buyuyup diski doldurmaz.
+    const long LOG_SINIR = 5 * 1024 * 1024;
+
+    static void LogDevret(string dosya)
+    {
+        try
+        {
+            var fi = new FileInfo(dosya);
+            if (!fi.Exists || fi.Length < LOG_SINIR) return;
+            string eski = dosya + ".1";
+            if (File.Exists(eski)) File.Delete(eski);
+            File.Move(dosya, eski);
+        }
+        catch { }
+    }
+
     static void Log(string msg)
     {
-        try { File.AppendAllText(logFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + msg + "\r\n"); }
+        try { LogDevret(logFile); File.AppendAllText(logFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + msg + "\r\n"); }
         catch { }
     }
 

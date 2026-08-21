@@ -120,11 +120,12 @@ begin
 
   PanelPage := CreateInputQueryPage(SqlPage.ID,
     'Yönetim Paneli', 'Panel erişim bilgileri',
-    'Panel yöneticisi veritabanında oluşturulur. Panel şifresi ise panele erişimi korur ' +
-    '(boş bırakılırsa şifresiz erişim).');
+    'Panel yöneticisi veritabanında oluşturulur. Panel erişim şifresi paneli korur. ' +
+    'Boş bırakırsanız panel parolasız kalır ve GÜVENLİK GEREĞİ yalnızca sunucunun ' +
+    'kendisinden açılabilir; ağdaki diğer bilgisayarlardan erişim reddedilir.');
   PanelPage.Add('Panel yönetici kullanıcı adı (boş = admin):', False);
   PanelPage.Add('Panel yönetici şifresi:', True);
-  PanelPage.Add('Panel erişim şifresi (boş = şifresiz):', True);
+  PanelPage.Add('Panel erişim şifresi (boş bırakılırsa panel yalnızca sunucudan açılır):', True);
 end;
 
 { MSSQL secili degilse SQL bilgileri sayfasini atla }

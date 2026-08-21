@@ -6,6 +6,43 @@ paket adında üretim tarihi de yer alır (`v1.1.49-2707-2141`).
 
 ---
 
+## [1.1.6] — 2026-08-21
+
+### 🔒 Güvenlik
+
+- **Parolasız panel artık uzaktan açılamıyor.** Ne `PanelUsers` tablosu ne
+  `panel.pwd` tanımlıysa panel kimlik doğrulaması olmadan servis ediliyordu.
+  Panel tüm arayüzlerden dinlediği için ağdaki herkes baskı geçmişini, belge
+  adlarını, tanı sayfasını ve arşivlenmiş çıktıları parolasız okuyabiliyordu.
+
+  Panel korumasızken artık yalnızca **sunucunun kendisinden** açılabiliyor;
+  uzaktan gelen istek gerekçesini ve çözümünü anlatan bir sayfayla reddedilip
+  güvenlik günlüğüne yazılıyor. Yönetici kilitlenmiyor — sunucu üzerinden panel
+  çalışmaya devam ediyor. Genel Bakış'a "Bu panel parolasız" uyarısı eklendi ve
+  kurulum sihirbazındaki metin netleştirildi.
+
+  İstemci `/api/*` uç noktaları bu kontrolden **önce** karşılandığı için
+  yazdırma işleyişi etkilenmez.
+
+### Düzeltilenler
+
+- **Günlük dosyaları süresiz büyüyordu.** Ne boyut sınırı ne devretme vardı;
+  yoğun bir sunucuda aylar içinde diski doldurabilirdi. Üç bileşene de
+  (sunucu ajanı, istemci ajanı, panel) 5 MB sınırı ve tek kuşaklık devretme
+  eklendi.
+
+### Kaldırılanlar
+
+- **Ölü lisans kodu.** Sunucu ajanında deneme sürümü engeli duruyordu: iş
+  sayısını sayıp limiti aşarsa spool dosyasını siliyordu. Sınır sonsuz
+  ayarlandığı için çalışmıyordu, ancak kod, RSA doğrulama altyapısı ve
+  `license.key` okuma mantığı yerindeydi. Kaynağa bakan biri "çıktı limiti var"
+  izlenimi ediniyordu — ücretsiz bir üründe yanıltıcı. Sunucu ajanından 24,
+  panelden 40 satır kaldırıldı; `Print360.License.cs` 84 satırdan 29'a indi ve
+  yalnızca ürün kimliği kaldı.
+
+---
+
 ## [1.1.5] — 2026-07-28
 
 Belge ve depo politikası sürümü. **Yazılımda değişiklik yoktur**; kurulum

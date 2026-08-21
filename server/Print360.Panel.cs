@@ -474,18 +474,16 @@ static class Panel360
         var printed = LoadPrinted();
         var sp = new StackPanel();
         sp.Children.Add(Baslik("Genel Bakış"));
-        Lisans.Yukle();
         sp.Children.Add(new Border
         {
-            Background = Lisans.Gecerli ? Hex("#E7F0FD") : Hex("#FDF3E7"),
+            Background = Hex("#E7F0FD"),
             CornerRadius = new CornerRadius(8), Padding = new Thickness(12, 8, 12, 8),
             Margin = new Thickness(0, 0, 0, 12),
             Child = new TextBlock
             {
-                Text = (Lisans.Gecerli ? "🔑 " : "⚠ ") + Lisans.DurumMetni() +
-                       (Lisans.Gecerli ? "" : " — lisans anahtarını web panel > Yetkiler > Lisans bölümünden girin."),
+                Text = "🔑 " + Lisans.DurumMetni(),
                 FontSize = 13, TextWrapping = TextWrapping.Wrap,
-                Foreground = Lisans.Gecerli ? Hex("#1F3A5F") : Hex("#8A5A00")
+                Foreground = Hex("#1F3A5F")
             }
         });
 

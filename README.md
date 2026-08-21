@@ -200,7 +200,7 @@ Kurulum dosyalarının yolda değiştirilmediğini **SHA-256** özetiyle
 doğrulayabilirsiniz. Değerler: **[SHA256SUMS.txt](SHA256SUMS.txt)**
 
 ```powershell
-Get-FileHash .\Print360-Kurulum-v1.1.54-2807-1708.zip -Algorithm SHA256
+Get-FileHash .\Print360-Kurulum-*.zip -Algorithm SHA256
 ```
 
 Aynı özet değerini VirusTotal arama kutusuna yapıştırarak dosyanın taramasını
