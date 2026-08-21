@@ -85,6 +85,7 @@ static class ClientAgent
     static string sonYaziciRapor = "";   // HeartbeatLoop'ta uretilen WMI raporu (cache)
     static bool rdpAcik;                 // su an aktif RDP oturumu var mi (RdpIzleyici gunceller)
     static int sunucuBagli;              // su an ulasilabilen sunucu sayisi (tepsi ipucunda gosterilir)
+    static DateTime sonIsHatasi = DateTime.MinValue;   // is cekme hatasi gunlugunu kisitlar
     static bool sonBildirilen;           // en son balon bildirimi yapilan durum
     static bool bildirimBasladi;         // ilk bildirim yapildi mi
 
@@ -773,7 +774,7 @@ static class ClientAgent
         string baseUrl = BaseUrl(cfg);
         if (baseUrl == null) return;
         string sunucuSurum;
-        using (var wc = new WebClient()) sunucuSurum = wc.DownloadString(baseUrl + "/api/clientversion").Trim();
+        using (var wc = new P360WebClient()) sunucuSurum = wc.DownloadString(baseUrl + "/api/clientversion").Trim();
         Version sv, mv;
         if (!Version.TryParse(sunucuSurum, out sv) || !Version.TryParse(Surum.V, out mv)) return;
         if (sv <= mv) return; // guncel
@@ -781,7 +782,7 @@ static class ClientAgent
         Log("Yeni surum bulundu: " + sunucuSurum + " (mevcut " + Surum.V + "). Indiriliyor...");
         string cur = Process.GetCurrentProcess().MainModule.FileName;   // C:\Print360\Print360.ClientAgent.exe
         string yeni = cur + ".new";
-        using (var wc = new WebClient()) wc.DownloadFile(baseUrl + "/api/clientexe", yeni);
+        using (var wc = new P360WebClient()) wc.DownloadFile(baseUrl + "/api/clientexe", yeni);
         if (!File.Exists(yeni) || new FileInfo(yeni).Length < 4096) { try { File.Delete(yeni); } catch { } return; }
 
         // Guncelleyici: ajan kapansin -> yeni exe'yi eskinin uzerine yaz -> yeniden baslat
@@ -978,17 +979,31 @@ static class ClientAgent
     // HTTPS is kanali: sunucudaki kuyrugu 3 sn'de bir yoklar, GZip'li isi indirip acar,
     // jobs klasorune birakir (yazdirma dongusu basar) ve sunucuya ACK gonderir.
     // tsclient yonlendirmesi kapali olsa bile yazdirma bu kanaldan calisir.
+    // GUVENLIK AGI: VC modunda da HTTPS kuyrugu ARADA BIR yoklanir.
+    // Sebep: kanalin acik sayilmasi ".vc-aktif" isaret dosyasinin VARLIGINA bakar.
+    // RDP oturumu anormal koptugunda (mstsc oldurulur, ag gider) bu dosya geride
+    // kalabiliyor; istemci kanali sonsuza kadar "acik" sanip HTTPS'i hic yoklamiyor
+    // ve isler sunucu kuyrugunda birikip kaliyordu. Artik VC acik gorunse bile her
+    // ~30 saniyede bir kuyruk yoklanir; kanal gercekten calisiyorsa kuyruk zaten
+    // bostur ve bu istek bedelsizdir.
+    const int VC_GUVENLIK_AGI = 10;   // 10 x 3 sn = ~30 sn
+
     static void JobPollLoop()
     {
+        int tur = 0;
         while (true)
         {
             try
             {
                 var cfg = ReadIni();
-                // VC modu: is HTTPS kuyrugundan degil, dogrudan RDP kanalindan
-                // (Print360.VC.dll -> jobs) gelir; kuyruk yoklama gereksiz.
-                if (!VcAcik(cfg))
+                tur++;
+                // VC modu: is normalde dogrudan RDP kanalindan (Print360.VC.dll -> jobs)
+                // gelir; kuyruk yoklamasi gereksizdir. Yine de yukaridaki sebeple
+                // periyodik bir guvenlik yoklamasi yapilir.
+                bool vc = VcAcik(cfg);
+                if (!vc || tur % VC_GUVENLIK_AGI == 0)
                 {
+                    if (vc) tur = 0;
                     // COKLU RDP: acik TUM sunucular yoklanir; is hangisinden
                     // gelirse gelsin alinir (tek sunucu secmek yanlis olurdu).
                     string key = cfg.ContainsKey("ClientKey") ? cfg["ClientKey"].Trim() : "";
@@ -1015,6 +1030,8 @@ static class ClientAgent
         var req = (HttpWebRequest)WebRequest.Create(baseUrl + "/api/jobs" + qs);
         req.Method = "GET";
         req.Timeout = 20000;
+        req.ReadWriteTimeout = 60000;   // buyuk is indirmesi yavas hatta takilmasin
+        req.KeepAlive = false;          // bayat baglanti yeniden kullanilmasin (bkz. P360WebClient)
         try
         {
             using (var resp = (HttpWebResponse)req.GetResponse())
@@ -1040,12 +1057,24 @@ static class ClientAgent
                 }
                 // ACK: kuyruktan dusur (dosya zaten alinmissa da onayla)
                 if (id.Length > 0)
-                    using (var wc = new WebClient())
+                    using (var wc = new P360WebClient())
                         wc.UploadString(baseUrl + "/api/jobs/done" + qs + "&id=" + id, "POST", "");
                 return true;
             }
         }
-        catch (WebException) { return false; } // sunucu kapali / 403 vb: sessizce bekle
+        catch (WebException ex)
+        {
+            // Eskiden bu hata TAMAMEN SESSIZ yutuluyordu: sunucu kuyrugunda isler
+            // birikirken istemci gunlugunde tek satir bile olmuyordu ve sorunun
+            // nerede oldugu anlasilamiyordu. Artik yaziliyor - ancak 3 sn'de bir
+            // donen bir dongu oldugu icin gunlugu doldurmasin diye kisitli.
+            if ((DateTime.Now - sonIsHatasi).TotalMinutes >= 2)
+            {
+                sonIsHatasi = DateTime.Now;
+                Log("Is alinamadi (" + baseUrl + "): " + ex.Message);
+            }
+            return false;
+        }
     }
 
     // Dakikada bir sunucuya "hayattayim" bildirimi - baglanti loglari iki tarafta da tutulur
@@ -1121,14 +1150,14 @@ static class ClientAgent
                                + "&key=" + Uri.EscapeDataString(key);
                     try
                     {
-                        using (var wc = new WebClient()) wc.UploadString(url, "POST", "");
+                        using (var wc = new P360WebClient()) wc.UploadString(url, "POST", "");
                         basarili.Add(baseUrl);
                         SunucuHatirla(baseUrl);
                         try
                         {
                             string rapor = sonYaziciRapor;
                             if (rapor.Length > 0)
-                                using (var wc = new WebClient())
+                                using (var wc = new P360WebClient())
                                 {
                                     wc.Encoding = Encoding.UTF8;
                                     wc.UploadString(baseUrl + "/api/printers?machine=" + Uri.EscapeDataString(Environment.MachineName)
@@ -1284,7 +1313,7 @@ static class ClientAgent
                    + "&key=" + Uri.EscapeDataString(key);
         try
         {
-            using (var wc = new WebClient())
+            using (var wc = new P360WebClient())
             {
                 wc.Encoding = Encoding.UTF8;
                 wc.UploadString(url, "POST", csvLine);
@@ -1316,6 +1345,24 @@ static class ClientAgent
             if (i > 0) d[t.Substring(0, i).Trim()] = t.Substring(i + 1).Trim();
         }
         return d;
+    }
+
+
+    // Yoklama yapan bir istemcide KEEP-ALIVE bagliligi sorun cikariyor:
+    // sunucu bosta kalan baglantiyi kapatiyor, .NET ise onu hala canli sanip
+    // yeniden kullaniyor ve istek "Canli tutulacagi beklenen bir baglanti sunucu
+    // tarafindan kapatildi" hatasiyla dusuyor. Sahada isler bu yuzden sunucu
+    // kuyrugunda birikip kaldi. Her istek icin TAZE baglanti aciyoruz; maliyeti
+    // ihmal edilebilir, kazanci kararlilik.
+    class P360WebClient : WebClient
+    {
+        protected override WebRequest GetWebRequest(Uri adres)
+        {
+            var r = base.GetWebRequest(adres);
+            var h = r as HttpWebRequest;
+            if (h != null) { h.KeepAlive = false; h.Timeout = 30000; h.ReadWriteTimeout = 60000; }
+            return r;
+        }
     }
 
     // Gunluk dosyasi 5 MB'i gecince .1 uzantisiyla devreder; iki kusak tutulur.

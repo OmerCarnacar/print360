@@ -6,6 +6,34 @@ paket adında üretim tarihi de yer alır (`v1.1.49-2707-2141`).
 
 ---
 
+## [1.1.8] — 2026-08-21
+
+### 🐞 İşler istemciye inmiyordu
+
+Sunucu kuyruğunda işler birikiyor, istemci "bağlı" görünüyor ama hiçbir işi
+almıyordu. İstemci günlüğünde işlerle ilgili tek satır bile yoktu.
+
+**Sebep:** keep-alive uyuşmazlığı. Sunucu boşta kalan HTTP bağlantısını
+kapatıyor, .NET onu hâlâ canlı sanıp yeniden kullanıyor ve istek
+*"Canlı tutulacağı beklenen bir bağlantı sunucu tarafından kapatıldı"* hatasıyla
+düşüyordu. Üç saniyede bir yoklama yapan bir istemcide bu sürekli tekrarlıyordu.
+
+**Düzeltme:** tüm istemci HTTP istekleri artık taze bağlantı açıyor
+(`KeepAlive = false`); iş indirmesi için okuma zaman aşımı 60 saniyeye çıkarıldı.
+
+### Düzeltilenler
+
+- **İş çekme hatası sessizce yutuluyordu.** `catch (WebException) { return false; }`
+  yüzünden sunucuda işler birikirken istemci günlüğünde hiçbir iz olmuyordu.
+  Artık kaydediliyor — döngü 3 saniyede bir döndüğü için 2 dakikada bir ile
+  kısıtlı.
+- **Güvenlik ağı:** RDP kanalı açık görünse bile HTTPS kuyruğu ~30 saniyede bir
+  yoklanıyor. Kanalın açık sayılması `.vc-aktif` dosyasının varlığına bakıyordu;
+  RDP oturumu anormal koptuğunda bu dosya geride kalıp istemcinin kuyruğu hiç
+  yoklamamasına yol açabilirdi.
+
+---
+
 ## [1.1.7] — 2026-08-21
 
 ### Eklenenler
