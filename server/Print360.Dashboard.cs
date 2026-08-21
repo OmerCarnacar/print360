@@ -507,6 +507,20 @@ static class Dashboard
 
     // Istemci icin bekleyen isi ver (GZip'li icerik; basliklar: X-Job-Id, X-File-Name).
     // Is yoksa 204 doner. ACK gelene kadar BEKLIYOR kalir (istemci ayni dosyayi ikinci kez almaz).
+
+    // Makine basina kuyruk kilidi: ayni makinenin es zamanli istekleri ayni
+    // dosyayi almasin / silmesin.
+    static readonly Dictionary<string, object> kuyrukKilitleri = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+    static object KuyrukKilidi(string machine)
+    {
+        lock (kuyrukKilitleri)
+        {
+            object k;
+            if (!kuyrukKilitleri.TryGetValue(machine, out k)) { k = new object(); kuyrukKilitleri[machine] = k; }
+            return k;
+        }
+    }
+
     static void HandleJobFetch(HttpListenerContext ctx)
     {
         try
@@ -524,9 +538,14 @@ static class Dashboard
             {
                 if (Directory.Exists(qDir))
                 {
-                    var f = new DirectoryInfo(qDir).GetFiles("*.gz")
-                              .OrderBy(x => x.CreationTimeUtc).FirstOrDefault();
-                    if (f != null) { dosyaYol = f.FullName; dosyaAd = f.Name.Substring(0, f.Name.Length - 3); }
+                    // AYNI makineden es zamanli iki istek (cok is parcacikli sunucu)
+                    // ayni dosyayi almasin: makine basina kilit.
+                    lock (KuyrukKilidi(machine))
+                    {
+                        var f = new DirectoryInfo(qDir).GetFiles("*.gz")
+                                  .OrderBy(x => x.CreationTimeUtc).FirstOrDefault();
+                        if (f != null) { dosyaYol = f.FullName; dosyaAd = f.Name.Substring(0, f.Name.Length - 3); }
+                    }
                 }
             }
             catch (Exception ex) { Log("Dosya kuyrugu okunamadi: " + ex.Message); }
@@ -584,8 +603,34 @@ static class Dashboard
                 // Dosya kuyrugu onayi (MSSQL gerekmez): yalnizca dosya adi kabul edilir
                 string ad = Path.GetFileName(ham.Substring(2));   // yol gecisi engellenir
                 string yol2 = Path.Combine(@"C:\Print360\queue", Sanitize(machine), ad);
-                try { if (File.Exists(yol2)) { File.Delete(yol2); Log("Onay alindi <- " + machine + " | " + ad + " | kuyruktan dusuruldu"); } }
-                catch (Exception ex) { Log("Kuyruk dosyasi silinemedi: " + ex.Message); }
+                // Silme birkac kez denenir: dosya o anda baska bir istek tarafindan
+                // okunuyor olabilir (paylasim ihlali). BASARISIZ olursa istemciye
+                // 500 donulur ki "OK" sanip sonsuz onay dongusune girmesin.
+                bool silindi = false; string sonHata = "";
+                lock (KuyrukKilidi(machine))
+                {
+                    for (int d = 0; d < 5 && !silindi; d++)
+                    {
+                        try
+                        {
+                            if (!File.Exists(yol2)) { silindi = true; break; }
+                            File.Delete(yol2);
+                            silindi = !File.Exists(yol2);
+                        }
+                        catch (Exception ex) { sonHata = ex.Message; Thread.Sleep(200); }
+                    }
+                }
+                if (silindi) Log("Onay alindi <- " + machine + " | " + ad + " | kuyruktan dusuruldu");
+                else
+                {
+                    Log("ONAY ISLENEMEDI <- " + machine + " | " + ad + " | dosya silinemiyor: " + sonHata);
+                    ctx.Response.StatusCode = 500;
+                    byte[] hata = Encoding.UTF8.GetBytes("SILINEMEDI: " + sonHata);
+                    ctx.Response.ContentLength64 = hata.Length;
+                    ctx.Response.OutputStream.Write(hata, 0, hata.Length);
+                    ctx.Response.Close();
+                    return;
+                }
                 Db.Exec("UPDATE JobQueue SET Durum='ALINDI', Alinma=GETDATE() WHERE Makine=@m AND Dosya=@f",
                         "@m", machine, "@f", ad.EndsWith(".gz") ? ad.Substring(0, ad.Length - 3) : ad);
             }

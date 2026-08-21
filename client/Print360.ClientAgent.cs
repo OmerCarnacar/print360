@@ -86,6 +86,8 @@ static class ClientAgent
     static bool rdpAcik;                 // su an aktif RDP oturumu var mi (RdpIzleyici gunceller)
     static int sunucuBagli;              // su an ulasilabilen sunucu sayisi (tepsi ipucunda gosterilir)
     static DateTime sonIsHatasi = DateTime.MinValue;   // is cekme hatasi gunlugunu kisitlar
+    static string sonTekrarEdenIs;                      // sunucunun tekrar verdigi is (dongu korumasi)
+    static DateTime sonTekrarUyari = DateTime.MinValue;
     static bool sonBildirilen;           // en son balon bildirimi yapilan durum
     static bool bildirimBasladi;         // ilk bildirim yapildi mi
 
@@ -1012,7 +1014,11 @@ static class ClientAgent
                         try
                         {
                             bool alindi = false;
-                            while (FetchOneJob(baseUrl, key)) alindi = true;   // kuyruk bosalana kadar
+                            // Kuyruk bosalana kadar - ama tur basina SERT sinirla.
+                            // Sunucu bir isi kuyruktan dusuremezse while sonsuza
+                            // kadar donerdi; sinir bunu kesin olarak engeller.
+                            int sayac = 0;
+                            while (sayac++ < 50 && FetchOneJob(baseUrl, key)) alindi = true;
                             if (alindi) SunucuHatirla(baseUrl);
                         }
                         catch { }   // bir sunucu erisilemezse digerleri denenmeye devam etsin
@@ -1096,14 +1102,48 @@ static class ClientAgent
                 else indirmeBitis = kron.ElapsedMilliseconds;
 
                 // ACK: kuyruktan dusur (dosya zaten alinmissa da onayla)
+                bool onayOk = false;
                 if (id.Length > 0)
                 {
                     asama = "onay (ACK) gonderiliyor";
-                    using (var wc = new P360WebClient())
-                        wc.UploadString(baseUrl + "/api/jobs/done" + qs + "&id=" + id, "POST", "");
-                    Log("Onay gonderildi: " + fname + "  (" + (kron.ElapsedMilliseconds - indirmeBitis) + " ms)");
+                    try
+                    {
+                        using (var wc = new P360WebClient())
+                            wc.UploadString(baseUrl + "/api/jobs/done" + qs + "&id=" + id, "POST", "");
+                        onayOk = true;
+                        if (!zatenVar)
+                            Log("Onay gonderildi: " + fname + "  (" + (kron.ElapsedMilliseconds - indirmeBitis) + " ms)");
+                    }
+                    catch (WebException wex)
+                    {
+                        // Sunucu 500 dondurduyse dosyayi silememis demektir. Bunu
+                        // "OK" sanip donguye devam edersek ayni isi sonsuza kadar
+                        // onaylariz (sahada saniyede 8 kez yasandi).
+                        Log("ONAY REDDEDILDI: " + fname + " | " + wex.Message);
+                    }
                 }
-                return true;
+
+                // SONSUZ DONGU KORUMASI: sunucu ayni isi arka arkaya veriyorsa
+                // (silinemiyor), onay basarili gorunse bile dur. Bir sonraki
+                // yoklama turunda tekrar denenir; bu arada gunluk dolmaz.
+                if (zatenVar)
+                {
+                    if (sonTekrarEdenIs == fname)
+                    {
+                        if ((DateTime.Now - sonTekrarUyari).TotalMinutes >= 1)
+                        {
+                            sonTekrarUyari = DateTime.Now;
+                            Log("UYARI: Sunucu ayni isi tekrar veriyor (kuyruktan dusuremiyor): " + fname
+                              + " | onay " + (onayOk ? "kabul edildi" : "REDDEDILDI")
+                              + " | sunucudaki C:/Print360/queue klasorunu ve izinlerini kontrol edin");
+                        }
+                        return false;
+                    }
+                    sonTekrarEdenIs = fname;
+                    return false;
+                }
+                sonTekrarEdenIs = null;
+                return onayOk;
             }
         }
         catch (WebException ex)

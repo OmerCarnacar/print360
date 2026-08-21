@@ -10,6 +10,31 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [2026.08.21.1945]
+
+### 🐞 Sonsuz onay döngüsü kesildi
+
+İstemci aynı işi saniyede ~8 kez onaylıyor ve durmuyordu. Sebep: iş çekme
+döngüsü "kuyruk boşalana kadar" çalışıyordu ve dosya zaten alınmışsa bile onay
+gönderip *başarılı* sayılıyordu. Sunucu onayı "OK" ile yanıtlayıp dosyayı
+**silemeyince** aynı iş kuyruğun başında kalıyor, istemci onu tekrar görüyor,
+tekrar onaylıyordu.
+
+**Sunucu:**
+- Makine başına kuyruk kilidi — çok iş parçacıklı sunucuda aynı makinenin eş
+  zamanlı iki isteği aynı dosyayı alamaz.
+- Silme beş kez denenir ve **sonucu doğrulanır**. Silinemezse istemciye `500`
+  dönülür ve günlüğe `ONAY ISLENEMEDI ... sebep` yazılır. Önceden silme sessizce
+  başarısız olup yine "OK" dönülüyordu.
+
+**İstemci:**
+- Zaten alınmış iş için döngü durur.
+- Onay reddedilirse `ONAY REDDEDILDI` yazılır, başarılı sanılmaz.
+- Sunucu aynı işi arka arkaya veriyorsa dakikada bir uyarı yazılıp beklenir.
+- Tur başına sert sınır: en fazla 50 iş. Hiçbir koşulda sonsuz döngü olamaz.
+
+---
+
 ## [2026.08.21.1919]
 
 ### 🐞 Sunucu tek iş parçacıklıydı — işler sırayla inmiyordu
