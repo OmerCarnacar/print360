@@ -1045,6 +1045,16 @@ static class ClientAgent
 
     static bool FetchOneJobTek(string baseUrl, string key)
     {
+        // ADIM ADIM ZAMANLAMA: sorun sunucuda mi istemcide mi, gunlukten anlasilsin.
+        //   1) yanit basligi beklenirken takiliyorsa  -> SUNUCU gec cevap veriyor
+        //   2) indirme sirasinda takiliyorsa          -> AG / aktarim yavas
+        //   3) onay (ACK) sirasinda takiliyorsa       -> SUNUCU mesgul
+        // Her asamanin suresi ve aktarilan boyut kaydedilir.
+        string asama = "baglanti kuruluyor";
+        var kron = System.Diagnostics.Stopwatch.StartNew();
+        long basligaKadar = 0, indirmeBitis = 0;
+        long ham = 0, acilmis = 0;
+
         string qs = "?machine=" + Uri.EscapeDataString(Environment.MachineName) + "&key=" + Uri.EscapeDataString(key);
         var req = (HttpWebRequest)WebRequest.Create(baseUrl + "/api/jobs" + qs);
         req.Method = "GET";
@@ -1054,9 +1064,12 @@ static class ClientAgent
         req.ReadWriteTimeout = 120000;
         try
         {
+            asama = "sunucudan yanit bekleniyor";
             using (var resp = (HttpWebResponse)req.GetResponse())
             {
+                basligaKadar = kron.ElapsedMilliseconds;
                 if (resp.StatusCode == HttpStatusCode.NoContent) return false;
+                ham = resp.ContentLength;
                 string id = resp.Headers["X-Job-Id"] ?? "";
                 string fname = resp.Headers["X-File-Name"] ?? (id + ".pdf");
                 foreach (char c in Path.GetInvalidFileNameChars()) fname = fname.Replace(c, '_');
@@ -1064,40 +1077,56 @@ static class ClientAgent
                 bool zatenVar = File.Exists(hedef) || File.Exists(Path.Combine(doneDir, fname));
                 if (!zatenVar)
                 {
+                    asama = "is indiriliyor";
                     string tmp = hedef + ".tmp";
                     using (var gz = new System.IO.Compression.GZipStream(resp.GetResponseStream(),
                                System.IO.Compression.CompressionMode.Decompress))
                     using (var fs = File.Create(tmp))
                     {
                         var buf = new byte[81920]; int n;
-                        while ((n = gz.Read(buf, 0, buf.Length)) > 0) fs.Write(buf, 0, n);
+                        while ((n = gz.Read(buf, 0, buf.Length)) > 0) { fs.Write(buf, 0, n); acilmis += n; }
                     }
                     File.Move(tmp, hedef);
-                    Log("Is alindi [HTTPS]: " + fname);
+                    indirmeBitis = kron.ElapsedMilliseconds;
+                    Log(string.Format(
+                        "Is alindi [HTTPS]: {0}  |  sunucu yaniti {1} ms  |  indirme {2} ms  |  {3} KB sikistirilmis -> {4} KB",
+                        fname, basligaKadar, indirmeBitis - basligaKadar,
+                        ham > 0 ? (ham / 1024) : 0, acilmis / 1024));
                 }
+                else indirmeBitis = kron.ElapsedMilliseconds;
+
                 // ACK: kuyruktan dusur (dosya zaten alinmissa da onayla)
                 if (id.Length > 0)
+                {
+                    asama = "onay (ACK) gonderiliyor";
                     using (var wc = new P360WebClient())
                         wc.UploadString(baseUrl + "/api/jobs/done" + qs + "&id=" + id, "POST", "");
+                    Log("Onay gonderildi: " + fname + "  (" + (kron.ElapsedMilliseconds - indirmeBitis) + " ms)");
+                }
                 return true;
             }
         }
         catch (WebException ex)
         {
-            // Eskiden bu hata TAMAMEN SESSIZ yutuluyordu: sunucu kuyrugunda isler
-            // birikirken istemci gunlugunde tek satir bile olmuyordu ve sorunun
-            // nerede oldugu anlasilamiyordu. Artik yaziliyor - ancak 3 sn'de bir
-            // donen bir dongu oldugu icin gunlugu doldurmasin diye kisitli.
-            if ((DateTime.Now - sonIsHatasi).TotalMinutes >= 2)
+            if (ex.Status != WebExceptionStatus.KeepAliveFailure &&
+                ex.Status != WebExceptionStatus.ConnectionClosed)
             {
-                sonIsHatasi = DateTime.Now;
-                Log("Is alinamadi (" + baseUrl + "): " + ex.Message);
+                // Hangi ASAMADA takildigini yaziyoruz: "sunucudan yanit bekleniyor"
+                // goruluyorsa sorun SUNUCUDA, "is indiriliyor" goruluyorsa AG'da.
+                // Ilk hata hemen yazilir; tekrarlari 2 dakikada bir (gunluk sismesin).
+                bool ilk = (sonIsHatasi == DateTime.MinValue);
+                if (ilk || (DateTime.Now - sonIsHatasi).TotalMinutes >= 2)
+                {
+                    sonIsHatasi = DateTime.Now;
+                    Log(string.Format("IS ALINAMADI [{0}] asama: {1} | gecen {2} ms | durum: {3} | {4}",
+                        baseUrl, asama, kron.ElapsedMilliseconds, ex.Status, ex.Message));
+                }
+                return false;
             }
-            return false;
+            throw;   // gecici baglanti hatasi: cagiran tek sefer yeniden dener
         }
     }
 
-    // Dakikada bir sunucuya "hayattayim" bildirimi - baglanti loglari iki tarafta da tutulur
     static void HeartbeatLoop()
     {
         Thread.Sleep(1500);   // tepsi simgesi kurulsun (ilk baglanti bildirimi balon olarak cikabilsin)

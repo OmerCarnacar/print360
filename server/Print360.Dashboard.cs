@@ -84,27 +84,46 @@ static class Dashboard
             new Thread(MailMonitor) { IsBackground = true }.Start();
             while (true)
             {
-                try
-                {
-                    var ctx = listener.GetContext();
+                HttpListenerContext ctx;
+                try { ctx = listener.GetContext(); }
+                catch (Exception ex) { Log("Dinleyici hatasi: " + ex.Message); continue; }
+
+                // HER ISTEK AYRI IS PARCACIGINDA islenir.
+                // Eskiden istek dongunun icinde, TEK is parcaciginda islenirdi:
+                // yavas bir istemciye 184 KB'lik bir yazdirma isini yazarken sunucu
+                // TAMAMEN blokleniyordu. Sonuc: istemci ilk isi aliyor, hemen
+                // ikinciyi istiyor, sunucu hala birinciyi bitirmedigi icin istek
+                // zaman asimina ugruyordu ("1. yazdirma tamam, sonrasi yok").
+                // Ayni sebeple ikinci bir istemcinin kalp atisi ve panel de bekliyordu.
+                ThreadPool.QueueUserWorkItem(delegate(object o) { IstegiIsle((HttpListenerContext)o); }, ctx);
+            }
+        }
+    }
+
+    // Tek bir HTTP istegini isler. Dinleyici dongusu bunu is parcacigi havuzuna
+    // devreder; boylece yavas bir istek digerlerini bekletmez.
+    static void IstegiIsle(HttpListenerContext ctx)
+    {
+        try
+        {
                     // Istemci ajanlarindan gelen "basildi" kayitlari (merkezi sayac)
                     if (ctx.Request.HttpMethod == "POST" &&
                         ctx.Request.Url.AbsolutePath.Equals("/api/printed", StringComparison.OrdinalIgnoreCase))
                     {
                         HandleIngest(ctx);
-                        continue;
+                        return;
                     }
                     if (ctx.Request.HttpMethod == "POST" &&
                         ctx.Request.Url.AbsolutePath.Equals("/api/heartbeat", StringComparison.OrdinalIgnoreCase))
                     {
                         HandleHeartbeat(ctx);
-                        continue;
+                        return;
                     }
                     if (ctx.Request.HttpMethod == "POST" &&
                         ctx.Request.Url.AbsolutePath.Equals("/api/printers", StringComparison.OrdinalIgnoreCase))
                     {
                         HandlePrinterHealth(ctx);
-                        continue;
+                        return;
                     }
                     // Otomatik guncelleme: istemci ajanlari surum sorar / yeni binary'yi indirir (auth'suz)
                     if (ctx.Request.HttpMethod == "GET" &&
@@ -115,39 +134,37 @@ static class Dashboard
                         ctx.Response.ContentLength64 = vb.Length;
                         ctx.Response.OutputStream.Write(vb, 0, vb.Length);
                         ctx.Response.Close();
-                        continue;
+                        return;
                     }
                     if (ctx.Request.HttpMethod == "GET" &&
                         ctx.Request.Url.AbsolutePath.Equals("/api/clientexe", StringComparison.OrdinalIgnoreCase))
                     {
                         HandleClientExe(ctx);
-                        continue;
+                        return;
                     }
                     if (ctx.Request.HttpMethod == "GET" &&
                         ctx.Request.Url.AbsolutePath.Equals("/api/jobs", StringComparison.OrdinalIgnoreCase))
                     {
                         HandleJobFetch(ctx);
-                        continue;
+                        return;
                     }
                     if (ctx.Request.HttpMethod == "POST" &&
                         ctx.Request.Url.AbsolutePath.Equals("/api/jobs/done", StringComparison.OrdinalIgnoreCase))
                     {
                         HandleJobDone(ctx);
-                        continue;
+                        return;
                     }
                     string html;
                     try { html = Route(ctx); }
                     catch (Exception ex) { html = "<pre>Hata: " + H(ex.ToString()) + "</pre>"; }
-                    if (html == null) continue; // yanit (yonlendirme vb.) zaten gonderildi
+                    if (html == null) return; // yanit (yonlendirme vb.) zaten gonderildi
                     byte[] body = Encoding.UTF8.GetBytes(html);
                     ctx.Response.ContentType = "text/html; charset=utf-8";
                     ctx.Response.ContentLength64 = body.Length;
                     ctx.Response.OutputStream.Write(body, 0, body.Length);
                     ctx.Response.Close();
-                }
-                catch (Exception ex) { Log("Istek hatasi: " + ex.Message); }
-            }
         }
+        catch (Exception ex) { Log("Istek hatasi: " + ex.Message); }
     }
 
     // Istemciden POST ile gelen CSV satirini makine dosyasina ekle
@@ -516,6 +533,10 @@ static class Dashboard
 
             if (dosyaYol != null)
             {
+                // SUNUCU TARAFI GUNLUGU: isin ne zaman ve ne kadar surede verildigi.
+                // Istemci gunlugundeki sure ile karsilastirilinca gecikmenin sunucuda
+                // mi yoksa agda mi oldugu net gorulur.
+                var kron = System.Diagnostics.Stopwatch.StartNew();
                 byte[] fdata = File.ReadAllBytes(dosyaYol);
                 ctx.Response.ContentType = "application/octet-stream";
                 ctx.Response.AddHeader("X-Job-Id", "F:" + Path.GetFileName(dosyaYol));  // F: = dosya kuyrugu
@@ -523,6 +544,8 @@ static class Dashboard
                 ctx.Response.ContentLength64 = fdata.Length;
                 ctx.Response.OutputStream.Write(fdata, 0, fdata.Length);
                 ctx.Response.Close();
+                Log(string.Format("Is verildi -> {0} | {1} | {2} KB | {3} ms",
+                    machine, dosyaAd, fdata.Length / 1024, kron.ElapsedMilliseconds));
                 return;
             }
 
@@ -561,7 +584,8 @@ static class Dashboard
                 // Dosya kuyrugu onayi (MSSQL gerekmez): yalnizca dosya adi kabul edilir
                 string ad = Path.GetFileName(ham.Substring(2));   // yol gecisi engellenir
                 string yol2 = Path.Combine(@"C:\Print360\queue", Sanitize(machine), ad);
-                try { if (File.Exists(yol2)) File.Delete(yol2); } catch (Exception ex) { Log("Kuyruk dosyasi silinemedi: " + ex.Message); }
+                try { if (File.Exists(yol2)) { File.Delete(yol2); Log("Onay alindi <- " + machine + " | " + ad + " | kuyruktan dusuruldu"); } }
+                catch (Exception ex) { Log("Kuyruk dosyasi silinemedi: " + ex.Message); }
                 Db.Exec("UPDATE JobQueue SET Durum='ALINDI', Alinma=GETDATE() WHERE Makine=@m AND Dosya=@f",
                         "@m", machine, "@f", ad.EndsWith(".gz") ? ad.Substring(0, ad.Length - 3) : ad);
             }
