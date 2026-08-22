@@ -558,8 +558,15 @@ static class Dashboard
                 var kron = System.Diagnostics.Stopwatch.StartNew();
                 byte[] fdata = File.ReadAllBytes(dosyaYol);
                 ctx.Response.ContentType = "application/octet-stream";
-                ctx.Response.AddHeader("X-Job-Id", "F:" + Path.GetFileName(dosyaYol));  // F: = dosya kuyrugu
-                ctx.Response.AddHeader("X-File-Name", dosyaAd);
+                // HTTP BASLIKLARI ASCII TASIR. Belge adinda Turkce harf varsa
+                // (orn. "Yazdir" icindeki i) baslikta bozuluyordu: "Yazd1r".
+                // Istemci onayi bozuk adla gonderiyor, sunucu o adda dosya
+                // bulamiyor, kuyruktan dusuremiyor ve AYNI IS SONSUZA KADAR
+                // yeniden veriliyordu ("ilk yazdirma oluyor, devami gelmiyor").
+                // Cozum: adlari yuzde-kodlayarak ASCII yapiyoruz. Istemci kimligi
+                // aynen geri gonderir; sorgu dizesi cozumlemesi orijinali verir.
+                ctx.Response.AddHeader("X-Job-Id", "F:" + Uri.EscapeDataString(Path.GetFileName(dosyaYol)));
+                ctx.Response.AddHeader("X-File-Name", Uri.EscapeDataString(dosyaAd));
                 ctx.Response.ContentLength64 = fdata.Length;
                 ctx.Response.OutputStream.Write(fdata, 0, fdata.Length);
                 ctx.Response.Close();
@@ -590,6 +597,22 @@ static class Dashboard
     }
 
     // Istemci isi aldigini onaylar: kuyruktan dusur, gecici dosyayi sil
+
+    // Kuyrukta gercekte hangi dosyalar var? (ad eslesmemesi tanisi icin)
+    static string KuyruktakiAdlar(string qDir)
+    {
+        try
+        {
+            if (!Directory.Exists(qDir)) return "(klasor yok)";
+            var f = Directory.GetFiles(qDir, "*.gz");
+            if (f.Length == 0) return "(bos)";
+            var ad = new List<string>();
+            for (int i = 0; i < f.Length && i < 3; i++) ad.Add(Path.GetFileName(f[i]));
+            return string.Join(" , ", ad.ToArray()) + (f.Length > 3 ? " ... (+" + (f.Length - 3) + ")" : "");
+        }
+        catch { return "(okunamadi)"; }
+    }
+
     static void HandleJobDone(HttpListenerContext ctx)
     {
         try
@@ -602,13 +625,15 @@ static class Dashboard
             {
                 // Dosya kuyrugu onayi (MSSQL gerekmez): yalnizca dosya adi kabul edilir
                 string ad = Path.GetFileName(ham.Substring(2));   // yol gecisi engellenir
-                string yol2 = Path.Combine(@"C:\Print360\queue", Sanitize(machine), ad);
+                string qDirOnay = Path.Combine(@"C:\Print360\queue", Sanitize(machine));
+                string yol2 = Path.Combine(qDirOnay, ad);
                 // Silme birkac kez denenir: dosya o anda baska bir istek tarafindan
                 // okunuyor olabilir (paylasim ihlali). BASARISIZ olursa istemciye
                 // 500 donulur ki "OK" sanip sonsuz onay dongusune girmesin.
                 bool silindi = false; string sonHata = "";
                 lock (KuyrukKilidi(machine))
                 {
+                    bool vardi = File.Exists(yol2);
                     for (int d = 0; d < 5 && !silindi; d++)
                     {
                         try
@@ -619,6 +644,12 @@ static class Dashboard
                         }
                         catch (Exception ex) { sonHata = ex.Message; Thread.Sleep(200); }
                     }
+                    // "Dosya yok" ile "sildim" ayni sey DEGILDIR. Onaylanan is
+                    // kuyrukta hic bulunamadiysa ad eslesmiyor demektir; bunu
+                    // sessizce basari saymak sonsuz donguyu gizlerdi.
+                    if (!vardi)
+                        Log("UYARI: Onaylanan is kuyrukta bulunamadi <- " + machine + " | aranan: " + ad
+                          + " | kuyrukta: " + KuyruktakiAdlar(qDirOnay));
                 }
                 if (silindi) Log("Onay alindi <- " + machine + " | " + ad + " | kuyruktan dusuruldu");
                 else

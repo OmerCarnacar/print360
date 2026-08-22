@@ -10,6 +10,47 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [2026.08.22.1124]
+
+### 🐞 İş kimliği HTTP başlığında bozuluyordu — kök sebep bulundu
+
+Belirti: ilk yazdırma oluyor, devamı gelmiyor. İstemci aynı işi durmadan
+onaylıyor, kuyruk hiç ilerlemiyordu.
+
+Sunucudan alınan başlık:
+
+```
+X-Job-Id : F:20260821_193128_109_Administrator~Belgeyi Yazd1r.pdf.gz
+                                                       ^^^
+```
+
+Diskteki gerçek ad `...Belgeyi **Yazdır**.pdf.gz` — Türkçe `ı` harfi (U+0131).
+HTTP başlıkları ASCII taşır; bu harf aktarımda `1` rakamına dönüşüyordu.
+
+Zincir şöyle kırılıyordu:
+
+1. Sunucu işi verir, başlıkta ad bozulur
+2. İstemci indirir ve basar — **bu yüzden ilk yazdırma çalışıyordu**
+3. İstemci onayı bozuk adla gönderir
+4. Sunucu o adda dosya bulamaz, silemez
+5. Aynı iş kuyruğun başında kalır → sonsuza kadar tekrar
+
+Belge adında **boşluk, `%`, `&` veya `=`** olması da aynı şekilde kırıyordu.
+
+**Düzeltme:** ad içeren başlıklar yüzde-kodlanıyor; değer artık ASCII. İstemci
+kimliği aynen geri gönderiyor, sunucunun sorgu çözümlemesi orijinali veriyor.
+`%` içermeyen değerler olduğu gibi bırakıldığı için sürüm karışımı da çalışır.
+
+Ayrıca onaylanan iş kuyrukta **hiç bulunamazsa** artık uyarı yazılıyor ve
+kuyruktaki gerçek adlar günlüğe dökülüyor. "Dosya yok" ile "sildim" aynı şey
+değildir; öyle sayılması bu hatayı gizliyordu.
+
+**Doğrulama:** `tests/RoundTrip.cs` — kimliğin sunucu → başlık → istemci → sorgu
+dizesi → sunucu yolculuğu beş senaryoda test edildi (Türkçe harf, boşluk, `%`,
+`&`, `=`). Hepsi geçti.
+
+---
+
 ## [2026.08.21.1945]
 
 ### 🐞 Sonsuz onay döngüsü kesildi

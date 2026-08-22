@@ -1035,6 +1035,15 @@ static class ClientAgent
     // ve kendini duzelten bir durumdur: ikinci deneme taze baglanti acar. Bu yuzden
     // TEK SEFERLIK yeniden deneme yapiyoruz. Zaman asimi gibi gercek hatalarda
     // tekrar denemiyoruz - sadece dongunun bir sonraki turunu bekliyoruz.
+
+    // Yuzde-kodlu adi coz. Eski sunucular kodsuz gonderir; "%" yoksa oldugu
+    // gibi birakilir, boylece surum karisimi da calisir.
+    static string CozKodlu(string s)
+    {
+        if (string.IsNullOrEmpty(s) || s.IndexOf('%') < 0) return s;
+        try { return Uri.UnescapeDataString(s); } catch { return s; }
+    }
+
     static bool FetchOneJob(string baseUrl, string key)
     {
         try { return FetchOneJobTek(baseUrl, key); }
@@ -1076,8 +1085,12 @@ static class ClientAgent
                 basligaKadar = kron.ElapsedMilliseconds;
                 if (resp.StatusCode == HttpStatusCode.NoContent) return false;
                 ham = resp.ContentLength;
+                // Sunucu adlari YUZDE-KODLU gonderir (HTTP basliklari ASCII tasir;
+                // Turkce harfler aksi halde bozuluyordu ve onay eslesmiyordu).
+                // Kimlik AYNEN geri gonderilir - kodlu hali zaten URL-guvenli.
                 string id = resp.Headers["X-Job-Id"] ?? "";
-                string fname = resp.Headers["X-File-Name"] ?? (id + ".pdf");
+                string fnameHam = resp.Headers["X-File-Name"] ?? (id + ".pdf");
+                string fname = CozKodlu(fnameHam);
                 foreach (char c in Path.GetInvalidFileNameChars()) fname = fname.Replace(c, '_');
                 string hedef = Path.Combine(jobsDir, fname);
                 bool zatenVar = File.Exists(hedef) || File.Exists(Path.Combine(doneDir, fname));
