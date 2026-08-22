@@ -10,6 +10,40 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [2026.08.22.1135]
+
+### Eklenenler
+
+- **Adım adım açıklamalı günlük.** Bir işin yolculuğu artık her iki tarafta da
+  numaralı ve açıklamalı yazılıyor; "yazdırdım ama bir şey olmadı" dendiğinde
+  hangi adıma kadar gelindiği tartışmasız görülüyor.
+
+  ```
+  Sunucu   [1/6] SPOOL        admin.pdf (512 KB)  -> kullanici sanal yaziciya yazdirdi
+           [2/6] BELGE ADI    Teklif Formu | 3 sayfa -> olay gunlugunden okundu
+           [3/6] HEDEF        DESKTOP-01          -> cikti bu makineye gonderilecek
+           [4/6] KANAL        HTTPS-kuyruk        -> kuyruga yazildi
+           [5/6] SPOOL SIL    admin.pdf           -> gecici cikti kaldirildi
+           [6/6] TAMAM        ...  | HTTPS-kuyruk -> arsivlendi, sira istemcide
+
+  İstemci  [1/7] IS BULUNDU   belge.pdf           -> kuyruktaki is alindi
+           [2/7] INDIRILDI    184 KB -> 512 KB    -> sikistirilmis veri acildi
+           [3/7] ONAYLANDI    belge.pdf           -> kuyruktan dusuruldu
+           [4/7] HEDEF YAZICI Pantum M7100DW      -> oncelik sirasindan secildi
+           [5/7] YAZDIRMA     belge.pdf           -> SumatraPDF ile basiliyor
+           [6/7] BASILDI      belge.pdf           -> done klasorune tasindi
+           [7/7] RAPORLANDI   Teklif Formu        -> panele islendi
+  ```
+
+  Her satır adımın **ne anlama geldiğini** de yazıyor; günlüğe bakan kişinin kodu
+  bilmesi gerekmiyor. Bir adım başarısız olduğunda açıklama sebebi söylüyor
+  (örn. *"ajan bir RDP oturumunda değil; iş bekletilecek"*).
+
+  Kapatmak için sunucuda `db.ini`, istemcide `Print360.ini` içine
+  `AyrintiliGunluk=0`. Günlükler zaten 5 MB'ta devrediyor.
+
+---
+
 ## [2026.08.22.1124]
 
 ### 🐞 İş kimliği HTTP başlığında bozuluyordu — kök sebep bulundu

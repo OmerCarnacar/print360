@@ -407,14 +407,65 @@ static class ServerAgent
         return s;
     }
 
+
+    // ============================================================
+    //  ADIM ADIM GUNLUK
+    //  Bir isin sunucudaki yolculugunu ANLIK ve ACIKLAMALI yazar.
+    //  Amac: "yazdirdim ama bir sey olmadi" dendiginde hangi adima kadar
+    //  gelindigi tartismasiz gorulsun. Her satirda:
+    //     [n/6] ETIKET   deger      -> ne yapildiginin aciklamasi
+    //  Kapatmak icin db.ini icine  AyrintiliGunluk=0  yazilabilir.
+    // ============================================================
+    const int ADIM_SAYISI = 6;
+    static bool? _ayrintili;
+
+    static bool AyrintiliMi()
+    {
+        if (_ayrintili == null)
+        {
+            bool a = true;
+            try
+            {
+                string ini = @"C:\Print360\db.ini";
+                if (File.Exists(ini))
+                    foreach (string satir in File.ReadAllLines(ini))
+                        if (satir.TrimStart().StartsWith("AyrintiliGunluk", StringComparison.OrdinalIgnoreCase))
+                        {
+                            int e = satir.IndexOf('=');
+                            if (e > 0) a = satir.Substring(e + 1).Trim() != "0";
+                        }
+            }
+            catch { }
+            _ayrintili = a;
+        }
+        return _ayrintili.Value;
+    }
+
+    static void Adim(int no, string etiket, string deger, string aciklama)
+    {
+        if (!AyrintiliMi()) return;
+        Log(string.Format("[{0}/{1}] {2,-12} {3}{4}",
+            no, ADIM_SAYISI, etiket, deger,
+            string.IsNullOrEmpty(aciklama) ? "" : "   -> " + aciklama));
+    }
+
     static void Dispatch(string jobType, string spoolFile)
     {
         // ORIJINAL BELGE ADI: PrintService olay gunlugunden okunur ve dosya adina
         // '~' ayiricisiyla gomulur. Istemci bu kismi "Belge" olarak gosterir;
         // kullanici tarih-saat yerine gercek belge adini gorur.
+        long spoolBoyut = 0;
+        try { spoolBoyut = new FileInfo(spoolFile).Length; } catch { }
+        Adim(1, "SPOOL", Path.GetFileName(spoolFile) + " (" + (spoolBoyut / 1024) + " KB)",
+             "kullanici sanal yaziciya yazdirdi, cikti dosyaya dustu");
+
         string ilkDoc, ilkSayfa;
         LookupDocInfo(out ilkDoc, out ilkSayfa);
         string docSafe = BelgeAdiTemizle(ilkDoc);
+        Adim(2, "BELGE ADI", (docSafe.Length > 0 ? docSafe : "(okunamadi)")
+             + (string.IsNullOrEmpty(ilkSayfa) ? "" : " | " + ilkSayfa + " sayfa"),
+             docSafe.Length > 0 ? "PrintService olay gunlugunden okundu"
+                                : "olay gunlugunde kayit yok; dosya adi tarih-saat olacak");
 
         string name = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + "_" + user
                     + (jobType.Length > 0 ? "__" + jobType : "")
@@ -503,8 +554,16 @@ static class ServerAgent
             if (hedefMakine.Length > 0)
                 Log("Istemci adi bos - tek cevrimici istemciye yonlendiriliyor: " + hedefMakine);
         }
+        Adim(3, "HEDEF", hedefMakine.Length > 0 ? hedefMakine : "(BELIRLENEMEDI)",
+             hedefMakine.Length > 0
+               ? "cikti bu makineye gonderilecek (RDP istemci adi)"
+               : "ajan bir RDP oturumunda degil; is bekletilecek");
         if (kanal == null && pdf != null && hedefMakine.Length > 0 && QueueJob(pdf, name, hedefMakine))
             kanal = "HTTPS-kuyruk";
+        Adim(4, "KANAL", kanal ?? "(ikisi de olmadi)",
+             kanal == "VirtualChannel" ? "RDP sanal kanalindan dogrudan gonderildi"
+           : kanal == "HTTPS-kuyruk"   ? "kuyruga yazildi; istemci yoklayinca alacak"
+           : "sanal kanal yok ve kuyruga yazilamadi; tsclient denenecek");
 
         // 3. kanal (yedek): \\tsclient surucu yonlendirmesi
         if (kanal == null)
@@ -527,7 +586,11 @@ static class ServerAgent
             kanal = "tsclient";
         }
         File.Delete(spoolFile);
+        Adim(5, "SPOOL SIL", Path.GetFileName(spoolFile),
+             "is teslim edildi, gecici cikti dosyasi kaldirildi");
         if (pdf != null) ArchiveJob(pdf, name);   // gonderim basarili -> tek kez arsivle
+        Adim(6, "TAMAM", name + " | " + kanal,
+             "is teslim edildi ve arsivlendi; siradaki adim istemcide");
 
         // Belge adi is basinda zaten okundu; bos geldiyse (olay gunlugu gecikmis
         // olabilir) burada bir kez daha denenir.

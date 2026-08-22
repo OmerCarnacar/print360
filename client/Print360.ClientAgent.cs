@@ -324,6 +324,11 @@ static class ClientAgent
         bool yedekAcik = !cfg.ContainsKey("YedekMotor") || cfg["YedekMotor"].Trim() != "0";
         string sonHata = "";
         bool basarili = false;
+        Adim(4, "HEDEF YAZICI", hedef,
+             "kisisel oncelik sirasindan secildi; kullanilamazsa yedege dusulur");
+        Adim(5, "YAZDIRMA", fname,
+             File.Exists(sumatra) ? "SumatraPDF motoru ile basiliyor (en fazla 3 deneme)"
+                                  : "SumatraPDF yok; Windows printto motoru denenecek");
         Log("Yazdiriliyor: " + fname + " -> " + hedef);
         for (int deneme = 1; deneme <= 3 && !basarili; deneme++)
         {
@@ -379,7 +384,11 @@ static class ClientAgent
         string dst = Path.Combine(doneDir, fname);
         if (File.Exists(dst)) File.Delete(dst);
         File.Move(file, dst);
+        Adim(6, "BASILDI", fname,
+             "cikti yaziciya verildi; dosya 'done' klasorune tasindi");
         RecordPrinted(fname, YerelEtiket(hedef));
+        Adim(7, "RAPORLANDI", GorunenBelgeAdi(fname),
+             "sunucuya 'basildi' bildirildi; panelde sayaclara islenir");
         Log("Tamamlandi: " + fname + " -> " + hedef);
         // Kullaniciya BILDIR: is bitti, cikti yaziciya gitti.
         // KISA bildirim: belge adi + yazici (tek satir, 3 sn)
@@ -634,6 +643,42 @@ static class ClientAgent
     }
 
     // Tum denemeler tukendi: isi failed klasorune al, sunucuya HATA bildir (panelde uyari olur)
+
+    // ============================================================
+    //  ADIM ADIM GUNLUK
+    //  Bir isin istemcideki yolculugunu ANLIK ve ACIKLAMALI yazar:
+    //     [n/7] ETIKET   deger      -> ne yapildiginin aciklamasi
+    //  Boylece "cikti gelmedi" dendiginde hangi adima kadar gelindigi
+    //  tartismasiz gorulur. Kapatmak icin Print360.ini icine
+    //  AyrintiliGunluk=0 yazilabilir.
+    // ============================================================
+    const int ADIM_SAYISI = 7;
+    static bool? _ayrintili;
+
+    static bool AyrintiliMi()
+    {
+        if (_ayrintili == null)
+        {
+            bool a = true;
+            try
+            {
+                var cfg = ReadIni();
+                if (cfg.ContainsKey("AyrintiliGunluk")) a = cfg["AyrintiliGunluk"].Trim() != "0";
+            }
+            catch { }
+            _ayrintili = a;
+        }
+        return _ayrintili.Value;
+    }
+
+    static void Adim(int no, string etiket, string deger, string aciklama)
+    {
+        if (!AyrintiliMi()) return;
+        Log(string.Format("[{0}/{1}] {2,-12} {3}{4}",
+            no, ADIM_SAYISI, etiket, deger,
+            string.IsNullOrEmpty(aciklama) ? "" : "   -> " + aciklama));
+    }
+
     static void Basarisiz(string file, string fname, string yazici, string neden)
     {
         try
@@ -1107,6 +1152,10 @@ static class ClientAgent
                     }
                     File.Move(tmp, hedef);
                     indirmeBitis = kron.ElapsedMilliseconds;
+                    Adim(1, "IS BULUNDU", fname,
+                         "sunucu kuyrugunda bekleyen is alindi (yanit " + basligaKadar + " ms)");
+                    Adim(2, "INDIRILDI", (ham > 0 ? (ham / 1024) : 0) + " KB -> " + (acilmis / 1024) + " KB",
+                         "sikistirilmis veri indirilip acildi (" + (indirmeBitis - basligaKadar) + " ms)");
                     Log(string.Format(
                         "Is alindi [HTTPS]: {0}  |  sunucu yaniti {1} ms  |  indirme {2} ms  |  {3} KB sikistirilmis -> {4} KB",
                         fname, basligaKadar, indirmeBitis - basligaKadar,
@@ -1125,7 +1174,12 @@ static class ClientAgent
                             wc.UploadString(baseUrl + "/api/jobs/done" + qs + "&id=" + id, "POST", "");
                         onayOk = true;
                         if (!zatenVar)
+                        {
+                            Adim(3, "ONAYLANDI", fname,
+                                 "sunucuya teslim onayi gonderildi; is kuyruktan dusuruldu ("
+                                 + (kron.ElapsedMilliseconds - indirmeBitis) + " ms)");
                             Log("Onay gonderildi: " + fname + "  (" + (kron.ElapsedMilliseconds - indirmeBitis) + " ms)");
+                        }
                     }
                     catch (WebException wex)
                     {
