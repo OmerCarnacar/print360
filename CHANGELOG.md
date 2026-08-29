@@ -10,6 +10,45 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [2026.08.29.1257]
+
+### ⚠️ Bazı makinelerde uzak masaüstü açılmıyordu
+
+Bazı bilgisayarlarda **mstsc.exe hiç açılmıyordu.** Kullanıcının bunu Print360
+ile ilişkilendirmesi mümkün değildi.
+
+**Sebep:** kurulum, RDP sanal kanal eklentisini iki kayıt dalına birden
+yazıyordu:
+
+```
+SOFTWARE\Microsoft\...\AddIns\Print360              (64-bit görünüm)
+SOFTWARE\WOW6432Node\Microsoft\...\AddIns\Print360  (32-bit görünüm)
+```
+
+`Print360.VC.dll` ise **yalnızca x64**. `mstsc.exe`, bu anahtarda kayıtlı DLL'i
+kendi mimarisinde yüklemeye çalışır; 32-bit mstsc 64-bit DLL'i yükleyemeyince
+uzak masaüstü hiç açılmıyordu.
+
+İkinci risk: kayıt varken dosya yoksa (yarım kaldırma, dosyanın silinmesi, virüs
+tarayıcının karantinaya alması) aynı arıza oluşuyordu.
+
+**Düzeltmeler:**
+- Kurulum artık DLL'in gerçek mimarisini PE başlığından okuyup **yalnızca doğru
+  dala** yazıyor. Önceki sürümlerin yanlış dala yazdığı kayıt varsa kurulum
+  sırasında temizleniyor — o makinelerde RDP tekrar açılıyor.
+- İstemci ajanı her açılışta kaydı doğruluyor: kayıt var ama dosya yoksa kaydı
+  kaldırıp günlüğe `ONARIM` satırı yazıyor. Bozuk kalmış makineler kendiliğinden
+  düzeliyor.
+
+**Doğrulama:** `tests/PeMimari.cs` — PE mimari okuyucusu Windows'un kendi
+ikilileriyle karşılaştırılarak test edildi (`System32
+otepad.exe` → x64,
+`SysWOW64
+otepad.exe` → x86, `Print360.VC.dll` → x64) ve x64 DLL için seçilen
+dalın `WOW6432Node` olmadığı denetlendi.
+
+---
+
 ## [2026.08.22.1135]
 
 ### Eklenenler

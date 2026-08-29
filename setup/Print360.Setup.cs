@@ -323,15 +323,43 @@ static class Kurulum
         {
             string vcDll = Path.Combine(BASE, "Print360.VC.dll");
             KopyalaVarsa(vcSrc, vcDll);
+
+            // ONEMLI - RDP ISTEMCISI ACILMAMA RISKI
+            // mstsc.exe, AddIns altinda kayitli DLL'i KENDI MIMARISINDE yuklemeye
+            // calisir. 64-bit DLL'i 32-bit mstsc'ye kaydedersek yukleme basarisiz
+            // olur ve UZAK MASAUSTU HIC ACILMAZ. Bu yuzden kayit, DLL'in gercek
+            // mimarisine gore YALNIZCA dogru dala yazilir.
+            //   x64 DLL -> SOFTWARE\Microsoft\...            (64-bit gorunum)
+            //   x86 DLL -> SOFTWARE\WOW6432Node\Microsoft\... (32-bit gorunum)
+            bool altmisDort = PeX64(vcDll);
+            string dogruKok = altmisDort
+                ? @"SOFTWARE\Microsoft\Terminal Server Client\Default\AddIns\Print360"
+                : @"SOFTWARE\WOW6432Node\Microsoft\Terminal Server Client\Default\AddIns\Print360";
+            string yanlisKok = altmisDort
+                ? @"SOFTWARE\WOW6432Node\Microsoft\Terminal Server Client\Default\AddIns\Print360"
+                : @"SOFTWARE\Microsoft\Terminal Server Client\Default\AddIns\Print360";
+
+            // Onceki surumlerin yanlis dala yazdigi kayit varsa TEMIZLE - aksi
+            // halde o makinede RDP acilmamaya devam ederdi.
+            try
+            {
+                string ust = yanlisKok.Substring(0, yanlisKok.LastIndexOf(Path.DirectorySeparatorChar));
+                using (var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(ust, true))
+                    if (k != null && Array.IndexOf(k.GetSubKeyNames(), "Print360") >= 0)
+                    {
+                        k.DeleteSubKeyTree("Print360", false);
+                        Yaz("  Uyumsuz mimarideki eski kayit temizlendi (RDP acilmama sebebi).");
+                    }
+            }
+            catch { }
+
             int kayitOk = 0;
-            foreach (var kok in new[] { @"SOFTWARE\Microsoft\Terminal Server Client\Default\AddIns\Print360",
-                                        @"SOFTWARE\WOW6432Node\Microsoft\Terminal Server Client\Default\AddIns\Print360" })
-                try
-                {
-                    using (var k = Microsoft.Win32.Registry.LocalMachine.CreateSubKey(kok))
-                        if (k != null) { k.SetValue("Name", vcDll); kayitOk++; }
-                }
-                catch (Exception ex) { Yaz("  Kayit yazilamadi (" + kok + "): " + ex.Message); }
+            try
+            {
+                using (var k = Microsoft.Win32.Registry.LocalMachine.CreateSubKey(dogruKok))
+                    if (k != null) { k.SetValue("Name", vcDll); kayitOk++; }
+            }
+            catch (Exception ex) { Yaz("  Kayit yazilamadi (" + dogruKok + "): " + ex.Message); }
             if (kayitOk > 0)
                 Yaz("[3/5] RDP kanal eklentisi kuruldu (sonraki RDP oturumunda etkinlesir).");
             else
@@ -915,6 +943,27 @@ static class Kurulum
             Yaz("  Yazdirma motoru indirildi: SumatraPDF");
         }
         catch (Exception ex) { Uyari("Yazdirma motoru indirilemedi (" + ex.Message + "). Internet baglaninca tekrar kurun."); }
+    }
+
+
+    // Bir DLL'in 64-bit olup olmadigini PE basligindan okur.
+    // Yanlis mimarideki bir AddIn, mstsc.exe'nin hic acilmamasina yol acar.
+    static bool PeX64(string dosya)
+    {
+        try
+        {
+            using (var fs = new FileStream(dosya, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var br = new BinaryReader(fs))
+            {
+                fs.Position = 0x3C;
+                int pe = br.ReadInt32();
+                fs.Position = pe;
+                if (br.ReadUInt32() != 0x00004550) return true;   // PE imzasi degilse karisma
+                ushort makine = br.ReadUInt16();
+                return makine == 0x8664 || makine == 0xAA64;      // x64 veya ARM64
+            }
+        }
+        catch { return true; }   // okunamadiysa varsayilan: 64-bit
     }
 
     static void IzinVer(string yol)

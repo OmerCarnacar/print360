@@ -139,6 +139,45 @@ static class ClientAgent
     //   kanal kapaninca siler. Isaret varsa her sey RDP kanalindan gider
     //   (IP/port/HTTPS gerekmez); yoksa otomatik HTTPS'e dusulur.
     //   Boylece eklenti kurulu olmayan makinede sistem sessizce olmez.
+
+    // ============================================================
+    //  RDP EKLENTI SAGLIK DENETIMI  (her aciliste)
+    //  mstsc.exe, AddIns altinda kayitli DLL'i acilirken YUKLER. Kayit
+    //  varken dosya yoksa (yarim kaldirma, dosyanin silinmesi, virus
+    //  tarayicinin karantinaya almasi) UZAK MASAUSTU HIC ACILMAZ.
+    //  Bu, kullanicinin Print360 ile iliskilendirmeyecegi bir arizadir.
+    //  Bu yuzden ajan her aciliste kaydi dogrular ve bozuksa TEMIZLER.
+    // ============================================================
+    static void RdpEklentiSagligi()
+    {
+        string[] koklar = {
+            @"SOFTWARE\Microsoft\Terminal Server Client\Default\AddIns\Print360",
+            @"SOFTWARE\WOW6432Node\Microsoft\Terminal Server Client\Default\AddIns\Print360"
+        };
+        foreach (string kok in koklar)
+        {
+            try
+            {
+                string yol = null;
+                using (var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(kok))
+                    if (k != null) yol = Convert.ToString(k.GetValue("Name"));
+                if (string.IsNullOrEmpty(yol)) continue;
+                if (File.Exists(yol)) continue;
+
+                // Kayit var, dosya yok -> RDP acilmayabilir. Kaydi kaldir.
+                string ust = kok.Substring(0, kok.LastIndexOf(Path.DirectorySeparatorChar));
+                using (var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(ust, true))
+                    if (k != null)
+                    {
+                        k.DeleteSubKeyTree("Print360", false);
+                        Log("ONARIM: RDP eklenti kaydi bozuktu (dosya yok: " + yol + "). "
+                          + "Kayit kaldirildi - uzak masaustu artik normal acilir.");
+                    }
+            }
+            catch (Exception ex) { Log("RDP eklenti denetimi: " + ex.Message); }
+        }
+    }
+
     static bool VcAcik(Dictionary<string, string> cfg)
     {
         string m = cfg.ContainsKey("VCMode") ? cfg["VCMode"].Trim().ToLowerInvariant() : "auto";
@@ -214,6 +253,7 @@ static class ClientAgent
             Directory.CreateDirectory(Path.Combine(baseDir, "logs"));
             Directory.CreateDirectory(Path.Combine(baseDir, "stats"));
             Log("Ajan basladi (v" + Surum.Etiket + "). Izlenen klasor: " + jobsDir);
+        RdpEklentiSagligi();   // bozuk kayit RDP'yi actirmaz - onar
             VarsayilanYaziciyiKurDefaults();   // istemcide her zaman bir varsayilan bulunsun
             new Thread(RdpIzleyici) { IsBackground = true }.Start();   // RDP acilir acilmaz algila
             new Thread(HeartbeatLoop) { IsBackground = true }.Start();
