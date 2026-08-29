@@ -81,6 +81,10 @@ static class Kurulum
         {
             Yaz("KURULUM HATASI: " + ex.Message);
             Yaz(ex.ToString());
+            // Temizlik adiminda otomatik baslatmayi askiya almistik. Kurulum
+            // yarida kalirsa bunu GERI ALMAK sart: aksi halde gorev devre disi
+            // kalir, ajan hic baslamaz ve sistem sessizce calismaz olur.
+            try { Calistir("schtasks.exe", "/Change /TN \"Print360 Yazdirma Ajani\" /ENABLE", 20); } catch { }
             Console.Error.WriteLine(ex.Message);
             return 1;
         }
@@ -423,8 +427,25 @@ static class Kurulum
     static void EskiSurumuTemizle(bool sunucu)
     {
         if (!Directory.Exists(BASE)) return;
+
+        // SIRA ONEMLI: once OTOMATIK BASLATMA askiya alinir, sonra surecler
+        // durdurulur. Aksi halde zamanlanmis gorev (oturum acilisi / RDP
+        // baglantisi tetikleyicisi) ajani biz dosyalari kopyalarken yeniden
+        // baslatabiliyor; exe kilitli kaliyor, kopyalama sessizce basarisiz
+        // oluyor ve kurulum "tamamlandi" dedigi halde ESKI SURUM calismaya
+        // devam ediyordu.
+        // Yalnizca SUNUCUDA zamanlanmis gorev vardir; istemci Run kaydi kullanir.
+        // Istemcide bu cagri "gorev bulunamadi" hatasi uretip gunluge yanilticii
+        // bir satir dusuruyordu.
+        if (sunucu) Calistir("schtasks.exe", "/Change /TN \"Print360 Yazdirma Ajani\" /DISABLE", 20);
+
         SurecDurdur("Print360.ServerAgent", "Print360.Dashboard", "Print360.Panel", "Print360.ClientAgent");
         System.Threading.Thread.Sleep(800);   // dosya kilitleri birakilsin
+
+        // Durmayan bir surec varsa dosyalar kilitli kalir; zorla durdur.
+        foreach (var a in new[] { "Print360.ServerAgent", "Print360.Dashboard", "Print360.Panel", "Print360.ClientAgent" })
+            foreach (var pr in Process.GetProcessesByName(a))
+                try { pr.Kill(); pr.WaitForExit(4000); } catch { }
 
         int silinen = 0;
         foreach (var f in Directory.GetFiles(BASE))
@@ -436,9 +457,28 @@ static class Kurulum
             try { File.Delete(f); silinen++; }
             catch (Exception ex) { Uyari("Eski dosya silinemedi (" + ad + "): " + ex.Message + " - calisiyor olabilir."); }
         }
-        // Gecici klasorler: bayat isler yeni surumle karismasin
-        foreach (var k in new[] { "update", "spool", "queue" })
-            silinen += KlasorBosalt(Path.Combine(BASE, k));
+        // SADECE "update" bosaltilir: orada otomatik guncelleme icin indirilen
+        // gecici ikililer durur, yeni surumle karismamalidir.
+        //
+        // "queue" ve "spool" ARTIK SILINMIYOR. Buralarda KULLANICI VERISI var:
+        //   queue = istemciye henuz teslim edilmemis baski isleri
+        //   spool = yakalanmis ama gonderilmemis ciktilar
+        // Eski surumde bunlar her guncellemede siliniyordu; yani sunucuyu
+        // guncelleyen yonetici, kullanicilarin bekleyen ciktilarini farkinda
+        // olmadan yok ediyordu. Guncelleme veri kaybettirmemelidir.
+        silinen += KlasorBosalt(Path.Combine(BASE, "update"));
+
+        int bekleyen = 0;
+        try
+        {
+            string q = Path.Combine(BASE, "queue");
+            if (Directory.Exists(q)) bekleyen = Directory.GetFiles(q, "*.gz", SearchOption.AllDirectories).Length;
+            string sp = Path.Combine(BASE, "spool");
+            if (Directory.Exists(sp)) bekleyen += Directory.GetFiles(sp).Length;
+        }
+        catch { }
+        if (bekleyen > 0)
+            Yaz("  Bekleyen " + bekleyen + " is KORUNDU (kuyruk ve spool silinmedi).");
 
         Yaz("[0/" + (sunucu ? "8" : "5") + "] Eski surum temizlendi (" + silinen +
             " dosya silindi; gunlukler, arsiv ve ayarlar korundu).");
@@ -473,6 +513,23 @@ static class Kurulum
         AgTemizle();
         BinaryleriSil();
         SurecDogrula("Print360.ServerAgent", "Print360.Dashboard", "Print360.Panel");
+
+        // Kaldirmadan sonra kuyrukta teslim edilmemis is kaldiysa bunu SOYLE.
+        // Sessiz kalmak, kullanicinin ciktisinin nereye gittigini bilememesi
+        // demekti; dosyalar duruyor, sadece kimse haber vermiyordu.
+        try
+        {
+            string q = Path.Combine(BASE, "queue");
+            if (Directory.Exists(q))
+            {
+                int kalan = Directory.GetFiles(q, "*.gz", SearchOption.AllDirectories).Length;
+                if (kalan > 0)
+                    Yaz("  NOT: Teslim edilmemis " + kalan + " is kuyrukta duruyor (" + q + "). "
+                      + "Silinmedi; Print360 tekrar kurulursa teslim edilir.");
+            }
+        }
+        catch { }
+
         Yaz("Sunucu bilesenleri kaldirildi. Gunlukler, arsiv ve istatistikler " + BASE + " altinda KORUNDU.");
     }
 
@@ -1000,15 +1057,38 @@ static class Kurulum
         SadeceYoneticiOkunur(dosya);
     }
 
+    // Bir ikiliyi yerine koyar ve SONUCU DOGRULAR.
+    // Dosya kilitliyse (ajan yeniden baslamis olabilir) tek denemede pes etmek,
+    // kurulumun "tamamlandi" deyip ESKI SURUMU calisir birakmasina yol aciyordu.
+    // Bu yuzden birkaç kez denenir; yine olmazsa bu bir UYARI degil, gercek bir
+    // kurulum hatasidir ve oyle bildirilir.
     static void KopyalaVarsa(string kaynak, string hedef)
     {
-        try
+        if (!File.Exists(kaynak)) { Yaz("  (atlandi, yok): " + kaynak); return; }
+        string sonHata = null;
+        for (int deneme = 1; deneme <= 4; deneme++)
         {
-            if (!File.Exists(kaynak)) { Yaz("  (atlandi, yok): " + kaynak); return; }
-            Directory.CreateDirectory(Path.GetDirectoryName(hedef));
-            File.Copy(kaynak, hedef, true);
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(hedef));
+                File.Copy(kaynak, hedef, true);
+
+                // Gercekten yerine gecti mi? Boyut ve zaman damgasi karsilastir.
+                var k = new FileInfo(kaynak);
+                var h = new FileInfo(hedef);
+                if (h.Exists && h.Length == k.Length) return;
+                sonHata = "kopyalandi ama boyut tutmuyor";
+            }
+            catch (Exception ex)
+            {
+                sonHata = ex.Message;
+                // Kilidi birakmasi icin bekle; surec yeniden basladiysa durdur.
+                SurecDurdur(Path.GetFileNameWithoutExtension(hedef));
+                System.Threading.Thread.Sleep(400 * deneme);
+            }
         }
-        catch (Exception ex) { Uyari("Kopyalanamadi " + Path.GetFileName(kaynak) + ": " + ex.Message); }
+        Uyari("GUNCELLENEMEDI: " + Path.GetFileName(hedef) + " (" + sonHata + "). "
+            + "Bu dosya ESKI SURUMDE kaldi. Bilgisayari yeniden baslatip kurulumu tekrarlayin.");
     }
 
     static void SurecDurdur(params string[] adlar)

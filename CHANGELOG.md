@@ -10,6 +10,40 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [2026.08.29.1316]
+
+### 🐞 Kurulum, üzerine kurulum ve kaldırma akışları düzeltildi
+
+Üç akış baştan sona incelendi; dört gerçek kusur bulundu.
+
+**1. Üzerine kurulum bekleyen işleri siliyordu — veri kaybı.** Temizlik adımı
+`queue` ve `spool` klasörlerini boşaltıyordu. Bunlar kullanıcı verisidir:
+`queue` = istemciye teslim edilmemiş baskı işleri, `spool` = yakalanmış ama
+gönderilmemiş çıktılar. Sunucuyu güncelleyen yönetici, kullanıcıların bekleyen
+çıktılarını farkında olmadan yok ediyordu. Artık yalnızca `update` boşaltılıyor
+ve korunan iş sayısı günlüğe yazılıyor.
+
+**2. Eski sürüm çalışmaya devam edebiliyordu.** Temizlik süreçleri durduruyor
+ama otomatik başlatmayı kapatmıyordu; zamanlanmış görev ajanı dosyalar
+kopyalanırken yeniden başlatabiliyor, exe kilitli kalıyor ve kopyalama
+başarısız oluyordu — kurulum yine "tamamlandı" diyordu. Artık görev önce askıya
+alınıyor, kurulum sonunda yeniden kuruluyor; kurulum yarıda kalırsa hata yolunda
+tekrar etkinleştiriliyor.
+
+**3. Kopyalama sessizce başarısız olabiliyordu.** Tek denemede pes edip yalnızca
+uyarı yazıyordu. Artık dört kez deneniyor, kilitli süreç durduruluyor ve kopyanın
+boyutu doğrulanıyor; yine olmazsa *"bu dosya eski sürümde kaldı"* diye açıkça
+bildiriliyor.
+
+**4. Kaldırmada bekleyen işler sessizce kalıyordu.** Kuyrukta teslim edilmemiş iş
+varsa artık söyleniyor; dosyalar silinmiyor, tekrar kurulunca teslim ediliyor.
+
+**Doğrulama:** kuyruğa ve spool'a bekleyen işler konup üzerine kurulum yapıldı —
+`queue` ve `spool` korundu, `update` temizlendi, günlük *"Bekleyen 2 iş KORUNDU"*
+yazdı ve kurulum tek satırla bitti.
+
+---
+
 ## [2026.08.29.1257]
 
 ### ⚠️ Bazı makinelerde uzak masaüstü açılmıyordu
