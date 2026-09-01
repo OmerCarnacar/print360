@@ -501,6 +501,40 @@ static class Dashboard
     // yoksa kuyruk klasoru bulunamaz (is istemciye gitmez).
 
     // ---------------------------------------------------------------------
+    // ASCII IS KIMLIGI (Base64Url)
+    // Turkce harfler HTTP basliklarinda (ASCII tasir), sorgu dizesinde (kod
+    // sayfasina gore cozulur) ve araya giren her katmanda bozulabiliyor. Kokten
+    // cozum: kimlik olarak ADIN KENDISINI tasimamak. Dosya adinin UTF-8
+    // baytlarini Base64Url ile kodluyoruz; ortaya cikan kimlikte yalnizca
+    // A-Z a-z 0-9 - _ bulunur, yani hicbir kod sayfasi onu degistiremez.
+    static string B64Kodla(string s)
+    {
+        string b = Convert.ToBase64String(Encoding.UTF8.GetBytes(s));
+        return b.Replace('+', '-').Replace('/', '_').TrimEnd('=');
+    }
+
+    // Kimligi coz. Base64Url degilse null doner (eski surum istemciler adi
+    // duz gonderebilir; cagiran taraf o zaman ham degeri kullanir).
+    static string B64Coz(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return null;
+        for (int i = 0; i < s.Length; i++)
+        {
+            char c = s[i];
+            bool gecerli = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+                        || (c >= '0' && c <= '9') || c == '-' || c == '_';
+            if (!gecerli) return null;
+        }
+        string b = s.Replace('-', '+').Replace('_', '/');
+        int kalan = b.Length % 4;
+        if (kalan == 1) return null;
+        if (kalan == 2) b += "==";
+        else if (kalan == 3) b += "=";
+        try { return Encoding.UTF8.GetString(Convert.FromBase64String(b)); }
+        catch { return null; }
+    }
+
+    // ---------------------------------------------------------------------
     // SORGU DIZESI COZUMU (UTF-8)
     // HttpListener.QueryString, yuzde-kodlu degerleri ISLETIM SISTEMININ ANSI
     // kod sayfasiyla cozer (Turkce sunucuda windows-1254). Istemci adlari ise
@@ -597,7 +631,10 @@ static class Dashboard
                 // yeniden veriliyordu ("ilk yazdirma oluyor, devami gelmiyor").
                 // Cozum: adlari yuzde-kodlayarak ASCII yapiyoruz. Istemci kimligi
                 // aynen geri gonderir; sorgu dizesi cozumlemesi orijinali verir.
-                ctx.Response.AddHeader("X-Job-Id", "F:" + Uri.EscapeDataString(Path.GetFileName(dosyaYol)));
+                // KIMLIK SAF ASCII'DIR (Base64Url): hicbir kod sayfasi bozamaz.
+                ctx.Response.AddHeader("X-Job-Id", "F:" + B64Kodla(Path.GetFileName(dosyaYol)));
+                ctx.Response.AddHeader("X-File-Name-B64", B64Kodla(dosyaAd));
+                // Eski istemciler icin geriye uyumluluk (yuzde-kodlu).
                 ctx.Response.AddHeader("X-File-Name", Uri.EscapeDataString(dosyaAd));
                 ctx.Response.ContentLength64 = fdata.Length;
                 ctx.Response.OutputStream.Write(fdata, 0, fdata.Length);
@@ -656,7 +693,10 @@ static class Dashboard
             if (ham.StartsWith("F:"))
             {
                 // Dosya kuyrugu onayi (MSSQL gerekmez): yalnizca dosya adi kabul edilir
-                string ad = Path.GetFileName(ham.Substring(2));   // yol gecisi engellenir
+                // Kimlik Base64Url ise coz; degilse (eski surum istemci) ham ad.
+                string kimlik = ham.Substring(2);
+                string cozulmus = B64Coz(kimlik);
+                string ad = Path.GetFileName(cozulmus != null ? cozulmus : kimlik);   // yol gecisi engellenir
                 string qDirOnay = Path.Combine(@"C:\Print360\queue", Sanitize(machine));
                 string yol2 = Path.Combine(qDirOnay, ad);
                 // Silme birkac kez denenir: dosya o anda baska bir istek tarafindan

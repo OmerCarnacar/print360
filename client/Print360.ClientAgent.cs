@@ -1123,6 +1123,28 @@ static class ClientAgent
 
     // Yuzde-kodlu adi coz. Eski sunucular kodsuz gonderir; "%" yoksa oldugu
     // gibi birakilir, boylece surum karisimi da calisir.
+    // ASCII IS KIMLIGI (Base64Url) - sunucudaki B64Kodla/B64Coz ile ayni.
+    // Turkce harfler HTTP basliginda ve sorgu dizesinde bozulabiliyordu; kimlik
+    // ve ad artik yalnizca A-Z a-z 0-9 - _ karakterleriyle tasiniyor.
+    static string B64Coz(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return null;
+        for (int i = 0; i < s.Length; i++)
+        {
+            char c = s[i];
+            bool gecerli = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+                        || (c >= '0' && c <= '9') || c == '-' || c == '_';
+            if (!gecerli) return null;
+        }
+        string b = s.Replace('-', '+').Replace('_', '/');
+        int kalan = b.Length % 4;
+        if (kalan == 1) return null;
+        if (kalan == 2) b += "==";
+        else if (kalan == 3) b += "=";
+        try { return Encoding.UTF8.GetString(Convert.FromBase64String(b)); }
+        catch { return null; }
+    }
+
     static string CozKodlu(string s)
     {
         if (string.IsNullOrEmpty(s) || s.IndexOf('%') < 0) return s;
@@ -1174,8 +1196,10 @@ static class ClientAgent
                 // Turkce harfler aksi halde bozuluyordu ve onay eslesmiyordu).
                 // Kimlik AYNEN geri gonderilir - kodlu hali zaten URL-guvenli.
                 string id = resp.Headers["X-Job-Id"] ?? "";
-                string fnameHam = resp.Headers["X-File-Name"] ?? (id + ".pdf");
-                string fname = CozKodlu(fnameHam);
+                // Once SAF ASCII basligi (yeni sunucu), yoksa yuzde-kodlu (eski sunucu).
+                string fnameB64 = resp.Headers["X-File-Name-B64"];
+                string fname = (fnameB64 != null) ? B64Coz(fnameB64) : null;
+                if (fname == null) fname = CozKodlu(resp.Headers["X-File-Name"] ?? (id + ".pdf"));
                 foreach (char c in Path.GetInvalidFileNameChars()) fname = fname.Replace(c, '_');
                 string hedef = Path.Combine(jobsDir, fname);
                 bool zatenVar = File.Exists(hedef) || File.Exists(Path.Combine(doneDir, fname));
