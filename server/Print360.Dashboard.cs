@@ -172,7 +172,7 @@ static class Dashboard
     {
         try
         {
-            string machine = ctx.Request.QueryString["machine"] ?? "bilinmeyen";
+            string machine = Q(ctx, "machine") ?? "bilinmeyen";
             bool ilkKayitP;
             if (!ClientAuth(ctx, machine, out ilkKayitP)) return;
             foreach (char c in Path.GetInvalidFileNameChars()) machine = machine.Replace(c, '_');
@@ -401,7 +401,7 @@ static class Dashboard
     static bool ClientAuth(HttpListenerContext ctx, string machine, out bool ilkKayit)
     {
         ilkKayit = false;
-        string key = ctx.Request.QueryString["key"] ?? "";
+        string key = Q(ctx, "key") ?? "";
         var o = Db.Scalar("SELECT AnahtarHash FROM ClientKeys WHERE Makine=@m", "@m", machine);
         if (o == null && Db.Err != null) return true; // SQL yok -> eski davranis (CSV modu)
         string hash = key.Length > 0 ? Sha256Hex(key) : "";
@@ -450,7 +450,7 @@ static class Dashboard
     {
         try
         {
-            string machine = (ctx.Request.QueryString["machine"] ?? "?").Trim();
+            string machine = (Q(ctx, "machine") ?? "?").Trim();
             bool ilk;
             if (!ClientAuth(ctx, machine, out ilk)) return;
             string body;
@@ -499,6 +499,38 @@ static class Dashboard
 
     // Makine adini klasor adina cevir. ServerAgent.Sanitize ile AYNI olmali;
     // yoksa kuyruk klasoru bulunamaz (is istemciye gitmez).
+
+    // ---------------------------------------------------------------------
+    // SORGU DIZESI COZUMU (UTF-8)
+    // HttpListener.QueryString, yuzde-kodlu degerleri ISLETIM SISTEMININ ANSI
+    // kod sayfasiyla cozer (Turkce sunucuda windows-1254). Istemci adlari ise
+    // UTF-8 ile kodlar. Bu yuzden "%C4%B1" (Turkce i) sunucuda iki bozuk
+    // karaktere donusuyordu; onaylanan is kuyrukta BULUNAMIYOR, "dosya yok =
+    // zaten silinmis" sanilip OK donuluyor ve AYNI IS SONSUZA KADAR yeniden
+    // veriliyordu ("ilk yazdirma oluyor, devami gelmiyor").
+    // Cozum: sorguyu HAM URL'den kendimiz UTF-8 ile cozuyoruz.
+    static string Q(HttpListenerContext ctx, string ad)
+    {
+        try
+        {
+            string raw = ctx.Request.RawUrl;
+            if (raw == null) return null;
+            int s = raw.IndexOf('?');
+            if (s < 0) return null;
+            string[] parcalar = raw.Substring(s + 1).Split('&');
+            for (int i = 0; i < parcalar.Length; i++)
+            {
+                int e = parcalar[i].IndexOf('=');
+                if (e < 0) continue;
+                if (!string.Equals(parcalar[i].Substring(0, e), ad, StringComparison.OrdinalIgnoreCase)) continue;
+                string deger = parcalar[i].Substring(e + 1).Replace("+", "%20");
+                try { return Uri.UnescapeDataString(deger); } catch { return deger; }
+            }
+            return null;
+        }
+        catch { return null; }
+    }
+
     static string Sanitize(string s)
     {
         foreach (char c in Path.GetInvalidFileNameChars()) s = s.Replace(c, '_');
@@ -525,7 +557,7 @@ static class Dashboard
     {
         try
         {
-            string machine = (ctx.Request.QueryString["machine"] ?? "?").Trim();
+            string machine = (Q(ctx, "machine") ?? "?").Trim();
             bool ilk;
             if (!ClientAuth(ctx, machine, out ilk)) return;
 
@@ -617,10 +649,10 @@ static class Dashboard
     {
         try
         {
-            string machine = (ctx.Request.QueryString["machine"] ?? "?").Trim();
+            string machine = (Q(ctx, "machine") ?? "?").Trim();
             bool ilk;
             if (!ClientAuth(ctx, machine, out ilk)) return;
-            string ham = (ctx.Request.QueryString["id"] ?? "0").Trim();
+            string ham = (Q(ctx, "id") ?? "0").Trim();
             if (ham.StartsWith("F:"))
             {
                 // Dosya kuyrugu onayi (MSSQL gerekmez): yalnizca dosya adi kabul edilir
@@ -647,9 +679,21 @@ static class Dashboard
                     // "Dosya yok" ile "sildim" ayni sey DEGILDIR. Onaylanan is
                     // kuyrukta hic bulunamadiysa ad eslesmiyor demektir; bunu
                     // sessizce basari saymak sonsuz donguyu gizlerdi.
+                    // Ad eslesmiyorsa kuyrukta BASKA dosyalar durur. Bunu "OK"
+                    // saymak, ayni isin sonsuza kadar yeniden verilmesini SESSIZCE
+                    // gizler (sahada tam olarak bu yasandi). Kuyruk bossa gercekten
+                    // yapacak bir sey yoktur; doluysa bu bir HATADIR, oyle bildirilir.
                     if (!vardi)
+                    {
+                        string kuyrukta = KuyruktakiAdlar(qDirOnay);
                         Log("UYARI: Onaylanan is kuyrukta bulunamadi <- " + machine + " | aranan: " + ad
-                          + " | kuyrukta: " + KuyruktakiAdlar(qDirOnay));
+                          + " | kuyrukta: " + kuyrukta);
+                        if (kuyrukta != "(bos)" && kuyrukta != "(klasor yok)")
+                        {
+                            silindi = false;
+                            sonHata = "onaylanan is kuyrukta yok (ad eslesmiyor). Kuyrukta: " + kuyrukta;
+                        }
+                    }
                 }
                 if (silindi) Log("Onay alindi <- " + machine + " | " + ad + " | kuyruktan dusuruldu");
                 else
@@ -686,10 +730,10 @@ static class Dashboard
     {
         try
         {
-            string machine = (ctx.Request.QueryString["machine"] ?? "?").Trim();
-            string printer = ctx.Request.QueryString["printer"] ?? "";
-            string kUser = ctx.Request.QueryString["user"] ?? "";
-            string os = ctx.Request.QueryString["os"] ?? "";
+            string machine = (Q(ctx, "machine") ?? "?").Trim();
+            string printer = Q(ctx, "printer") ?? "";
+            string kUser = Q(ctx, "user") ?? "";
+            string os = Q(ctx, "os") ?? "";
             string ip = ctx.Request.RemoteEndPoint != null ? ctx.Request.RemoteEndPoint.Address.ToString() : "";
             bool ilkKayit;
             if (!ClientAuth(ctx, machine, out ilkKayit)) return;
@@ -2476,7 +2520,7 @@ static class Dashboard
     // Arsivdeki isin PDF'ini ac/indir (sunucu ajani her isi C:\Print360\archive'a gzipli kaydeder)
     static string ServePdf(HttpListenerContext ctx)
     {
-        string f = ctx.Request.QueryString["f"] ?? "";
+        string f = Q(ctx, "f") ?? "";
         foreach (char c in Path.GetInvalidFileNameChars()) f = f.Replace(c.ToString(), "");
         string yol = null;
         string root = @"C:\Print360\archive";
@@ -2633,8 +2677,8 @@ static class Dashboard
         var sent = LoadSent().Where(s => s.Status == "OK").ToList();
         DateTime from = DateTime.Today.AddDays(-29), to = DateTime.Now;
         DateTime tmp;
-        if (DateTime.TryParse(ctx.Request.QueryString["from"], out tmp)) from = tmp;
-        if (DateTime.TryParse(ctx.Request.QueryString["to"], out tmp)) to = tmp.Date.AddDays(1).AddSeconds(-1);
+        if (DateTime.TryParse(Q(ctx, "from"), out tmp)) from = tmp;
+        if (DateTime.TryParse(Q(ctx, "to"), out tmp)) to = tmp.Date.AddDays(1).AddSeconds(-1);
         var range = sent.Where(s => s.Time >= from && s.Time <= to).ToList();
         var sb = new StringBuilder("Gun;Cikti;Sayfa;Makine;Kullanici\r\n");
         foreach (var g in range.GroupBy(s => s.Time.Date).OrderBy(g => g.Key))

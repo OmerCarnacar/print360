@@ -1242,7 +1242,9 @@ static class ClientAgent
                             sonTekrarUyari = DateTime.Now;
                             Log("UYARI: Sunucu ayni isi tekrar veriyor (kuyruktan dusuremiyor): " + fname
                               + " | onay " + (onayOk ? "kabul edildi" : "REDDEDILDI")
-                              + " | sunucudaki C:/Print360/queue klasorunu ve izinlerini kontrol edin");
+                              + " | sunucu bu isi kuyruktan silemiyor. Once SUNUCU SURUMUNU"
+                              + " guncelleyin (2026.09.01.1248 ve ustu); duzelmezse sunucu"
+                              + " gunlugunde 'Onaylanan is kuyrukta bulunamadi' satirina bakin.");
                         }
                         return false;
                     }
