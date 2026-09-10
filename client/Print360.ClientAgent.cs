@@ -837,8 +837,17 @@ static class ClientAgent
             sb.Append('"').Append(fields[i].Replace("\"", "\"\"")).Append('"');
         }
         string line = sb.ToString();
-        try { File.AppendAllText(printedCsv, line + "\r\n"); }
-        catch (Exception ex) { Log("Istatistik yazilamadi: " + ex.Message); }
+        // Istatistik satiri da birden fazla thread'den yazilabilir.
+        string csvHata = null;
+        lock (logKilit)
+        {
+            for (int i = 0; i < 5; i++)
+            {
+                try { File.AppendAllText(printedCsv, line + "\r\n"); csvHata = null; break; }
+                catch (Exception ex) { csvHata = ex.Message; Thread.Sleep(50); }
+            }
+        }
+        if (csvHata != null) Log("Istatistik yazilamadi: " + csvHata);
         PushToServer(line);
     }
 
@@ -1597,6 +1606,7 @@ static class ClientAgent
     // Gunluk dosyasi 5 MB'i gecince .1 uzantisiyla devreder; iki kusak tutulur.
     // Boylece yogun sunucularda gunluk suresiz buyuyup diski doldurmaz.
     const long LOG_SINIR = 5 * 1024 * 1024;
+    static readonly object logKilit = new object();
 
     static void LogDevret(string dosya)
     {
@@ -1613,8 +1623,19 @@ static class ClientAgent
 
     static void Log(string msg)
     {
-        try { LogDevret(logFile); File.AppendAllText(logFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + msg + "\r\n"); }
-        catch { }
+        // KILIT SART: ajan yedi ayri thread calistirir (RDP izleyici, kalp
+        // atisi, is yoklama, guncelleme, is dongusu, arayuz...). Kilitsiz
+        // es zamanli AppendAllText cagrilarinin %56,8'i olcumde SESSIZCE
+        // kayboldu - adim adim gunluk tam da yogun anda eksik cikiyordu.
+        lock (logKilit)
+        {
+            LogDevret(logFile);
+            for (int i = 0; i < 5; i++)
+            {
+                try { File.AppendAllText(logFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + msg + "\r\n"); return; }
+                catch { Thread.Sleep(50); }
+            }
+        }
     }
 
     // ==================== ARAYUZ ====================

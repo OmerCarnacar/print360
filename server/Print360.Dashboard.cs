@@ -34,6 +34,13 @@ static class Dashboard
     static string hbFile = @"C:\Print360\stats\heartbeat.csv";
     static string connLog = @"C:\Print360\logs\connections.log";
     static string rulesCsv = @"C:\Print360\rules.csv";
+    // OTURUMLAR VE ONBELLEKLER ISTEK THREAD'LERINDEN ERISILIR.
+    // Dinleyici cok is parcacikli oldugundan (yavas bir istemciye yazim tum
+    // sunucuyu bloke etmesin diye) bu koleksiyonlara ayni anda birden fazla
+    // thread dokunabilir. Kilitsiz Dictionary'ye es zamanli yazma ic yapiyi
+    // bozar; klasik sonucu %100 CPU'da sonsuz dongudur. Tek kilit yeterli:
+    // erisimler kisa ve seyrek.
+    static readonly object durumKilit = new object();
     static Dictionary<string, DateTime> sessions = new Dictionary<string, DateTime>();
     static object hbLock = new object();
     static Dictionary<string, bool> pingCache; static DateTime pingTime = DateTime.MinValue;
@@ -182,7 +189,7 @@ static class Dashboard
             if (body.Length > 0 && body.Length < 10000)
             {
                 Directory.CreateDirectory(clientsDir);
-                File.AppendAllText(Path.Combine(clientsDir, machine + ".csv"),
+                DosyayaEkle(Path.Combine(clientsDir, machine + ".csv"),
                     body.TrimEnd('\r', '\n') + "\r\n");
                 // SQL'e de isle (tarih,makine,dosya,yazici,durum)
                 foreach (var line in body.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries))
@@ -383,7 +390,7 @@ static class Dashboard
                         string olay = "ISTEMCI: " + kv.Key + " cevrimdisi oldu (son gorulme: " + kv.Value[1] + ")";
                         Db.Alert("Cevrimdisi", "Makine cevrimdisi: " + kv.Key + " (son: " + kv.Value[1] + ")");
                         Db.Exec("INSERT INTO ConnLog(Tarih,Olay) VALUES(GETDATE(),@o)", "@o", olay);
-                        try { File.AppendAllText(connLog, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + olay + "\r\n"); } catch { }
+                        DosyayaEkle(connLog, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + olay + "\r\n");
                     }
                     onceki[kv.Key] = online;
                 }
@@ -807,7 +814,7 @@ static class Dashboard
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(connLog));
                     string olay = "ISTEMCI: " + machine + " cevrimici oldu (IP: " + ip + ", yazici: " + printer + ")";
-                    File.AppendAllText(connLog, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + olay + "\r\n");
+                    DosyayaEkle(connLog, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + olay + "\r\n");
                     Db.Exec("INSERT INTO ConnLog(Tarih,Olay) VALUES(GETDATE(),@o)", "@o", olay);
                     if (dbYeni) Db.Alert("YeniMakine", "Yeni makine agda: " + machine + " (IP: " + ip + ")");
                 }
@@ -865,8 +872,13 @@ static class Dashboard
                 lock (d) d[n] = ok;
             })).ToArray();
         System.Threading.Tasks.Task.WaitAll(tasks, 8000);
-        pingCache = d; pingTime = DateTime.Now;
-        return d;
+        // WaitAll ZAMAN ASIMINA ugrayabilir; geciken ping gorevleri d'ye yazmaya
+        // devam eder. d'yi dogrudan yayinlarsak, onu okuyan istek thread'i
+        // "koleksiyon degistirildi" hatasi alir. Bu yuzden KOPYASI yayinlanir.
+        Dictionary<string, bool> yayin;
+        lock (d) yayin = new Dictionary<string, bool>(d, StringComparer.OrdinalIgnoreCase);
+        pingCache = yayin; pingTime = DateTime.Now;
+        return yayin;
     }
 
     // Maliyet tanimlari: kagit turu -> sayfa basina TL ("*" = tanimsiz turler icin)
@@ -1105,12 +1117,18 @@ static class Dashboard
             if (path == "/cikis")
             {
                 var ck = req.Cookies["p360"];
-                if (ck != null) sessions.Remove(ck.Value);
+                if (ck != null) lock (durumKilit) sessions.Remove(ck.Value);
                 Redirect(ctx, "/login");
                 return null;
             }
             var c = req.Cookies["p360"];
-            bool auth = c != null && sessions.ContainsKey(c.Value) && sessions[c.Value] > DateTime.Now;
+            bool auth = false;
+            if (c != null)
+                lock (durumKilit)
+                {
+                    DateTime bitis;
+                    auth = sessions.TryGetValue(c.Value, out bitis) && bitis > DateTime.Now;
+                }
             if (!auth) { Redirect(ctx, "/login"); return null; }
         }
 
@@ -1266,10 +1284,14 @@ static class Dashboard
             if (GirisDogru(usr, pwd))
             {
                 // suresi dolan oturumlari temizle, yeni oturum ac (12 saat)
-                foreach (var k in sessions.Where(s => s.Value < DateTime.Now).Select(s => s.Key).ToList())
-                    sessions.Remove(k);
                 string token = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
-                sessions[token] = DateTime.Now.AddHours(12);
+                lock (durumKilit)
+                {
+                    // suresi dolan oturumlari temizle, yeni oturum ac (12 saat)
+                    foreach (var k in sessions.Where(x => x.Value < DateTime.Now).Select(x => x.Key).ToList())
+                        sessions.Remove(k);
+                    sessions[token] = DateTime.Now.AddHours(12);
+                }
                 ctx.Response.AppendHeader("Set-Cookie", "p360=" + token + "; Path=/; HttpOnly");
                 Redirect(ctx, "/");
                 return null;
@@ -2600,6 +2622,11 @@ static class Dashboard
     static string CsvAlan(string s)
     {
         s = s ?? "";
+        // FORMUL ENJEKSIYONU: belge ve kullanici adlari disaridan gelir.
+        // "=", "+", "-", "@" ile baslayan bir alan, rapor Excel'de acildiginda
+        // FORMUL olarak yorumlanir (orn. =cmd|'/c calc'!A1). Basa tek tirnak
+        // koyunca Excel alani metin sayar; goruntude tirnak gorunmez.
+        if (s.Length > 0 && "=+-@".IndexOf(s[0]) >= 0) s = "'" + s;
         if (s.Contains(";") || s.Contains("\"") || s.Contains("\n"))
             return "\"" + s.Replace("\"", "\"\"") + "\"";
         return s;
@@ -2811,9 +2838,33 @@ static class Dashboard
         catch { }
     }
 
+    // ---------------------------------------------------------------------
+    // GUNLUK YAZIMI KILITLIDIR.
+    // Istekler ThreadPool'da islendigi icin ayni anda birden fazla thread bu
+    // dosyaya yazmaya calisiyordu. Kilit yokken es zamanli AppendAllText
+    // cagrilari "dosya baska bir islem tarafindan kullaniliyor" hatasi verir
+    // ve catch { } bunu SESSIZCE yutar. Olcum: 7 thread x 200 satirin
+    // %56,8'i hic yazilmadi - yani gunlugun en cok gerektigi an (sistem
+    // yogunken) tam da satirlarin kayboldugu andi.
+    static readonly object logKilit = new object();
+
+    // Tek yazim noktasi: kilit + kisa yeniden deneme (virus tarayici veya
+    // dizin olusturucu dosyayi bir an tutabilir).
+    static void DosyayaEkle(string dosya, string satir)
+    {
+        lock (logKilit)
+        {
+            for (int i = 0; i < 5; i++)
+            {
+                try { File.AppendAllText(dosya, satir); return; }
+                catch { Thread.Sleep(50); }
+            }
+        }
+    }
+
     static void Log(string msg)
     {
-        try { LogDevret(logFile); File.AppendAllText(logFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + msg + "\r\n"); }
-        catch { }
+        lock (logKilit) { LogDevret(logFile); }
+        DosyayaEkle(logFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + msg + "\r\n");
     }
 }

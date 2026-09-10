@@ -972,6 +972,7 @@ static class ServerAgent
     // Gunluk dosyasi 5 MB'i gecince .1 uzantisiyla devreder; iki kusak tutulur.
     // Boylece yogun sunucularda gunluk suresiz buyuyup diski doldurmaz.
     const long LOG_SINIR = 5 * 1024 * 1024;
+    static readonly object logKilit = new object();
 
     static void LogDevret(string dosya)
     {
@@ -988,7 +989,16 @@ static class ServerAgent
 
     static void Log(string msg)
     {
-        try { LogDevret(logFile); File.AppendAllText(logFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + msg + "\r\n"); }
-        catch { }
+        // Kilit + yeniden deneme: ajan birden fazla thread calistirir; kilitsiz
+        // es zamanli yazimda satirlar sessizce kayboluyordu (bkz. Dashboard).
+        lock (logKilit)
+        {
+            LogDevret(logFile);
+            for (int i = 0; i < 5; i++)
+            {
+                try { File.AppendAllText(logFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + msg + "\r\n"); return; }
+                catch { Thread.Sleep(50); }
+            }
+        }
     }
 }

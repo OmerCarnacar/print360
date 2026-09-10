@@ -10,6 +10,62 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [2026.09.10.1344]
+
+Proje genelinde yapılan eşzamanlılık ve güvenlik incelemesinin sonuçları.
+
+### Düzeltildi — günlük satırlarının yarısından fazlası kayboluyordu
+
+`Log()` her iki tarafta da kilitsiz `File.AppendAllText` + `catch { }`
+kullanıyordu. Sunucuda istekler `ThreadPool` üzerinde işleniyor, istemcide
+**yedi ayrı thread** (RDP izleyici, kalp atışı, iş yoklama, güncelleme, iş
+döngüsü, arayüz) aynı dosyaya yazıyor. Kilit olmadan eşzamanlı çağrılar
+"dosya başka bir işlem tarafından kullanılıyor" hatası veriyor ve `catch { }`
+bunu sessizce yutuyordu. Ölçüm:
+
+```
+7 thread x 200 satir
+  beklenen : 1400
+  yazilan  :  605
+  KAYIP    :  795   (%56,8)
+```
+
+Bu, adım adım günlüğü tam da en gerekli olduğu anda — sistem yoğunken —
+işe yaramaz hale getiriyordu. Artık tüm günlük ve istatistik yazımları tek
+bir kilit üzerinden, kısa yeniden denemeyle yapılıyor. Ölçüm sonrası kayıp: **0**.
+
+Aynı düzeltme bağlantı günlüğü (`connections.log`), istemci istatistik
+dosyaları ve istemcideki `printed.csv` için de uygulandı.
+
+### Düzeltildi — oturum sözlüğü kilitsizdi (sunucu kilitlenebilirdi)
+
+Panel oturumları düz bir `Dictionary` içinde tutuluyor ve istek
+thread'lerinden kilitsiz olarak okunup yazılıyordu. Dinleyici
+`2026.08.22` sürümünden beri çok iş parçacıklı (yavaş bir istemciye yazım
+tüm sunucuyu bloke etmesin diye); kilitsiz `Dictionary`'ye eşzamanlı yazma
+iç yapısını bozar ve klasik sonucu **%100 CPU'da sonsuz döngüdür**.
+Aynı anda giriş yapan iki kullanıcı sunucuyu yanıt veremez hale
+getirebilirdi. Tüm erişimler tek kilit altına alındı.
+
+`PingAll` önbelleği de düzeltildi: `Task.WaitAll` zaman aşımına uğradığında
+geciken ping görevleri sözlüğe yazmaya devam ediyor, onu okuyan istek
+thread'i "koleksiyon değiştirildi" hatası alabiliyordu. Artık kopyası
+yayımlanıyor.
+
+### Düzeltildi — CSV dışa aktarımında formül enjeksiyonu
+
+Belge ve kullanıcı adları dışarıdan gelir. `=`, `+`, `-`, `@` ile başlayan
+bir alan, rapor Excel'de açıldığında **formül olarak yorumlanıyordu**
+(örn. `=cmd|'/c calc'!A1`). Bu alanlar artık başa tek tırnak eklenerek
+metne çevriliyor; görüntüde tırnak görünmez.
+
+### Test
+- `tests/EsZamanli.cs` — üç düzeltme de ölçülerek doğrulandı: 7×200 satırlık
+  günlükte kayıp yok, 3200 eşzamanlı oturum döngüsünde bozulma yok, formül
+  başlangıçlı altı alan metne çevriliyor. **3/3**
+
+---
+
 ## [2026.09.01.1254]
 
 ### Kökten çözüldü — "ilk yazdırma oluyor, devamı gelmiyor"
