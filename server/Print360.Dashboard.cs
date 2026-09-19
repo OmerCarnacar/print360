@@ -375,6 +375,13 @@ static class Dashboard
     static void BayatKuyrukTara()
     {
         if (!Directory.Exists(Kuyruk.Kok)) return;
+        foreach (string dolan in Kuyruk.SuresiDolanlariAyir())
+        {
+            string m = "Is " + (Kuyruk.SureSaat / 24) + " gundur teslim edilemedi, kuyruktan cikarildi (silinmedi): "
+                     + dolan + " | klasor: " + Kuyruk.SuresiDolanKok;
+            Log("UYARI: " + m);
+            Db.Alert("Kuyruk", m);
+        }
         foreach (var d in Directory.GetDirectories(Kuyruk.Kok))
         {
             string makine = Path.GetFileName(d);
@@ -668,9 +675,22 @@ static class Dashboard
                     // ayni dosyayi almasin: makine basina kilit.
                     lock (KuyrukKilidi(machine))
                     {
-                        var f = new DirectoryInfo(qDir).GetFiles("*.gz")
-                                  .OrderBy(x => x.CreationTimeUtc).FirstOrDefault();
-                        if (f != null) { dosyaYol = f.FullName; dosyaAd = f.Name.Substring(0, f.Name.Length - 3); }
+                        foreach (var f in new DirectoryInfo(qDir).GetFiles("*.gz").OrderBy(x => x.CreationTimeUtc))
+                        {
+                            // Ust uste verilip hic onaylanmayan is kuyrugu TIKAMASIN.
+                            string karantina;
+                            if (Kuyruk.SorunluysaAyir(f.FullName, out karantina))
+                            {
+                                string m = "Is " + Kuyruk.EnFazlaVerme + "+ kez verildi ama " + Kuyruk.EnAzDakika + " dakikadir HIC onaylanmadi; kuyrugu tikamamasi icin "
+                                         + "kenara alindi: " + f.Name.Replace(".gz", "") + " -> " + machine
+                                         + " | dosya: " + karantina + " | istemci gunlugune (C:\\Print360\\logs\\client.log) bakin";
+                                Log("UYARI: " + m);
+                                Db.Alert("Kuyruk", m);
+                                continue;
+                            }
+                            dosyaYol = f.FullName; dosyaAd = f.Name.Substring(0, f.Name.Length - 3);
+                            break;
+                        }
                     }
                 }
             }
@@ -795,7 +815,7 @@ static class Dashboard
                         }
                     }
                 }
-                if (silindi) Log("Onay alindi <- " + machine + " | " + ad + " | kuyruktan dusuruldu");
+                if (silindi) { Kuyruk.OnaylandiSay(yol2); Log("Onay alindi <- " + machine + " | " + ad + " | kuyruktan dusuruldu"); }
                 else
                 {
                     Log("ONAY ISLENEMEDI <- " + machine + " | " + ad + " | dosya silinemiyor: " + sonHata);
@@ -825,6 +845,44 @@ static class Dashboard
         catch (Exception ex) { Log("JobDone hatasi: " + ex.Message); try { ctx.Response.Close(); } catch { } }
     }
 
+    // AYNI ADLI IKI MAKINE. Klonlanmis Windows imajlari ayni bilgisayar adini
+    // tasir (DESKTOP-XXXX). Iki makine ayni adla baglanirsa AYNI KUYRUGU
+    // paylasirlar: cikti hangisi once yoklarsa ONA gider - yani bazen yanlis
+    // subedeki yazicidan cikar. Her istemci kurulumunun rastgele bir kimligi
+    // (iid) vardir; ayni ad kisa surede IKI FARKLI kimlikle gorulurse uyarilir.
+    static readonly Dictionary<string, string[]> sonKimlik = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+    static void AyniAdliMakineDenetle(string machine, string iid, string ip)
+    {
+        if (iid.Length == 0) return;                       // eski surum istemci
+        lock (sonKimlik)
+        {
+            // [0]=son kimlik [1]=son gorulme [2]=son ip [3]=son uyari [4]=onceki kimlik [5]=onceki ip
+            // Tek bir degisim (A->B) yeniden kurulum olabilir; uyarmayiz.
+            // GERI DONUS (A->B->A, 3 dk icinde) iki makinenin de CANLI oldugunu kanitlar.
+            string[] k;
+            if (!sonKimlik.TryGetValue(machine, out k))
+            {
+                sonKimlik[machine] = new[] { iid, DateTime.Now.Ticks.ToString(), ip, "0", "", "" };
+                return;
+            }
+            if (k[0] == iid) { k[1] = DateTime.Now.Ticks.ToString(); k[2] = ip; return; }
+
+            bool geriDonus = k[4] == iid;
+            bool yakin = (DateTime.Now - new DateTime(long.Parse(k[1]))).TotalMinutes < 3;
+            bool yeniUyari = (DateTime.Now - new DateTime(long.Parse(k[3]))).TotalHours >= 1;
+            string uyariZamani = k[3];
+            if (geriDonus && yakin && yeniUyari)
+            {
+                string m = "AYNI ADLA IKI MAKINE: '" + machine + "' adi iki farkli bilgisayardan geliyor (IP: "
+                         + k[2] + " ve " + ip + "). Ciktilar YANLIS makineye gidebilir - birinin bilgisayar adini degistirin.";
+                Log("UYARI: " + m);
+                Db.Alert("Guvenlik", m);
+                uyariZamani = DateTime.Now.Ticks.ToString();
+            }
+            sonKimlik[machine] = new[] { iid, DateTime.Now.Ticks.ToString(), ip, uyariZamani, k[0], k[2] };
+        }
+    }
+
     // Istemci kalp atisi: cevrimici takibi + baglanti logu
     static void HandleHeartbeat(HttpListenerContext ctx)
     {
@@ -838,6 +896,7 @@ static class Dashboard
             bool ilkKayit;
             if (!ClientAuth(ctx, machine, out ilkKayit)) return;
             if (ilkKayit) Db.Alert("YeniMakine", "Yeni istemci kaydedildi (sifreli): " + machine + " (IP: " + ip + ")");
+            AyniAdliMakineDenetle(machine, Q(ctx, "iid") ?? "", ip);
             lock (hbLock)
             {
                 var hb = LoadHb();

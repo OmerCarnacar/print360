@@ -10,6 +10,72 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [2026.09.19.2001]
+
+Baskı yolu uçtan uca (yazdır → yakala → kuyruk → istemci → yazıcı → onay)
+senaryo senaryo tarandı. Bu sürüm, **henüz yaşanmamış** ama kodda karşılığı
+olmayan altı senaryoyu kapatıyor.
+
+### Eklendi — zehirli iş karantinası (genel sigorta)
+
+Bir iş üst üste verilip hiç onaylanmıyorsa kuyruğun **başını tıkar** ve
+arkasındaki bütün işler bekler: "ilk çıktı geliyor, devamı gelmiyor". Sahada
+bu belirti bir ay sürdü ve sebebi her seferinde farklıydı (başlık kodlaması,
+sorgu dizesi kodlaması...). Karantina, **sebebi henüz bilinmeyen** gelecekteki
+hatalara karşı genel korumadır: iş en az **8 kez** verilmiş ve ilk denemeden
+beri en az **3 dakika** geçmişse `queue\<makine>\_sorunlu\` klasörüne alınır,
+kuyruk akmaya devam eder, yönetici uyarılır. Dosya silinmez.
+Eşik iki koşulludur; yalnızca sayıya bakmak dengesiz bir ağda sağlam işi
+haksız yere kenara alırdı.
+
+### Eklendi — kuyruk süre sınırı
+
+7 günden (`db.ini` → `KuyrukSaat=`) uzun bekleyen iş artık teslim edilmez;
+`C:\Print360\queue-suresi-dolan\` klasörüne alınır ve uyarı üretilir. Haftalar
+sonra yeniden bağlanan bir makinede eski — belki gizli — belgelerin birden
+yazıcıdan çıkması hem şaşırtıcı hem risklidir. Dosya silinmez.
+
+### Eklendi — aynı adla iki makine tespiti
+
+Klonlanmış Windows imajları aynı bilgisayar adını taşır. İki makine aynı adla
+bağlanırsa **aynı kuyruğu paylaşırlar** ve çıktı hangisi önce yoklarsa ona
+gider. Her istemci kurulumu artık rastgele bir kimlik (`kimlik.txt`) taşıyor;
+sunucu aynı adı üç dakika içinde A→B→A şeklinde iki farklı kimlikle görürse
+`AYNI ADLA IKI MAKINE` uyarısı üretir. Tek yönlü değişim (yeniden kurulum)
+uyarı üretmez.
+
+### Eklendi — aynı kullanıcı, iki oturum uyarısı
+
+Aynı hesap iki ayrı RDP oturumu açarsa iki ajan aynı spool dosyasını izler ve
+çıktı rastgele birinin bilgisayarına gider. Bu yapısal bir sınırdır; artık en
+azından sessiz değil: ikinci ajan durumu günlüğe ve panel uyarılarına yazar.
+
+### Değişti — istemci şifresi reddedilince anlaşılır mesaj
+
+Sunucu `403` döndürdüğünde istemci günlüğünde yalnızca "(403) Yasak"
+görünüyordu. Artık sebep ve çözüm yazılıyor: makine sunucuda başka bir
+şifreyle kayıtlı; `ClientKey` eşitlenmeli ya da paneldeki kayıt silinmeli.
+
+### Düzeltildi — istemcide `failed` klasörü hiç temizlenmiyordu
+
+Basılamayan her iş diskte süresiz kalıyordu. Son 100 dosya / 30 gün tutulur.
+
+### Bilinen sınırlar (bu sürümde çözülmedi, bilinçli)
+- Aynı kullanıcının iki eşzamanlı oturumu yalnızca **uyarılır**, ayrıştırılmaz.
+- `jobs.csv` süresiz büyür; yıllar içinde panel açılışını yavaşlatabilir.
+- Kendinden imzalı sertifikanın süresi dolduğunda yenisi üretilir; parmak izi
+  sabitlemiş istemcilerde `CertHash` güncellenmelidir.
+
+### Test
+- `tests/KuyrukKorumalari.cs` — üretimdeki `Kuyruk` sınıfını doğrudan derler:
+  dengesiz ağda yanlış karantina yok, onaylanmayan iş kenara alınıyor ve
+  **arkadaki iş veriliyor**, onay sayacı sıfırlıyor, 18 günlük iş kuyruktan
+  çıkıyor, taze işlere dokunulmuyor. **7/7**
+- Aynı adlı makine tespiti, çift oturum uyarısı ve 403 mesajı derlendi;
+  canlı ortamda ayrıca sınanmadı.
+
+---
+
 ## [2026.09.19.1910]
 
 Sahada yaşanan son sorunların ortak kalıpları çıkarıldı ve kod aynı kalıplar

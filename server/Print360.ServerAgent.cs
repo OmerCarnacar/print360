@@ -82,6 +82,7 @@ static class ServerAgent
             Directory.CreateDirectory(spoolDir);
             Directory.CreateDirectory(clientsDir);
             Log("Ajan basladi (v" + Surum.Etiket + "). Spool: " + spoolDir + "\\" + user + ".*  Istemci: " + clientName);
+            CiftOturumDenetle();
             VarsayilanYaziciAyarla(); // RDP oturumunda varsayilan = Print360 (dogrudan lokal PC'ye)
             // VC modu: istemciden gelen onay/sayac/heartbeat'i RDP kanalindan oku
             // (ayni "P360" kanali cift yonlu). Bayrak kapaliysa hicbir sey degismez.
@@ -110,6 +111,30 @@ static class ServerAgent
                 Thread.Sleep(2000);
             }
         }
+    }
+
+    // AYNI KULLANICI, IKI OTURUM. Ajan kilidi oturuma ozeldir; ayni hesap iki
+    // ayri RDP oturumu acarsa (farkli iki bilgisayardan) IKI ajan ayni spool
+    // dosyasini izler ve cikti hangisi once yakalarsa ONUN bilgisayarina gider.
+    // Bu yapisal bir sinirdir (spool dosyasi kullanici adina goredir); en
+    // azindan SESSIZ kalmasin. Kilit dosyasi surec yasadikca acik tutulur.
+    static FileStream oturumKilidi;
+    static void CiftOturumDenetle()
+    {
+        string yol = @"C:\Print360\logs\oturum-" + user + ".lock";
+        try
+        {
+            oturumKilidi = new FileStream(yol, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None, 1, FileOptions.DeleteOnClose);
+        }
+        catch (IOException)
+        {
+            string m = "'" + user + "' hesabi AYNI ANDA IKI RDP OTURUMUNDA acik (bu oturumun istemcisi: "
+                     + (clientName.Length > 0 ? clientName : "?") + "). Ciktilar iki bilgisayardan birine RASTGELE gidebilir. "
+                     + "Her kullanici tek oturum kullanmali ya da sunucuda 'kullanici basina tek oturum' ilkesi acilmali.";
+            Log("UYARI: " + m);
+            Db.Alert("Oturum", m);
+        }
+        catch { }
     }
 
     static bool IsStable(string path)

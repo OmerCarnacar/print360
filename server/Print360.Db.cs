@@ -52,6 +52,7 @@ static class Db
                     else if (k == "password") pwd = v;
                     else if (k == "httpport" && v.Length > 0) HttpPort = v;
                     else if (k == "httpsport" && v.Length > 0) HttpsPort = v;
+                    else if (k == "kuyruksaat") { int ks; if (int.TryParse(v, out ks) && ks > 0) Kuyruk.SureSaat = ks; }
                     else if (k == "virtualchannel") VChannelAcik = (v == "1" || v.Equals("true", StringComparison.OrdinalIgnoreCase));
                     else if (k == "varsayilanyazici" && v.Length > 0) VarsayilanYaziciModu = v.ToLowerInvariant();
                 }
@@ -694,6 +695,88 @@ static class Kuyruk
     public static Func<string, DateTime> KalpAtisiKaynagi = VeritabanindanOku;
     public static void OnbellegiTemizle() { lock (_hb) _hb.Clear(); }
     public const int CevrimiciDakika = 3;     // kalp atisi bu kadar dakikadan eskiyse cevrimdisi
+
+    // KUYRUK SURE SINIRI (db.ini KuyrukSaat=, varsayilan 7 gun). Bu sureden
+    // uzun bekleyen is artik TESLIM EDILMEZ: haftalar sonra yeniden baglanan
+    // bir makinede eski (belki gizli) belgelerin birden yazicidan cikmasi
+    // hem sasirtici hem risklidir. Dosya silinmez, ayri klasore alinir.
+    public static int SureSaat = 168;
+    public static string SuresiDolanKok = @"C:\Print360\queue-suresi-dolan";
+
+    // ZEHIRLI IS KARANTINASI. Bir is ust uste bu kadar kez verilip hic
+    // onaylanmadiysa (sebep ne olursa olsun: bozuk dosya, ad uyusmazligi,
+    // istemcide yazilamayan yol...) kuyrugun BASINI TIKAR ve arkasindaki
+    // butun isler bekler - "ilk cikti geliyor, devami gelmiyor". Sebebi
+    // bilinmeyen gelecekteki hatalara karsi genel sigorta: is kenara alinir,
+    // kuyruk akmaya devam eder, yonetici uyarilir.
+    //
+    // ESIK IKI KOSULLUDUR: en az 8 deneme VE ilk denemeden beri en az 3 dakika.
+    // Yalnizca sayiya bakmak, dengesiz bir agda (indirme birkac kez yarida
+    // kesilir) saglam bir isi haksiz yere karantinaya alirdi.
+    public const int EnFazlaVerme = 8;
+    public const int EnAzDakika = 3;
+    public static Func<DateTime> Simdi = delegate { return DateTime.Now; };   // testte degistirilir
+    static readonly System.Collections.Generic.Dictionary<string, long[]> _verilme =
+        new System.Collections.Generic.Dictionary<string, long[]>(StringComparer.OrdinalIgnoreCase);
+
+    // Isi vermeden once cagrilir. true donerse is KARANTINAYA alinmistir; atlanir.
+    public static bool SorunluysaAyir(string tamYol, out string karantinaYolu)
+    {
+        karantinaYolu = null;
+        long n; double dakika;
+        lock (_verilme)
+        {
+            long[] k;   // [0]=verilme sayisi  [1]=ilk verilme (ticks)
+            if (!_verilme.TryGetValue(tamYol, out k)) { k = new long[] { 0, Simdi().Ticks }; _verilme[tamYol] = k; }
+            k[0]++;
+            n = k[0];
+            dakika = (Simdi() - new DateTime(k[1])).TotalMinutes;
+        }
+        if (n <= EnFazlaVerme || dakika < EnAzDakika) return false;
+        try
+        {
+            string dir = Path.Combine(Path.GetDirectoryName(tamYol), "_sorunlu");
+            Directory.CreateDirectory(dir);
+            karantinaYolu = Path.Combine(dir, Path.GetFileName(tamYol));
+            if (File.Exists(karantinaYolu)) File.Delete(karantinaYolu);
+            File.Move(tamYol, karantinaYolu);
+            lock (_verilme) _verilme.Remove(tamYol);
+            return true;
+        }
+        catch { karantinaYolu = null; return false; }   // tasinamadiysa vermeye devam et
+    }
+
+    public static void OnaylandiSay(string tamYol) { lock (_verilme) _verilme.Remove(tamYol); }
+
+    // Suresi dolan isleri ayri klasore alir; tasinanlarin "makine | dosya" listesini doner.
+    public static System.Collections.Generic.List<string> SuresiDolanlariAyir()
+    {
+        var sonuc = new System.Collections.Generic.List<string>();
+        try
+        {
+            if (!Directory.Exists(Kok)) return sonuc;
+            foreach (var d in Directory.GetDirectories(Kok))
+            {
+                string makine = Path.GetFileName(d);
+                foreach (var f in new DirectoryInfo(d).GetFiles("*.gz"))
+                {
+                    if ((DateTime.Now - f.CreationTime).TotalHours < SureSaat) continue;
+                    try
+                    {
+                        string hedef = Path.Combine(SuresiDolanKok, makine);
+                        Directory.CreateDirectory(hedef);
+                        string y = Path.Combine(hedef, f.Name);
+                        if (File.Exists(y)) File.Delete(y);
+                        File.Move(f.FullName, y);
+                        sonuc.Add(makine + " | " + f.Name.Replace(".gz", ""));
+                    }
+                    catch { }
+                }
+            }
+        }
+        catch { }
+        return sonuc;
+    }
 
     public static string Sanitize(string s)
     {

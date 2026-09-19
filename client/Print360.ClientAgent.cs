@@ -86,6 +86,40 @@ static class ClientAgent
     static bool rdpAcik;                 // su an aktif RDP oturumu var mi (RdpIzleyici gunceller)
     static int sunucuBagli;              // su an ulasilabilen sunucu sayisi (tepsi ipucunda gosterilir)
     static DateTime sonIsHatasi = DateTime.MinValue;   // is cekme hatasi gunlugunu kisitlar
+    // KURULUM KIMLIGI: bu kuruluma ozel rastgele deger. Sunucu, AYNI bilgisayar
+    // adinin iki farkli kimlikle baglandigini gorurse (klonlanmis imaj) uyarir.
+    static string _kurulumKimligi;
+    static string KurulumKimligi()
+    {
+        if (_kurulumKimligi != null) return _kurulumKimligi;
+        string yol = Path.Combine(baseDir, "kimlik.txt");
+        try
+        {
+            if (File.Exists(yol))
+            {
+                string k = File.ReadAllText(yol).Trim();
+                if (k.Length >= 16) return _kurulumKimligi = k;
+            }
+            string yeni = Guid.NewGuid().ToString("N");
+            File.WriteAllText(yol, yeni);
+            return _kurulumKimligi = yeni;
+        }
+        catch { return _kurulumKimligi = ""; }
+    }
+
+    // Sunucu hatasini INSAN DILINE cevir. 403 = istemci sifresi sunucudaki
+    // kayitla eslesmiyor; genel "(403) Yasak" mesaji kimseye bir sey anlatmiyordu.
+    static string HataAcikla(Exception ex)
+    {
+        var wex = ex as WebException;
+        var r = wex != null ? wex.Response as HttpWebResponse : null;
+        if (r != null && r.StatusCode == HttpStatusCode.Forbidden)
+            return "ISTEMCI SIFRESI REDDEDILDI (403): bu makine sunucuda BASKA bir sifreyle kayitli. "
+                 + "Ya Print360.ini icindeki ClientKey'i sunucudakiyle ayni yapin, ya da sunucu panelinden "
+                 + "'" + Environment.MachineName + "' kaydini silip istemciyi yeniden baslatin.";
+        return ex.Message;
+    }
+
     static DateTime sonSurumUyarisi = DateTime.MinValue;   // "sunucu eski surumde" uyarisini kisitlar
     static string sonTekrarEdenIs;                      // sunucunun tekrar verdigi is (dongu korumasi)
     static DateTime sonTekrarUyari = DateTime.MinValue;
@@ -1333,7 +1367,7 @@ static class ClientAgent
                 {
                     sonIsHatasi = DateTime.Now;
                     Log(string.Format("IS ALINAMADI [{0}] asama: {1} | gecen {2} ms | durum: {3} | {4}",
-                        baseUrl, asama, kron.ElapsedMilliseconds, ex.Status, ex.Message));
+                        baseUrl, asama, kron.ElapsedMilliseconds, ex.Status, HataAcikla(ex)));
                 }
                 return false;
             }
@@ -1410,7 +1444,8 @@ static class ClientAgent
                                + "&printer=" + Uri.EscapeDataString(prn)
                                + "&user=" + Uri.EscapeDataString(Environment.UserName)
                                + "&os=" + Uri.EscapeDataString(os)
-                               + "&key=" + Uri.EscapeDataString(key);
+                               + "&key=" + Uri.EscapeDataString(key)
+                               + "&iid=" + KurulumKimligi();
                     try
                     {
                         using (var wc = new P360WebClient()) wc.UploadString(url, "POST", "");
@@ -1429,7 +1464,7 @@ static class ClientAgent
                         }
                         catch { }
                     }
-                    catch (Exception ex) { sonHataMesaji = ex.Message; }
+                    catch (Exception ex) { sonHataMesaji = HataAcikla(ex); }
                 }
 
                 if (basarili.Count > 0)
@@ -1594,6 +1629,19 @@ static class ClientAgent
     {
         var files = new DirectoryInfo(doneDir).GetFiles().OrderByDescending(f => f.CreationTime).Skip(200);
         foreach (var f in files) { try { f.Delete(); } catch { } }
+        // failed klasoru HIC temizlenmiyordu: basilamayan her is diskte sonsuza
+        // kadar kaliyordu. Inceleme icin son 100 dosya / 30 gun tutulur.
+        try
+        {
+            if (Directory.Exists(failedDir))
+            {
+                var hepsi = new DirectoryInfo(failedDir).GetFiles().OrderByDescending(f => f.CreationTime).ToList();
+                for (int i = 0; i < hepsi.Count; i++)
+                    if (i >= 100 || hepsi[i].CreationTime < DateTime.Now.AddDays(-30))
+                        try { hepsi[i].Delete(); } catch { }
+            }
+        }
+        catch { }
     }
 
     static Dictionary<string, string> ReadIni()
