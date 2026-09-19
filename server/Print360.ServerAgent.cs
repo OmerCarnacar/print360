@@ -100,13 +100,9 @@ static class ServerAgent
                         string sp = SpoolPath(t);
                         if (File.Exists(sp) && IsStable(sp)) Dispatch(t, sp);
                     }
-                    // Istemci adi bos ise tazele: ajan, RDP oturumu tam kurulmadan
-                    // baslamis olabilir (zamanlanmis gorev oturum acilisinda tetiklenir).
-                    if (clientName.Length == 0)
-                    {
-                        string yeni = IstemciAdiBul();
-                        if (yeni.Length > 0) { clientName = yeni; Log("Istemci adi belirlendi: " + clientName); }
-                    }
+                    // Istemci adini tazele: ajan RDP oturumu tam kurulmadan baslamis
+                    // olabilir VEYA ayni oturuma baska makineden baglanilmis olabilir.
+                    IstemciAdiTazele();
                     if (++tick % 30 == 0) { PullClientStats(); CheckConnection(); VarsayilanYaziciAyarla(); } // ~60 sn'de bir
                     if (tick % 1800 == 0) PurgeArchive(); // saatte bir: 90 gunden eski arsivi sil
                 }
@@ -449,8 +445,69 @@ static class ServerAgent
             string.IsNullOrEmpty(aciklama) ? "" : "   -> " + aciklama));
     }
 
+    // ISTEMCI ADI SUREKLI TAZELENIR (her dongu turunda ve her isten hemen once).
+    // Eskiden yalnizca BOS ise tazeleniyordu. Oysa RDP oturumu AYNI kalip
+    // baglanan makine degisebilir: kullanici (veya sunucuyu yeniden baslatan
+    // yonetici) once A makinesinden oturum acar, ajan "A" adini ezberler; sonra
+    // kullanici ayni oturuma B makinesinden yeniden baglanir. Ajan hala "A"ya
+    // gonderir: panelde "Gonderildi" yazar ama B'deki yazicidan cikti ALINMAZ.
+    // Oturum kopukken WTS bos doner; o zaman son bilinen ad korunur.
+    static void IstemciAdiTazele()
+    {
+        string yeni = IstemciAdiBul();
+        if (yeni.Length == 0 || string.Equals(yeni, clientName, StringComparison.OrdinalIgnoreCase)) return;
+        Log(clientName.Length == 0
+            ? "Istemci adi belirlendi: " + yeni
+            : "ISTEMCI DEGISTI: '" + clientName + "' -> '" + yeni
+              + "' (ayni oturuma baska makineden baglanildi); ciktilar artik '" + yeni + "' makinesine gidecek");
+        string eski = clientName;
+        clientName = yeni;
+        if (eski.Length > 0) BekleyenleriTasi(eski, yeni);
+    }
+
+    // Yanlis (eski) makinenin kuyrugunda kalan isleri kullanicinin SIMDI bagli
+    // oldugu makineye tasir. Yalnizca BU kullanicinin ve son 24 saatin isleri
+    // tasinir: baskasinin isine dokunulmaz, gunler onceki bir belge de
+    // kullaniciyi sasirtacak sekilde birden yazicidan cikmaz.
+    // Dosya adi: yyyyMMdd_HHmmss_fff_<kullanici>[__TUR][~belge].pdf.gz
+    static void BekleyenleriTasi(string eskiMakine, string yeniMakine)
+    {
+        try
+        {
+            string kaynak = Path.Combine(@"C:\Print360\queue", Sanitize(eskiMakine));
+            if (!Directory.Exists(kaynak)) return;
+            string hedef = Path.Combine(@"C:\Print360\queue", Sanitize(yeniMakine));
+            int tasinan = 0;
+            foreach (var f in new DirectoryInfo(kaynak).GetFiles("*.gz"))
+            {
+                if (f.CreationTime < DateTime.Now.AddHours(-24)) continue;
+                string[] b = f.Name.Split(new[] { '_' }, 4);          // tarih, saat, ms, kalan
+                if (b.Length < 4) continue;
+                string kalan = b[3];
+                bool benim = kalan.StartsWith(user + "__", StringComparison.OrdinalIgnoreCase)
+                          || kalan.StartsWith(user + "~",  StringComparison.OrdinalIgnoreCase)
+                          || kalan.StartsWith(user + ".",  StringComparison.OrdinalIgnoreCase);
+                if (!benim) continue;
+                try
+                {
+                    Directory.CreateDirectory(hedef);
+                    string yeniYol = Path.Combine(hedef, f.Name);
+                    if (File.Exists(yeniYol)) continue;
+                    File.Move(f.FullName, yeniYol);
+                    tasinan++;
+                }
+                catch (Exception ex) { Log("Bekleyen is tasinamadi: " + f.Name + " | " + ex.Message); }
+            }
+            if (tasinan > 0)
+                Log("Bekleyen " + tasinan + " is '" + eskiMakine + "' kuyrugundan '" + yeniMakine
+                  + "' kuyruguna tasindi (kullanici artik bu makineden bagli).");
+        }
+        catch (Exception ex) { Log("Bekleyen isler tasinirken hata: " + ex.Message); }
+    }
+
     static void Dispatch(string jobType, string spoolFile)
     {
+        IstemciAdiTazele();   // is, o anda GERCEKTEN bagli olan makineye gitsin
         // ORIJINAL BELGE ADI: PrintService olay gunlugunden okunur ve dosya adina
         // '~' ayiricisiyla gomulur. Istemci bu kismi "Belge" olarak gosterir;
         // kullanici tarih-saat yerine gercek belge adini gorur.

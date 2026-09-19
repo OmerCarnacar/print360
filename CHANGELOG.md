@@ -10,6 +10,48 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [2026.09.19.1840]
+
+### Düzeltildi — "Gönderildi" görünüyor ama çıktı alınmıyor (sunucu yeniden başlatıldıktan sonra)
+
+Sunucu ajanı, RDP istemci makinesinin adını **yalnızca başlarken bir kez**
+okuyor ve sonra hiç tazelemiyordu (yalnızca ad boşsa yeniden soruyordu).
+Oysa RDP oturumu aynı kalıp **bağlanan makine değişebilir**:
+
+1. Sunucu yeniden başlatılır; kullanıcı hesabıyla önce A makinesinden
+   oturum açılır (örneğin yeniden başlatmayı yapan kişi tarafından).
+   Ajan "A" adını ezberler.
+2. Kullanıcı aynı oturuma kendi makinesi B'den yeniden bağlanır.
+   Oturum ve içindeki ajan aynen devam eder.
+3. Ajan işleri hâlâ **A'nın kuyruğuna** yazar. Panelde "Gönderildi" görünür,
+   B'deki yazıcıdan hiçbir şey çıkmaz.
+
+Artık istemci adı her döngü turunda **ve her işten hemen önce** Windows'a
+(WTS API) yeniden soruluyor. Değişiklik günlüğe açıkça yazılıyor:
+
+```
+ISTEMCI DEGISTI: 'DESKTOP-A' -> 'EVOPC' (ayni oturuma baska makineden
+baglanildi); ciktilar artik 'EVOPC' makinesine gidecek
+```
+
+Oturum kopukken WTS boş döner; o durumda son bilinen ad korunur.
+
+### Eklendi — yanlış kuyrukta kalan işler kullanıcıyı takip eder
+
+İstemci değişimi algılandığında, eski makinenin kuyruğunda bekleyen işler
+yeni makinenin kuyruğuna taşınır. Güvenlik sınırları:
+- yalnızca **o kullanıcının** işleri (adı aynı harflerle başlayan başka
+  kullanıcılar dahil, başkasının işine dokunulmaz),
+- yalnızca **son 24 saatin** işleri (günler önceki bir belge sürpriz
+  şekilde yazıcıdan çıkmaz).
+
+### Test
+- `tests/IstemciDegisimi.cs` — gerçek dosyalarla: kullanıcının üç işi
+  taşındı; `FS` ile başlayan `FSADMIN` kullanıcısının, başka kullanıcının ve
+  24 saatten eski işin yerinde kaldığı doğrulandı. **6/6**
+
+---
+
 ## [2026.09.10.1344]
 
 Proje genelinde yapılan eşzamanlılık ve güvenlik incelemesinin sonuçları.
