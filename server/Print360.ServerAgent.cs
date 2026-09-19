@@ -778,6 +778,21 @@ static class ServerAgent
 
             Log("Kuyruga alindi [" + mak + "]: " + name + "  " + (pdf.Length / 1024) + " KB -> " + (gzLen / 1024) + " KB (GZip, %"
                 + (pdf.Length > 0 ? 100 - (int)(gzLen * 100 / pdf.Length) : 0) + " kucultme)");
+
+            // HEDEF CEVRIMDISIYSA SESSIZ KALMA. Is kuyruga yazilir (makine sonra
+            // baglanirsa alir) ama kullanici su an cikti BEKLIYOR; bunu gunluge ve
+            // panel uyarilarina acikca yaziyoruz. Eskiden is sessizce sonsuza
+            // kadar bekliyor, panelde de "Gonderildi" gorunuyordu.
+            if (!Kuyruk.Cevrimici(mak))
+            {
+                DateTime son = Kuyruk.SonGorulme(mak);
+                string neden = son == DateTime.MinValue
+                    ? "bu makine sunucuya HIC baglanmamis (Print360 Client kurulu mu, sunucu adresi dogru mu?)"
+                    : "son baglanti " + son.ToString("yyyy-MM-dd HH:mm:ss") + " (Print360 Client calisiyor mu?)";
+                Log("UYARI: HEDEF MAKINE CEVRIMDISI - '" + mak + "' su an isi ALAMAZ; " + neden
+                  + ". Is kuyrukta bekleyecek.");
+                Db.Alert("Kuyruk", "'" + user + "' kullanicisinin ciktisi '" + mak + "' makinesine gonderildi ama makine cevrimdisi: " + neden);
+            }
             return true;
         }
         catch (Exception ex) { Log("Kuyruk hatasi: " + ex.Message); return false; }

@@ -10,6 +10,75 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [2026.09.19.1910]
+
+Sahada yaşanan son sorunların ortak kalıpları çıkarıldı ve kod aynı kalıplar
+için tarandı. Bu sürüm, **henüz patlamamış** beş örneği kapatıyor. Ortak
+tema: *sorun var ama kimse görmüyor.*
+
+### Değişti — "Gönderildi" artık üç ayrı durum
+
+Eskiden "Gönderildi" yalnızca "iş kuyruğa yazıldı, basıldı onayı gelmedi"
+demekti. İstemci işi **hiç almamış** olsa da, almış ama basamamış olsa da
+aynı kelime görünüyordu. Bir iş yanlış makinenin kuyruğuna yazıldığında
+saatlerce "Gönderildi" göründü. Artık (panel, web paneli ve CSV raporu):
+
+| Durum | Anlamı |
+|---|---|
+| `Kuyrukta (2 dk)` | İş sunucuda bekliyor, hedef makine çevrimiçi — birazdan alınır |
+| `BEKLIYOR (40 dk) - PC-ADI cevrimdisi, son: 19.09 16:02` | İş sunucuda bekliyor ve hedef makine **bağlı değil** |
+| `BEKLIYOR (...) - PC-ADI sunucuya HIC baglanmadi` | Hedef makinede istemci kurulu değil ya da iş yanlış ada gitti |
+| `Teslim edildi` | İstemci işi aldı; basıldı onayı henüz gelmedi |
+| `Basıldı ✓` | Değişmedi |
+
+### Eklendi — çevrimdışı hedefe gönderimde ve unutulan işlerde uyarı
+
+- Sunucu ajanı bir işi kuyruğa yazarken hedef makinenin kalp atışına bakıyor.
+  Makine çevrimdışıysa iş yine kuyruğa yazılır, ama günlüğe ve panel
+  uyarılarına açıkça düşer: `HEDEF MAKINE CEVRIMDISI - 'PC-ADI' su an isi ALAMAZ`.
+- Panel servisi dakikada bir kuyruğu tarıyor; **10 dakikadır alınmayan** her iş
+  için bir kez uyarı üretiyor ve makinenin çevrimiçi mi çevrimdışı mı olduğunu
+  belirtiyor.
+
+### Eklendi — sürüm uyuşmazlığı artık görünür
+
+İstemci sunucudan **yeni** ise eskiden sessizce geçiliyordu. Oysa
+düzeltmelerin çoğu sunucu tarafındadır; "güncelledim ama düzelmedi"
+durumunun en sık sebebi buydu ve hiçbir yerde görünmüyordu. İstemci günlüğü
+artık şunu yazar (6 saatte bir):
+`UYARI: SUNUCU ESKI SURUMDE - sunucu X, bu istemci Y. Sunucu tarafindaki duzeltmeler ETKIN DEGIL`
+
+### Düzeltildi — otomatik güncelleme sonsuz döngüye girebiliyordu
+
+`/api/clientversion` panelin **kendi** derleme sürümünü bildiriyordu,
+dağıttığı dosyanınkini değil. Kurulum `update\` klasöründeki exe'yi
+güncelleyemezse istemci her 30 dakikada bir "yeni sürüm" indirip kendini
+yeniden başlatır, sürüm yine eski olur ve bu sonsuza kadar tekrarlanırdı.
+- Sunucu artık dağıttığı dosyanın gerçek sürümünü bildiriyor; panel sürümünden
+  farklıysa günlüğe uyarı yazıyor.
+- İstemci, indirdiği dosyanın gerçekten daha yeni olduğunu doğrulamadan
+  kendini değiştirmiyor (eski sunuculara karşı da korur).
+
+### Düzeltildi — veritabanı motoru bir kez seçiliyordu
+
+Sunucu yeniden başladığında panel servisi SQL Server'dan **önce** ayağa
+kalkarsa MSSQL'e bağlanamıyor, SQLite'a düşüyor ve süreç kapanana kadar orada
+kalıyordu: panelde geçmiş boş görünür, istemci anahtarları "kayıtsız" olur,
+veri iki veritabanına bölünürdü. `db.ini`'de bir MSSQL sunucusu tanımlıysa
+artık dakikada bir **arka planda** yeniden deneniyor (istekler bekletilmez);
+bağlantı kurulunca geçiş yapılıp panele uyarı düşülüyor. Yalnızca MSSQL
+kullanan kurulumları etkiler.
+
+### Test
+- `tests/KuyrukDurumu.cs` — üretimdeki `Kuyruk` sınıfını **doğrudan derleyerek**
+  (kopyasını değil) sınar: çevrimdışı makinedeki iş, çevrimiçi makinedeki yeni
+  iş, alınmış iş, hiç bağlanmamış makine, saatlik bekleme, makinenin geri
+  gelmesi ve boş girdiler. **7/7**
+- Güncelleme doğrulaması ve MSSQL yeniden deneme derlendi; canlı sunucuda
+  ayrıca sınanmadı.
+
+---
+
 ## [2026.09.19.1840]
 
 ### Düzeltildi — "Gönderildi" görünüyor ama çıktı alınmıyor (sunucu yeniden başlatıldıktan sonra)

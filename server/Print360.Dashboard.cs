@@ -136,7 +136,7 @@ static class Dashboard
                     if (ctx.Request.HttpMethod == "GET" &&
                         ctx.Request.Url.AbsolutePath.Equals("/api/clientversion", StringComparison.OrdinalIgnoreCase))
                     {
-                        byte[] vb = Encoding.UTF8.GetBytes(Surum.V);
+                        byte[] vb = Encoding.UTF8.GetBytes(DagitilanIstemciSurumu());
                         ctx.Response.ContentType = "text/plain";
                         ctx.Response.ContentLength64 = vb.Length;
                         ctx.Response.OutputStream.Write(vb, 0, vb.Length);
@@ -369,6 +369,31 @@ static class Dashboard
         return sb.ToString();
     }
 
+    // KUYRUKTA UNUTULAN ISLER. Bir is 10 dakikadir alinmadiysa kullanici
+    // muhtemelen yazicinin basinda bekliyordur. Her is icin BIR KEZ uyarilir.
+    static readonly HashSet<string> bayatUyarilan = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    static void BayatKuyrukTara()
+    {
+        if (!Directory.Exists(Kuyruk.Kok)) return;
+        foreach (var d in Directory.GetDirectories(Kuyruk.Kok))
+        {
+            string makine = Path.GetFileName(d);
+            foreach (var f in new DirectoryInfo(d).GetFiles("*.gz"))
+            {
+                double dk = (DateTime.Now - f.CreationTime).TotalMinutes;
+                if (dk < 10 || dk > 24 * 60) continue;            // cok eskiler icin her gun uyarma
+                if (!bayatUyarilan.Add(f.FullName)) continue;
+                bool on = Kuyruk.Cevrimici(makine);
+                string msg = "Is " + (int)dk + " dakikadir kuyrukta: " + f.Name.Replace(".gz", "") + " -> " + makine
+                           + (on ? " (makine cevrimici ama isi almiyor - istemci gunlugune bakin)"
+                                 : " (makine CEVRIMDISI - Print360 Client calismiyor ya da is yanlis makineye yonlendi)");
+                Log("UYARI: " + msg);
+                Db.Alert("Kuyruk", msg);
+            }
+        }
+        if (bayatUyarilan.Count > 5000) bayatUyarilan.Clear();
+    }
+
     // Uyari motoru: cevrimici -> cevrimdisi gecislerini izler (10 dk esigi)
     static void AlertMonitor()
     {
@@ -395,6 +420,7 @@ static class Dashboard
                     onceki[kv.Key] = online;
                 }
                 ilk = false;
+                BayatKuyrukTara();
             }
             catch (Exception ex) { Log("AlertMonitor: " + ex.Message); }
             Thread.Sleep(60000);
@@ -435,6 +461,33 @@ static class Dashboard
         return false;
     }
 
+    // DAGITILAN DOSYANIN GERCEK SURUMU. Eskiden panelin KENDI derleme surumu
+    // bildiriliyordu. Kurulumda update\ klasorundeki exe guncellenemezse
+    // (dosya kilitli vb.) panel "yeni surum var" der, istemci indirir, kendini
+    // yeniden baslatir, surum yine eskidir - ve bu 30 dakikada bir SONSUZA KADAR
+    // tekrarlanirdi. Artik dosyanin kendi surum bilgisi okunur.
+    static string _dagitilanSurum; static DateTime _dagitilanZaman, _dagitilanDosyaZamani;
+    static string DagitilanIstemciSurumu()
+    {
+        const string yol = @"C:\Print360\update\Print360.ClientAgent.exe";
+        try
+        {
+            var fi = new FileInfo(yol);
+            if (!fi.Exists) return Surum.V;
+            if (_dagitilanSurum != null && fi.LastWriteTimeUtc == _dagitilanDosyaZamani
+                && (DateTime.Now - _dagitilanZaman).TotalMinutes < 5) return _dagitilanSurum;
+            string v = System.Diagnostics.FileVersionInfo.GetVersionInfo(yol).FileVersion ?? "";
+            Version a, b;
+            if (!Version.TryParse(v.Trim(), out a)) v = Surum.V;
+            else if (Version.TryParse(Surum.V, out b) && a != b)
+                Log("UYARI: update\\Print360.ClientAgent.exe surumu (" + v + ") panel surumunden (" + Surum.V
+                  + ") FARKLI - kurulum bu dosyayi guncelleyememis olabilir. Istemcilere " + v + " dagitilacak.");
+            _dagitilanSurum = v.Trim(); _dagitilanZaman = DateTime.Now; _dagitilanDosyaZamani = fi.LastWriteTimeUtc;
+            return _dagitilanSurum;
+        }
+        catch { return Surum.V; }
+    }
+
     // Guncel istemci ajani binary'sini dagit (C:\Print360\update\Print360.ClientAgent.exe)
     static void HandleClientExe(HttpListenerContext ctx)
     {
@@ -444,7 +497,7 @@ static class Dashboard
             if (!File.Exists(yol)) { ctx.Response.StatusCode = 404; ctx.Response.Close(); return; }
             byte[] data = File.ReadAllBytes(yol);
             ctx.Response.ContentType = "application/octet-stream";
-            ctx.Response.AddHeader("X-Version", Surum.V);
+            ctx.Response.AddHeader("X-Version", DagitilanIstemciSurumu());
             ctx.Response.ContentLength64 = data.Length;
             ctx.Response.OutputStream.Write(data, 0, data.Length);
             ctx.Response.Close();
@@ -2377,6 +2430,17 @@ static class Dashboard
         return sb.ToString();
     }
 
+    // Basildi onayi gelmemis is: hala kuyrukta mi, yoksa istemci aldi mi?
+    static string KuyrukDurumHtml(Sent s)
+    {
+        string k = Kuyruk.DurumMetni(s.Machine, s.File);
+        if (k == null)
+            return "<span class='wait' title='Istemci isi aldi; basildi onayi henuz gelmedi'>Teslim edildi</span>";
+        bool sorun = k.StartsWith("BEKLIYOR");
+        return "<span style='font-weight:600;color:" + (sorun ? "#c0392b" : "#b9770e") + "' title='Is hala sunucu kuyrugunda; istemci henuz almadi'>"
+             + H(k) + "</span>";
+    }
+
     static void JobTable(StringBuilder sb, IEnumerable<Sent> jobs, Dictionary<string, string[]> printed)
     {
         var failed = LoadFailed();
@@ -2392,7 +2456,7 @@ static class Dashboard
                 : (ok ? "<span class='ok'>Bas&#305;ld&#305; &#10003;</span>"
                 : fail ? "<span style='color:#c0392b;font-weight:600' title='" + H(failed[s.File][4]) + "'>"
                          + (failed[s.File][4] == "IPTAL" ? "&#304;ptal edildi" : "Bas&#305;lamad&#305; &#10007;") + "</span>"
-                : "<span class='wait'>G&ouml;nderildi</span>");
+                : KuyrukDurumHtml(s));
             sb.Append("<tr><td>").Append(s.Time == DateTime.MinValue ? "" : s.Time.ToString("yyyy-MM-dd HH:mm:ss"))
               .Append("</td><td>").Append(H(s.Doc.Length > 0 ? s.Doc : s.File))
               .Append("</td><td>").Append(H(s.User)).Append("</td><td>").Append(H(s.Machine))
@@ -2654,7 +2718,9 @@ static class Dashboard
         foreach (var s in sent)
         {
             string prn = printed.ContainsKey(s.File) && printed[s.File].Length > 3 ? printed[s.File][3] : "";
-            string durum = s.Status != "OK" ? s.Status : (printed.ContainsKey(s.File) ? "Basildi" : "Gonderildi");
+            string durum = s.Status != "OK" ? s.Status
+                         : printed.ContainsKey(s.File) ? "Basildi"
+                         : (Kuyruk.DurumMetni(s.Machine, s.File) ?? "Teslim edildi");
             sb.Append(s.Time == DateTime.MinValue ? "" : s.Time.ToString("yyyy-MM-dd HH:mm:ss")).Append(';')
               .Append(CsvAlan(s.User)).Append(';').Append(CsvAlan(s.Machine)).Append(';')
               .Append(CsvAlan(s.Doc)).Append(';').Append(s.PageN).Append(';')

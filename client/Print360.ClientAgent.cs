@@ -86,6 +86,7 @@ static class ClientAgent
     static bool rdpAcik;                 // su an aktif RDP oturumu var mi (RdpIzleyici gunceller)
     static int sunucuBagli;              // su an ulasilabilen sunucu sayisi (tepsi ipucunda gosterilir)
     static DateTime sonIsHatasi = DateTime.MinValue;   // is cekme hatasi gunlugunu kisitlar
+    static DateTime sonSurumUyarisi = DateTime.MinValue;   // "sunucu eski surumde" uyarisini kisitlar
     static string sonTekrarEdenIs;                      // sunucunun tekrar verdigi is (dongu korumasi)
     static DateTime sonTekrarUyari = DateTime.MinValue;
     static bool sonBildirilen;           // en son balon bildirimi yapilan durum
@@ -873,13 +874,44 @@ static class ClientAgent
         using (var wc = new P360WebClient()) sunucuSurum = wc.DownloadString(baseUrl + "/api/clientversion").Trim();
         Version sv, mv;
         if (!Version.TryParse(sunucuSurum, out sv) || !Version.TryParse(Surum.V, out mv)) return;
-        if (sv <= mv) return; // guncel
+        if (sv < mv)
+        {
+            // SUNUCU ISTEMCIDEN ESKI. Eskiden burada SESSIZCE cikiliyordu; oysa
+            // duzeltmelerin cogu sunucu tarafindadir ve sunucu eski kaldiysa
+            // sorun surer. Sahada "guncelledim ama duzelmedi" durumunun en sik
+            // sebebi buydu ve hicbir yerde gorunmuyordu.
+            if ((DateTime.Now - sonSurumUyarisi).TotalHours >= 6)
+            {
+                sonSurumUyarisi = DateTime.Now;
+                Log("UYARI: SUNUCU ESKI SURUMDE - sunucu " + sunucuSurum + ", bu istemci " + Surum.V
+                  + ". Sunucu tarafindaki duzeltmeler ETKIN DEGIL; sunucuya da ayni surumu kurun.");
+            }
+            return;
+        }
+        if (sv == mv) return; // guncel
 
         Log("Yeni surum bulundu: " + sunucuSurum + " (mevcut " + Surum.V + "). Indiriliyor...");
         string cur = Process.GetCurrentProcess().MainModule.FileName;   // C:\Print360\Print360.ClientAgent.exe
         string yeni = cur + ".new";
         using (var wc = new P360WebClient()) wc.DownloadFile(baseUrl + "/api/clientexe", yeni);
         if (!File.Exists(yeni) || new FileInfo(yeni).Length < 4096) { try { File.Delete(yeni); } catch { } return; }
+
+        // INDIRILEN DOSYA GERCEKTEN DAHA YENI MI? Sunucu yanlis surum bildirirse
+        // (eski sunucular panelin kendi surumunu bildirir) ayni dosyayi 30
+        // dakikada bir indirip kendimizi yeniden baslatmak sonsuz donguydu.
+        try
+        {
+            Version iv;
+            string ivs = (FileVersionInfo.GetVersionInfo(yeni).FileVersion ?? "").Trim();
+            if (!Version.TryParse(ivs, out iv) || iv <= mv)
+            {
+                Log("Guncelleme ATLANDI: sunucu " + sunucuSurum + " bildirdi ama dagittigi dosya " + (ivs.Length > 0 ? ivs : "(surumsuz)")
+                  + " - mevcut surumden (" + Surum.V + ") yeni degil. Sunucudaki update klasoru guncellenmemis.");
+                try { File.Delete(yeni); } catch { }
+                return;
+            }
+        }
+        catch (Exception ex) { Log("Indirilen guncelleme dogrulanamadi: " + ex.Message); try { File.Delete(yeni); } catch { } return; }
 
         // Guncelleyici: ajan kapansin -> yeni exe'yi eskinin uzerine yaz -> yeniden baslat
         string cmd = Path.Combine(baseDir, "update.cmd");

@@ -1195,7 +1195,8 @@ static class Panel360
             Boyut = s.KbN > 0 ? (s.KbN >= 1024 ? Math.Round(s.KbN / 1024.0, 1) + " MB" : s.KbN + " KB") : "",
             Yazici = printed.ContainsKey(s.File) && printed[s.File].Length > 3 ? printed[s.File][3] : "",
             Durum = s.Status != "OK" ? s.Status.Replace("ENGEL:", "Engellendi:")
-                  : (printed.ContainsKey(s.File) ? "Basıldı ✓" : "Gönderildi")
+                  : printed.ContainsKey(s.File) ? "Basıldı ✓"
+                  : (Kuyruk.DurumMetni(s.Machine, s.File) ?? "Teslim edildi")
         }).ToList());
     }
 

@@ -46,7 +46,7 @@ static class Db
                     var p = l.Split(new[] { '=' }, 2);
                     if (p.Length != 2) continue;
                     var k = p[0].Trim().ToLowerInvariant(); var v = p[1].Trim();
-                    if (k == "server") server = v;
+                    if (k == "server") { server = v; _mssqlIstendi = v.Length > 0; }
                     else if (k == "database") db = v;
                     else if (k == "user") user = v;
                     else if (k == "password") pwd = v;
@@ -75,7 +75,38 @@ static class Db
     static readonly object _mKilit = new object();
     public const string SqliteDosya = @"C:\Print360\print360.db";
 
-    public static DbMotor Motor { get { MotorBelirle(false); return _motor; } }
+    public static DbMotor Motor { get { MotorBelirle(false); MssqlYenidenDene(); return _motor; } }
+
+    // MOTOR SECIMI "BIR KEZ KARAR VER, SONRA SORMA" OLMAMALI.
+    // Motor ilk sorguda seciliyordu. Sunucu yeniden basladiginda panel servisi
+    // SQL Server'dan ONCE ayaga kalkarsa MSSQL'e baglanamaz, SQLite'a duser ve
+    // surec kapanana kadar orada KALIRDI: panelde gecmis bos gorunur, istemci
+    // anahtarlari "kayitsiz" olur, veri iki veritabanina bolunurdu.
+    // db.ini'de bir MSSQL sunucusu TANIMLIYSA ve su an ona bagli degilsek,
+    // dakikada bir ARKA PLANDA yeniden denenir (cagiranlar bloke edilmez).
+    static bool _mssqlIstendi;
+    static DateTime _sonMssqlDeneme = DateTime.MinValue;
+    static int _mssqlDeneniyor;
+
+    static void MssqlYenidenDene()
+    {
+        if (_motor == DbMotor.MsSql || !_mssqlIstendi) return;
+        if ((DateTime.Now - _sonMssqlDeneme).TotalSeconds < 60) return;
+        if (System.Threading.Interlocked.Exchange(ref _mssqlDeneniyor, 1) == 1) return;
+        _sonMssqlDeneme = DateTime.Now;
+        System.Threading.ThreadPool.QueueUserWorkItem(delegate
+        {
+            try
+            {
+                using (var c = new SqlConnection(ConnStr())) c.Open();
+                lock (_mKilit) { _motor = DbMotor.MsSql; Err = null; }
+                Alert("Veritabani", "MSSQL'e yeniden baglanildi. Servis acilisinda MSSQL hazir degildi; "
+                    + "aradaki kayitlar yerel SQLite dosyasinda kaldi (" + SqliteDosya + ").");
+            }
+            catch { }
+            finally { System.Threading.Interlocked.Exchange(ref _mssqlDeneniyor, 0); }
+        });
+    }
     public static string MotorAdi
     {
         get
@@ -641,5 +672,108 @@ IF OBJECT_ID('dbo.JobQueue','U') IS NULL CREATE TABLE dbo.JobQueue(
         }
         sb.Append("\r\n");
         return sb.ToString();
+    }
+}
+
+// =====================================================================
+//  KUYRUK DURUMU  (ServerAgent, Dashboard ve Panel ORTAK kullanir)
+//
+//  "Gonderildi" tek kelimesi UC farkli durumu gizliyordu:
+//     a) is kuyruga yazildi, istemci HIC ALMADI   (dosya hala queue\<makine>\ icinde)
+//     b) istemci aldi ama basamadi / onay gelmedi
+//     c) (onay gelince "Basildi")
+//  (a) durumunda cikti ASLA alinmaz; ama panelde (b) ile ayni gorunuyordu.
+//  Sahada bir is yanlis makinenin kuyruguna yazildiginda saatlerce
+//  "Gonderildi" gorundu. Artik dosya kuyrukta duruyorsa bu ACIKCA soylenir.
+// =====================================================================
+static class Kuyruk
+{
+    // (const degil: testler gecici bir klasoru gosterebilsin)
+    public static string Kok = @"C:\Print360\queue";
+    // Kalp atisi kaynagi. Uretimde veritabani + heartbeat.csv; testte sahte.
+    public static Func<string, DateTime> KalpAtisiKaynagi = VeritabanindanOku;
+    public static void OnbellegiTemizle() { lock (_hb) _hb.Clear(); }
+    public const int CevrimiciDakika = 3;     // kalp atisi bu kadar dakikadan eskiyse cevrimdisi
+
+    public static string Sanitize(string s)
+    {
+        foreach (char c in Path.GetInvalidFileNameChars()) s = s.Replace(c, '_');
+        return s;
+    }
+
+    // Is hala kuyrukta mi? Evetse kac dakikadir bekledigini verir.
+    public static bool Bekliyor(string makine, string dosya, out int dakika)
+    {
+        dakika = 0;
+        try
+        {
+            if (string.IsNullOrEmpty(makine) || string.IsNullOrEmpty(dosya)) return false;
+            var fi = new FileInfo(Path.Combine(Path.Combine(Kok, Sanitize(makine)), dosya + ".gz"));
+            if (!fi.Exists) return false;
+            dakika = (int)Math.Max(0, (DateTime.Now - fi.CreationTime).TotalMinutes);
+            return true;
+        }
+        catch { return false; }
+    }
+
+    // Makinenin son kalp atisi (30 sn onbellekli; tablo satiri basina sorgu atilmasin).
+    static readonly System.Collections.Generic.Dictionary<string, DateTime[]> _hb =
+        new System.Collections.Generic.Dictionary<string, DateTime[]>(StringComparer.OrdinalIgnoreCase);
+
+    public static DateTime SonGorulme(string makine)
+    {
+        if (string.IsNullOrEmpty(makine)) return DateTime.MinValue;
+        lock (_hb)
+        {
+            DateTime[] k;
+            if (_hb.TryGetValue(makine, out k) && (DateTime.Now - k[1]).TotalSeconds < 30) return k[0];
+        }
+        DateTime son = DateTime.MinValue;
+        try { son = KalpAtisiKaynagi(makine); } catch { }
+        lock (_hb) _hb[makine] = new[] { son, DateTime.Now };
+        return son;
+    }
+
+    static DateTime VeritabanindanOku(string makine)
+    {
+        DateTime son = DateTime.MinValue;
+        try
+        {
+            object o = Db.Scalar("SELECT MAX(SonGorulme) FROM Heartbeat WHERE Makine=@m", "@m", makine);
+            if (o != null && o != DBNull.Value) DateTime.TryParse(Convert.ToString(o), out son);
+            if (son == DateTime.MinValue)
+            {
+                string hb = @"C:\Print360\stats\heartbeat.csv";
+                if (File.Exists(hb))
+                    foreach (var ln in File.ReadAllLines(hb))
+                    {
+                        var f = ln.Replace("\"", "").Split(',');
+                        if (f.Length < 2 || !f[0].Trim().Equals(makine, StringComparison.OrdinalIgnoreCase)) continue;
+                        DateTime t;
+                        if (DateTime.TryParseExact(f[1].Trim(), "yyyy-MM-dd HH:mm:ss",
+                                System.Globalization.CultureInfo.InvariantCulture,
+                                System.Globalization.DateTimeStyles.None, out t) && t > son) son = t;
+                    }
+            }
+        }
+        catch { }
+        return son;
+    }
+
+    public static bool Cevrimici(string makine)
+    {
+        return SonGorulme(makine) > DateTime.Now.AddMinutes(-CevrimiciDakika);
+    }
+
+    // Panelde gosterilecek durum. Is kuyrukta degilse null doner.
+    public static string DurumMetni(string makine, string dosya)
+    {
+        int dk;
+        if (!Bekliyor(makine, dosya, out dk)) return null;
+        string sure = dk < 1 ? "az once" : dk < 60 ? dk + " dk" : (dk / 60) + " sa " + (dk % 60) + " dk";
+        if (Cevrimici(makine)) return "Kuyrukta (" + sure + ")";
+        DateTime son = SonGorulme(makine);
+        return "BEKLIYOR (" + sure + ") - " + makine
+             + (son == DateTime.MinValue ? " sunucuya HIC baglanmadi" : " cevrimdisi, son: " + son.ToString("dd.MM HH:mm"));
     }
 }
