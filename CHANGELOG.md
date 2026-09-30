@@ -10,6 +10,94 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [2026.09.30.0839]
+
+Proje analizinde öne çıkan üç açığın kapatılması.
+
+### Eklendi — uzaktan kurulum doğrulaması (`/api/surum`)
+
+Sahadaki sunucu, "kuruldu" denmesine rağmen haftalarca eski sürümde kaldı ve
+bunu uzaktan anlamanın yolu yoktu. Sunucu artık şu adreste kendi durumunu
+raporluyor:
+
+```
+https://<sunucu>:8443/api/surum
+```
+
+```json
+{"calisanPanel":"2026.09.30.0839",
+ "disk":{"panel":"…","sunucuAjani":"…","masaustuPanel":"…","dagitilanIstemci":"…"},
+ "sonKurulum":{"surum":"…","tarih":"…","sonuc":"OK","ayrinti":""},
+ "tutarli":true,
+ "not":"Tum bilesenler 2026.09.30.0839 surumunde."}
+```
+
+Rapor şu durumları ayrı ayrı teşhis eder:
+- **dosyalar yeni ama çalışan panel eski** — servis yeniden başlatılmamış
+  (en sinsi durum: kurulum başarılı görünür ama hiçbir şey değişmez),
+- **bir bileşen eski kaldı** — hangisi olduğu yazılır,
+- **son kurulum HATA ile bitti** — hata ayrıntısıyla,
+- **kurulu dosyalar okunamıyor** — kurulum eksik ya da başka klasörde.
+
+Kurulum yapılandırıcısı her kurulumun sonunda
+`C:\Print360\logs\kurulum-sonuc.txt` dosyasına sürüm, tarih ve sonucu
+(OK / UYARI / HATA) yazar. Rapor yalnızca sürüm ve tarih içerir; yol, makine
+adı ve kullanıcı bilgisi içermez.
+
+### Eklendi — Kuyruk sayfası (web paneli ve masaüstü paneli)
+
+Karantinaya alınan ve süresi dolan işler eskiden yalnızca günlüğe
+yazılıyordu; uyarı kaçırılırsa iş fiilen kayboluyordu. Yeni **Kuyruk**
+sayfası:
+- bekleyen işleri hedef makine ve durumla listeler,
+- teslim edilemeyip kenara alınan işleri listeler (menüde kırmızı sayaçla),
+- **Yeniden gönder** ile işi kuyruğa geri koyar. İşin zamanı sıfırlanır (bir
+  dakika sonra yeniden "süresi dolmuş" sayılmaz), deneme sayacı sıfırlanır.
+
+Tanı sayfası da kenara alınan işleri sayar ve Kuyruk sayfasına yönlendirir.
+
+### Düzeltildi — kenara alınan işler panelde "Teslim edildi" görünüyordu
+
+Karantinadaki ve süresi dolan işler kuyruk kökünde olmadığı için panel
+onları istemcinin almış olduğunu sanıyordu. Artık `KARANTINADA` ve
+`SURESI DOLDU` olarak gösteriliyor.
+
+### Değişti — testler üretim kodunu sınıyor ve her yapımda çalışıyor
+
+- Dört test (QsKodlama, EsZamanli, IstemciDegisimi, RoundTrip) sınanan
+  mantığın **kopyasını** içeriyordu; üretim kodu değişse de geçmeye devam
+  ederdi. Paylaşılan kod `server/Print360.Ortak.cs` dosyasına taşındı
+  (Base64Url kimlik, UTF-8 sorgu çözümü, CSV alanı, kilitli günlük, oturum
+  deposu); sunucu, panel ve istemci bu dosyayla derleniyor. Testler artık
+  **üretim kaynağıyla birlikte derleniyor**.
+- `tests/calistir.ps1`: tüm testleri derleyip çalıştıran tek betik.
+  `build.ps1` paketlemeden önce çalıştırır — biri bile başarısızsa **paket
+  üretilmez**. GitHub CI aynı betiği çalıştırır; yeşil CI artık yalnızca
+  "derlendi" değil "testler geçti" demek.
+- Doğrulandı: üretim kodundaki CSV koruması bilerek bozulduğunda çalıştırıcı
+  hatayı yakaladı ve çıkış kodu 1 döndü.
+- Panel oturum çerezine `SameSite=Strict` eklendi (başka siteden gönderilen
+  bir form panelde işlem yapamaz).
+
+### Test
+8 test dosyası, 58 kontrol, hepsi üretim kodu üzerinde:
+
+| Test | Kontrol | Sınadığı |
+|---|---|---|
+| RoundTrip | 6 | Kimlik/ad kodlama zinciri (ağsız) |
+| QsKodlama | 5 | Aynı zincir, gerçek HttpListener üzerinde |
+| EsZamanli | 6 | Kilitli günlük, günlük devri, oturum deposu, CSV |
+| IstemciDegisimi | 7 | Kullanıcı değişiminde iş taşıma |
+| KuyrukDurumu | 7 | Panel durum metinleri |
+| KuyrukKorumalari | 15 | Karantina, süre sınırı, görünürlük, yeniden gönderme, yol geçişi |
+| SurumRaporu | 7 | `/api/surum` teşhisleri, JSON kaçışı |
+| PeMimari | 5 | DLL mimarisi ve RDP kayıt dalı |
+
+Kuyruk sayfalarının görsel çıktısı (web HTML'i ve WPF ekranı) çalıştırılarak
+denenmedi; altlarındaki mantık yukarıdaki testlerle sınandı.
+
+---
+
 ## [2026.09.19.2001]
 
 Baskı yolu uçtan uca (yazdır → yakala → kuyruk → istemci → yazıcı → onay)

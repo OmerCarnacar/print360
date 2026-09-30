@@ -1,53 +1,18 @@
 // REGRESYON TESTI: ayni RDP oturumuna BASKA makineden baglanilmasi
 //
-// Sunucu ajani istemci adini yalnizca baslarken okuyor, sonra hic
-// tazelemiyordu. Kullanici (veya sunucuyu yeniden baslatan yonetici) once A
-// makinesinden oturum acip sonra ayni oturuma B'den baglaninca isler hala A'nin
-// kuyruguna yaziliyordu: panelde "Gonderildi" gorunuyor, cikti ALINMIYORDU.
+// Sunucu ajani istemci adini yalnizca baslarken okuyordu. Kullanici once A
+// makinesinden oturum acip sonra ayni oturuma B'den baglaninca isler hala
+// A'nin kuyruguna yaziliyordu: panelde "Gonderildi", cikti YOK.
+// Duzeltmenin ikinci parcasi: yanlis kuyrukta kalan isler yeni makineye
+// tasinir. Yalnizca BU kullanicinin ve son 24 saatin isleri.
 //
-// Duzeltme iki parcadir: (1) ad her turda ve her isten once tazelenir,
-// (2) yanlis kuyrukta kalan isler yeni makineye tasinir. Bu test (2)'yi
-// gercek dosyalarla dogrular: yalnizca BU kullanicinin ve son 24 saatin
-// isleri tasinmali; baskasinin isi ve eski isler yerinde kalmali.
+// URETIM KODUNU SINAR: server\Print360.Db.cs ile birlikte derlenir
+// (Kuyruk.KullaniciIsleriniTasi).
 using System;
 using System.IO;
 
 class IstemciDegisimi
 {
-    static string kok;
-    static string user = "FS";
-    static string Sanitize(string s)
-    {
-        foreach (char c in Path.GetInvalidFileNameChars()) s = s.Replace(c, '_');
-        return s;
-    }
-
-    // server/Print360.ServerAgent.cs icindeki BekleyenleriTasi ile AYNI mantik
-    static int BekleyenleriTasi(string eskiMakine, string yeniMakine)
-    {
-        string kaynak = Path.Combine(kok, Sanitize(eskiMakine));
-        if (!Directory.Exists(kaynak)) return 0;
-        string hedef = Path.Combine(kok, Sanitize(yeniMakine));
-        int tasinan = 0;
-        foreach (var f in new DirectoryInfo(kaynak).GetFiles("*.gz"))
-        {
-            if (f.CreationTime < DateTime.Now.AddHours(-24)) continue;
-            string[] b = f.Name.Split(new[] { '_' }, 4);
-            if (b.Length < 4) continue;
-            string kalan = b[3];
-            bool benim = kalan.StartsWith(user + "__", StringComparison.OrdinalIgnoreCase)
-                      || kalan.StartsWith(user + "~",  StringComparison.OrdinalIgnoreCase)
-                      || kalan.StartsWith(user + ".",  StringComparison.OrdinalIgnoreCase);
-            if (!benim) continue;
-            Directory.CreateDirectory(hedef);
-            string yeniYol = Path.Combine(hedef, f.Name);
-            if (File.Exists(yeniYol)) continue;
-            File.Move(f.FullName, yeniYol);
-            tasinan++;
-        }
-        return tasinan;
-    }
-
     static int gecti, toplam;
     static void Kontrol(bool ok, string ad)
     {
@@ -55,10 +20,11 @@ class IstemciDegisimi
         Console.WriteLine((ok ? "GECTI " : "KALDI ") + ad);
     }
 
-    static void Main()
+    static int Main()
     {
-        kok = Path.Combine(Path.GetTempPath(), "p360-test-istemci");
+        string kok = Path.Combine(Path.GetTempPath(), "p360-test-istemci");
         if (Directory.Exists(kok)) Directory.Delete(kok, true);
+        Kuyruk.Kok = kok;
         string a = Path.Combine(kok, "DESKTOP-7FRHC7B");
         Directory.CreateDirectory(a);
 
@@ -72,7 +38,7 @@ class IstemciDegisimi
             File.WriteAllText(Path.Combine(a, f), "x");
         File.SetCreationTime(Path.Combine(a, eskiIs), DateTime.Now.AddDays(-29));
 
-        int n = BekleyenleriTasi("DESKTOP-7FRHC7B", "EVOPC");
+        int n = Kuyruk.KullaniciIsleriniTasi("DESKTOP-7FRHC7B", "EVOPC", "FS");
         string b = Path.Combine(kok, "EVOPC");
 
         Kontrol(n == 3, "kullanicinin 3 isi tasindi (tasinan: " + n + ")");
@@ -81,11 +47,13 @@ class IstemciDegisimi
         Kontrol(File.Exists(Path.Combine(a, baskasi)), "adi 'FS' ile BASLAYAN baska kullanicinin isine dokunulmadi");
         Kontrol(File.Exists(Path.Combine(a, digeri)),  "baska kullanicinin isine dokunulmadi");
         Kontrol(File.Exists(Path.Combine(a, eskiIs)),  "24 saatten eski is tasinmadi (surpriz cikti yok)");
-        Kontrol(BekleyenleriTasi("DESKTOP-7FRHC7B", "EVOPC") == 0, "ikinci cagri hicbir sey tasimiyor");
+        Kontrol(Kuyruk.KullaniciIsleriniTasi("DESKTOP-7FRHC7B", "EVOPC", "FS") == 0, "ikinci cagri hicbir sey tasimiyor");
+        Kontrol(Kuyruk.KullaniciIsleriniTasi("YOK-PC", "EVOPC", "FS") == 0
+             && Kuyruk.KullaniciIsleriniTasi("DESKTOP-7FRHC7B", "EVOPC", "") == 0, "olmayan klasor / bos kullanici guvenli");
 
         Console.WriteLine();
         Console.WriteLine("Sonuc: " + gecti + "/" + toplam);
         try { Directory.Delete(kok, true); } catch { }
-        Environment.Exit(gecti == toplam ? 0 : 1);
+        return gecti == toplam ? 0 : 1;
     }
 }

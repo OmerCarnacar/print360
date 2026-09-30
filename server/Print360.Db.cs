@@ -735,7 +735,7 @@ static class Kuyruk
         if (n <= EnFazlaVerme || dakika < EnAzDakika) return false;
         try
         {
-            string dir = Path.Combine(Path.GetDirectoryName(tamYol), "_sorunlu");
+            string dir = Path.Combine(Path.GetDirectoryName(tamYol), KarantinaKlasoru);
             Directory.CreateDirectory(dir);
             karantinaYolu = Path.Combine(dir, Path.GetFileName(tamYol));
             if (File.Exists(karantinaYolu)) File.Delete(karantinaYolu);
@@ -849,14 +849,137 @@ static class Kuyruk
     }
 
     // Panelde gosterilecek durum. Is kuyrukta degilse null doner.
+    public const string KarantinaKlasoru = "_sorunlu";
+
+    // Panelde gosterilecek durum. Is hicbir yerde yoksa (istemci aldi) null doner.
+    // KARANTINA ve SURESI DOLAN isler de burada tanimlanir: aksi halde kuyruk
+    // kokunde olmadiklari icin panelde "Teslim edildi" gorunurlerdi - oysa
+    // HIC teslim edilmediler.
     public static string DurumMetni(string makine, string dosya)
     {
         int dk;
-        if (!Bekliyor(makine, dosya, out dk)) return null;
+        if (!Bekliyor(makine, dosya, out dk))
+        {
+            if (string.IsNullOrEmpty(makine) || string.IsNullOrEmpty(dosya)) return null;
+            try
+            {
+                string ad = dosya + ".gz", m = Sanitize(makine);
+                if (File.Exists(Path.Combine(Path.Combine(Path.Combine(Kok, m), KarantinaKlasoru), ad)))
+                    return "KARANTINADA - teslim edilemedi (panel > Kuyruk'tan yeniden gonderilebilir)";
+                if (File.Exists(Path.Combine(Path.Combine(SuresiDolanKok, m), ad)))
+                    return "SURESI DOLDU - teslim edilmedi (panel > Kuyruk'tan yeniden gonderilebilir)";
+            }
+            catch { }
+            return null;
+        }
         string sure = dk < 1 ? "az once" : dk < 60 ? dk + " dk" : (dk / 60) + " sa " + (dk % 60) + " dk";
         if (Cevrimici(makine)) return "Kuyrukta (" + sure + ")";
         DateTime son = SonGorulme(makine);
         return "BEKLIYOR (" + sure + ") - " + makine
              + (son == DateTime.MinValue ? " sunucuya HIC baglanmadi" : " cevrimdisi, son: " + son.ToString("dd.MM HH:mm"));
+    }
+
+    // ------------------------------------------------------------------
+    // KULLANICI DEGISIMINDE BEKLEYEN ISLERI TASI
+    // Yanlis (eski) makinenin kuyrugunda kalan isleri kullanicinin SIMDI bagli
+    // oldugu makineye tasir. Yalnizca BU kullanicinin ve son 24 saatin isleri:
+    // baskasinin isine dokunulmaz, gunler onceki belge de surpriz sekilde
+    // yazicidan cikmaz. Ad: yyyyMMdd_HHmmss_fff_<kullanici>[__TUR][~belge].pdf.gz
+    // ------------------------------------------------------------------
+    public static int KullaniciIsleriniTasi(string eskiMakine, string yeniMakine, string kullanici)
+    {
+        string kaynak = Path.Combine(Kok, Sanitize(eskiMakine));
+        if (!Directory.Exists(kaynak) || string.IsNullOrEmpty(kullanici)) return 0;
+        string hedef = Path.Combine(Kok, Sanitize(yeniMakine));
+        int tasinan = 0;
+        foreach (var f in new DirectoryInfo(kaynak).GetFiles("*.gz"))
+        {
+            if (f.CreationTime < DateTime.Now.AddHours(-24)) continue;
+            string[] b = f.Name.Split(new[] { '_' }, 4);          // tarih, saat, ms, kalan
+            if (b.Length < 4) continue;
+            string kalan = b[3];
+            bool benim = kalan.StartsWith(kullanici + "__", StringComparison.OrdinalIgnoreCase)
+                      || kalan.StartsWith(kullanici + "~",  StringComparison.OrdinalIgnoreCase)
+                      || kalan.StartsWith(kullanici + ".",  StringComparison.OrdinalIgnoreCase);
+            if (!benim) continue;
+            try
+            {
+                Directory.CreateDirectory(hedef);
+                string yeniYol = Path.Combine(hedef, f.Name);
+                if (File.Exists(yeniYol)) continue;
+                File.Move(f.FullName, yeniYol);
+                tasinan++;
+            }
+            catch { }
+        }
+        return tasinan;
+    }
+
+    // ------------------------------------------------------------------
+    // AYRILAN ISLER: karantina + suresi dolan. Panelde listelenir ve
+    // "yeniden kuyruga al" ile geri gonderilebilir. Eskiden yalnizca gunluge
+    // yaziliyordu; uyariyi kacirildiginda is fiilen kayboluyordu.
+    // ------------------------------------------------------------------
+    public class AyrilanIs
+    {
+        public string Tur;      // "karantina" | "suresi-dolan"
+        public string Makine;
+        public string Dosya;    // .gz OLMADAN
+        public DateTime Tarih;  // is ilk olustugunda
+        public long Bayt;
+    }
+
+    public static System.Collections.Generic.List<AyrilanIs> Ayrilanlar()
+    {
+        var l = new System.Collections.Generic.List<AyrilanIs>();
+        try
+        {
+            if (Directory.Exists(Kok))
+                foreach (var d in Directory.GetDirectories(Kok))
+                {
+                    string k = Path.Combine(d, KarantinaKlasoru);
+                    if (!Directory.Exists(k)) continue;
+                    foreach (var f in new DirectoryInfo(k).GetFiles("*.gz"))
+                        l.Add(new AyrilanIs { Tur = "karantina", Makine = Path.GetFileName(d),
+                                              Dosya = f.Name.Substring(0, f.Name.Length - 3), Tarih = f.CreationTime, Bayt = f.Length });
+                }
+            if (Directory.Exists(SuresiDolanKok))
+                foreach (var d in Directory.GetDirectories(SuresiDolanKok))
+                    foreach (var f in new DirectoryInfo(d).GetFiles("*.gz"))
+                        l.Add(new AyrilanIs { Tur = "suresi-dolan", Makine = Path.GetFileName(d),
+                                              Dosya = f.Name.Substring(0, f.Name.Length - 3), Tarih = f.CreationTime, Bayt = f.Length });
+        }
+        catch { }
+        l.Sort((a, b) => b.Tarih.CompareTo(a.Tarih));
+        return l;
+    }
+
+    // Ayrilan isi kuyruga GERI koyar. Olusturma zamani SIMDI yapilir: aksi halde
+    // suresi dolan is bir dakika sonra yeniden suresi dolmus sayilirdi. Deneme
+    // sayaci da sifirlanir. Adlar yol gecisine karsi temizlenir.
+    public static bool GeriAl(string tur, string makine, string dosya, out string hata)
+    {
+        hata = null;
+        try
+        {
+            string m = Sanitize(Path.GetFileName(makine ?? ""));
+            string ad = Path.GetFileName(dosya ?? "");
+            if (m.Length == 0 || ad.Length == 0 || m == "." || m == "..") { hata = "gecersiz ad"; return false; }
+            if (!ad.EndsWith(".gz", StringComparison.OrdinalIgnoreCase)) ad += ".gz";
+            string kaynak = tur == "karantina"
+                ? Path.Combine(Path.Combine(Path.Combine(Kok, m), KarantinaKlasoru), ad)
+                : tur == "suresi-dolan" ? Path.Combine(Path.Combine(SuresiDolanKok, m), ad) : null;
+            if (kaynak == null) { hata = "gecersiz tur"; return false; }
+            if (!File.Exists(kaynak)) { hata = "dosya bulunamadi"; return false; }
+            string hedefDir = Path.Combine(Kok, m);
+            Directory.CreateDirectory(hedefDir);
+            string hedef = Path.Combine(hedefDir, ad);
+            if (File.Exists(hedef)) { hata = "ayni adli is zaten kuyrukta"; return false; }
+            File.Move(kaynak, hedef);
+            File.SetCreationTime(hedef, DateTime.Now);
+            lock (_verilme) _verilme.Remove(hedef);
+            return true;
+        }
+        catch (Exception ex) { hata = ex.Message; return false; }
     }
 }

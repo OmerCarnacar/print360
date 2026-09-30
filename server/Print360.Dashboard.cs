@@ -16,6 +16,7 @@ using System.Collections.Generic;
 using System.DirectoryServices;
 using System.Globalization;
 using System.IO;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Net;
@@ -40,8 +41,7 @@ static class Dashboard
     // thread dokunabilir. Kilitsiz Dictionary'ye es zamanli yazma ic yapiyi
     // bozar; klasik sonucu %100 CPU'da sonsuz dongudur. Tek kilit yeterli:
     // erisimler kisa ve seyrek.
-    static readonly object durumKilit = new object();
-    static Dictionary<string, DateTime> sessions = new Dictionary<string, DateTime>();
+    static readonly OturumDeposu oturumlar = new OturumDeposu();   // kilitli (bkz. Ortak.cs)
     static object hbLock = new object();
     static Dictionary<string, bool> pingCache; static DateTime pingTime = DateTime.MinValue;
 
@@ -133,6 +133,16 @@ static class Dashboard
                         return;
                     }
                     // Otomatik guncelleme: istemci ajanlari surum sorar / yeni binary'yi indirir (auth'suz)
+                    if (ctx.Request.HttpMethod == "GET" &&
+                        ctx.Request.Url.AbsolutePath.Equals("/api/surum", StringComparison.OrdinalIgnoreCase))
+                    {
+                        byte[] sb0 = Encoding.UTF8.GetBytes(SurumRaporu());
+                        ctx.Response.ContentType = "application/json; charset=utf-8";
+                        ctx.Response.ContentLength64 = sb0.Length;
+                        ctx.Response.OutputStream.Write(sb0, 0, sb0.Length);
+                        ctx.Response.Close();
+                        return;
+                    }
                     if (ctx.Request.HttpMethod == "GET" &&
                         ctx.Request.Url.AbsolutePath.Equals("/api/clientversion", StringComparison.OrdinalIgnoreCase))
                     {
@@ -495,6 +505,94 @@ static class Dashboard
         catch { return Surum.V; }
     }
 
+    // ------------------------------------------------------------------
+    // /api/surum - UZAKTAN KURULUM DOGRULAMASI
+    // "Kurdum" denildiginde gercekte ne kurulu oldugunu saniyeler icinde
+    // gosterir. Ayrica en sinsi durumu yakalar: dosyalar yeni ama CALISAN
+    // panel eski (servis yeniden baslatilmamis). Yalnizca surum ve tarih
+    // bilgisi verir; yol, makine adi, kullanici bilgisi YOKTUR.
+    // ------------------------------------------------------------------
+    static string DosyaSurumu(string yol)
+    {
+        try { return File.Exists(yol) ? ((FileVersionInfo.GetVersionInfo(yol).FileVersion ?? "").Trim()) : ""; }
+        catch { return ""; }
+    }
+
+    internal static string Js(string s)
+    {
+        return "\"" + (s ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"")
+                                .Replace("\r", " ").Replace("\n", " ") + "\"";
+    }
+
+    static string SurumRaporu()
+    {
+        string kurulum = null;
+        try
+        {
+            string f = @"C:\Print360\logs\kurulum-sonuc.txt";
+            if (File.Exists(f)) kurulum = File.ReadAllText(f);
+        }
+        catch { }
+        return SurumRaporuUret(Surum.V,
+            DosyaSurumu(@"C:\Print360\Print360.Dashboard.exe"),
+            DosyaSurumu(@"C:\Print360\Print360.ServerAgent.exe"),
+            DosyaSurumu(@"C:\Print360\Print360.Panel.exe"),
+            DosyaSurumu(@"C:\Print360\update\Print360.ClientAgent.exe"),
+            kurulum);
+    }
+
+    // KARAR MANTIGI (saf - dosyaya dokunmaz; tests\SurumRaporu sinar).
+    // kurulumSatiri: logs\kurulum-sonuc.txt icerigi -> surum|tarih|mod|sonuc|ayrinti
+    internal static string SurumRaporuUret(string calisan, string panelDisk, string ajan,
+                                           string masaustu, string istemci, string kurulumSatiri)
+    {
+        calisan = calisan ?? ""; panelDisk = panelDisk ?? ""; ajan = ajan ?? "";
+        masaustu = masaustu ?? ""; istemci = istemci ?? "";
+        string[] k = new string[5];
+        if (!string.IsNullOrEmpty(kurulumSatiri))
+        {
+            var p = kurulumSatiri.Trim().Split(new[] { '|' }, 5);
+            for (int i = 0; i < p.Length && i < 5; i++) k[i] = p[i];
+        }
+
+        var hepsi = new List<string>();
+        foreach (var v in new[] { calisan, panelDisk, ajan, masaustu, istemci }) if (v.Length > 0) hepsi.Add(v);
+        bool dosyalarVar = panelDisk.Length > 0 && ajan.Length > 0;
+        bool ayniSurum = hepsi.Distinct().Count() <= 1;
+        bool tutarli = dosyalarVar && ayniSurum && k[3] != "HATA";
+
+        string not;
+        if (!dosyalarVar)
+            not = "Kurulu sunucu dosyalari (C:\\Print360\\Print360.Dashboard.exe / ServerAgent.exe) okunamadi - kurulum eksik olabilir.";
+        else if (panelDisk != calisan)
+            not = "Diskteki panel " + panelDisk + " ama CALISAN panel " + calisan
+                + " - servis yeniden baslatilmamis. 'Print360 Dashboard' servisini yeniden baslatin.";
+        else if (!ayniSurum)
+            not = "Bilesenler farkli surumlerde (ajan " + ajan + ", masaustu " + masaustu + ", istemci " + istemci
+                + ") - kurulum bazi dosyalari guncelleyememis olabilir (logs\\kurulum.log).";
+        else if (k[3] == "HATA")
+            not = "Son kurulum HATA ile bitti: " + (k[4] ?? "");
+        else if (k[3] == "UYARI")
+            not = "Tum bilesenler " + calisan + "; son kurulum uyarilarla bitti.";
+        else
+            not = "Tum bilesenler " + calisan + " surumunde.";
+
+        var sb = new StringBuilder();
+        sb.Append("{");
+        sb.Append("\"calisanPanel\":").Append(Js(calisan)).Append(",");
+        sb.Append("\"disk\":{\"panel\":").Append(Js(panelDisk))
+          .Append(",\"sunucuAjani\":").Append(Js(ajan))
+          .Append(",\"masaustuPanel\":").Append(Js(masaustu))
+          .Append(",\"dagitilanIstemci\":").Append(Js(istemci)).Append("},");
+        sb.Append("\"sonKurulum\":{\"surum\":").Append(Js(k[0])).Append(",\"tarih\":").Append(Js(k[1]))
+          .Append(",\"sonuc\":").Append(Js(k[3] ?? "(kayit yok - 2026.09.30 oncesi kurulum)"))
+          .Append(",\"ayrinti\":").Append(Js(k[4])).Append("},");
+        sb.Append("\"tutarli\":").Append(tutarli ? "true" : "false").Append(",");
+        sb.Append("\"not\":").Append(Js(not));
+        sb.Append("}");
+        return sb.ToString();
+    }
+
     // Guncel istemci ajani binary'sini dagit (C:\Print360\update\Print360.ClientAgent.exe)
     static void HandleClientExe(HttpListenerContext ctx)
     {
@@ -567,70 +665,10 @@ static class Dashboard
     // Makine adini klasor adina cevir. ServerAgent.Sanitize ile AYNI olmali;
     // yoksa kuyruk klasoru bulunamaz (is istemciye gitmez).
 
-    // ---------------------------------------------------------------------
-    // ASCII IS KIMLIGI (Base64Url)
-    // Turkce harfler HTTP basliklarinda (ASCII tasir), sorgu dizesinde (kod
-    // sayfasina gore cozulur) ve araya giren her katmanda bozulabiliyor. Kokten
-    // cozum: kimlik olarak ADIN KENDISINI tasimamak. Dosya adinin UTF-8
-    // baytlarini Base64Url ile kodluyoruz; ortaya cikan kimlikte yalnizca
-    // A-Z a-z 0-9 - _ bulunur, yani hicbir kod sayfasi onu degistiremez.
-    static string B64Kodla(string s)
-    {
-        string b = Convert.ToBase64String(Encoding.UTF8.GetBytes(s));
-        return b.Replace('+', '-').Replace('/', '_').TrimEnd('=');
-    }
 
-    // Kimligi coz. Base64Url degilse null doner (eski surum istemciler adi
-    // duz gonderebilir; cagiran taraf o zaman ham degeri kullanir).
-    static string B64Coz(string s)
-    {
-        if (string.IsNullOrEmpty(s)) return null;
-        for (int i = 0; i < s.Length; i++)
-        {
-            char c = s[i];
-            bool gecerli = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
-                        || (c >= '0' && c <= '9') || c == '-' || c == '_';
-            if (!gecerli) return null;
-        }
-        string b = s.Replace('-', '+').Replace('_', '/');
-        int kalan = b.Length % 4;
-        if (kalan == 1) return null;
-        if (kalan == 2) b += "==";
-        else if (kalan == 3) b += "=";
-        try { return Encoding.UTF8.GetString(Convert.FromBase64String(b)); }
-        catch { return null; }
-    }
 
-    // ---------------------------------------------------------------------
-    // SORGU DIZESI COZUMU (UTF-8)
-    // HttpListener.QueryString, yuzde-kodlu degerleri ISLETIM SISTEMININ ANSI
-    // kod sayfasiyla cozer (Turkce sunucuda windows-1254). Istemci adlari ise
-    // UTF-8 ile kodlar. Bu yuzden "%C4%B1" (Turkce i) sunucuda iki bozuk
-    // karaktere donusuyordu; onaylanan is kuyrukta BULUNAMIYOR, "dosya yok =
-    // zaten silinmis" sanilip OK donuluyor ve AYNI IS SONSUZA KADAR yeniden
-    // veriliyordu ("ilk yazdirma oluyor, devami gelmiyor").
-    // Cozum: sorguyu HAM URL'den kendimiz UTF-8 ile cozuyoruz.
-    static string Q(HttpListenerContext ctx, string ad)
-    {
-        try
-        {
-            string raw = ctx.Request.RawUrl;
-            if (raw == null) return null;
-            int s = raw.IndexOf('?');
-            if (s < 0) return null;
-            string[] parcalar = raw.Substring(s + 1).Split('&');
-            for (int i = 0; i < parcalar.Length; i++)
-            {
-                int e = parcalar[i].IndexOf('=');
-                if (e < 0) continue;
-                if (!string.Equals(parcalar[i].Substring(0, e), ad, StringComparison.OrdinalIgnoreCase)) continue;
-                string deger = parcalar[i].Substring(e + 1).Replace("+", "%20");
-                try { return Uri.UnescapeDataString(deger); } catch { return deger; }
-            }
-            return null;
-        }
-        catch { return null; }
-    }
+    // Sorgu degeri UTF-8 ile (bkz. Ortak.SorguDegeri - QueryString ANSI cozer).
+    static string Q(HttpListenerContext ctx, string ad) { return Ortak.SorguDegeri(ctx.Request.RawUrl, ad); }
 
     static string Sanitize(string s)
     {
@@ -712,8 +750,8 @@ static class Dashboard
                 // Cozum: adlari yuzde-kodlayarak ASCII yapiyoruz. Istemci kimligi
                 // aynen geri gonderir; sorgu dizesi cozumlemesi orijinali verir.
                 // KIMLIK SAF ASCII'DIR (Base64Url): hicbir kod sayfasi bozamaz.
-                ctx.Response.AddHeader("X-Job-Id", "F:" + B64Kodla(Path.GetFileName(dosyaYol)));
-                ctx.Response.AddHeader("X-File-Name-B64", B64Kodla(dosyaAd));
+                ctx.Response.AddHeader("X-Job-Id", "F:" + Ortak.B64Kodla(Path.GetFileName(dosyaYol)));
+                ctx.Response.AddHeader("X-File-Name-B64", Ortak.B64Kodla(dosyaAd));
                 // Eski istemciler icin geriye uyumluluk (yuzde-kodlu).
                 ctx.Response.AddHeader("X-File-Name", Uri.EscapeDataString(dosyaAd));
                 ctx.Response.ContentLength64 = fdata.Length;
@@ -775,7 +813,7 @@ static class Dashboard
                 // Dosya kuyrugu onayi (MSSQL gerekmez): yalnizca dosya adi kabul edilir
                 // Kimlik Base64Url ise coz; degilse (eski surum istemci) ham ad.
                 string kimlik = ham.Substring(2);
-                string cozulmus = B64Coz(kimlik);
+                string cozulmus = Ortak.B64Coz(kimlik);
                 string ad = Path.GetFileName(cozulmus != null ? cozulmus : kimlik);   // yol gecisi engellenir
                 string qDirOnay = Path.Combine(@"C:\Print360\queue", Sanitize(machine));
                 string yol2 = Path.Combine(qDirOnay, ad);
@@ -1229,18 +1267,12 @@ static class Dashboard
             if (path == "/cikis")
             {
                 var ck = req.Cookies["p360"];
-                if (ck != null) lock (durumKilit) sessions.Remove(ck.Value);
+                if (ck != null) oturumlar.Kapat(ck.Value);
                 Redirect(ctx, "/login");
                 return null;
             }
             var c = req.Cookies["p360"];
-            bool auth = false;
-            if (c != null)
-                lock (durumKilit)
-                {
-                    DateTime bitis;
-                    auth = sessions.TryGetValue(c.Value, out bitis) && bitis > DateTime.Now;
-                }
+            bool auth = c != null && oturumlar.Gecerli(c.Value);
             if (!auth) { Redirect(ctx, "/login"); return null; }
         }
 
@@ -1307,6 +1339,29 @@ static class Dashboard
                 Redirect(ctx, "/uyarilar");
                 return null;
             case "/uyarilar": return Page("uyarilar", PageAlerts());
+            case "/kuyruk": return Page("kuyruk", PageKuyruk(req));
+            case "/kuyruk/geri":
+            {
+                // Yalnizca POST: bir baglantiya tiklamak (GET) is gonderemesin.
+                string sonuc = "Gecersiz istek.";
+                if (req.HttpMethod == "POST")
+                {
+                    string govde;
+                    using (var sr = new StreamReader(req.InputStream, Encoding.UTF8)) govde = sr.ReadToEnd();
+                    string tur = Ortak.SorguDegeri("?" + govde, "tur") ?? "";
+                    string mak = Ortak.SorguDegeri("?" + govde, "makine") ?? "";
+                    string dos = Ortak.SorguDegeri("?" + govde, "dosya") ?? "";
+                    string hata;
+                    if (Kuyruk.GeriAl(tur, mak, dos, out hata))
+                    {
+                        sonuc = "Yeniden kuyruga alindi: " + dos + " -> " + mak;
+                        Log("Kuyruk: is elle yeniden kuyruga alindi (" + tur + ") -> " + mak + " | " + dos);
+                    }
+                    else sonuc = "Kuyruga alinamadi (" + hata + "): " + dos;
+                }
+                Redirect(ctx, "/kuyruk?sonuc=" + Uri.EscapeDataString(sonuc));
+                return null;
+            }
             case "/uyarilar/okundu":
                 Db.Exec("UPDATE Alerts SET Okundu=1 WHERE Okundu=0"); Db.UyarilariOkunduIsaretle();
                 Redirect(ctx, "/uyarilar");
@@ -1395,16 +1450,10 @@ static class Dashboard
             }
             if (GirisDogru(usr, pwd))
             {
-                // suresi dolan oturumlari temizle, yeni oturum ac (12 saat)
-                string token = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
-                lock (durumKilit)
-                {
-                    // suresi dolan oturumlari temizle, yeni oturum ac (12 saat)
-                    foreach (var k in sessions.Where(x => x.Value < DateTime.Now).Select(x => x.Key).ToList())
-                        sessions.Remove(k);
-                    sessions[token] = DateTime.Now.AddHours(12);
-                }
-                ctx.Response.AppendHeader("Set-Cookie", "p360=" + token + "; Path=/; HttpOnly");
+                // yeni oturum (12 saat); suresi dolanlar temizlenir
+                string token = oturumlar.Ac(TimeSpan.FromHours(12));
+                // SameSite=Strict: baska bir siteden gelen form, panelde islem yapamaz (CSRF).
+                ctx.Response.AppendHeader("Set-Cookie", "p360=" + token + "; Path=/; HttpOnly; SameSite=Strict");
                 Redirect(ctx, "/");
                 return null;
             }
@@ -1845,6 +1894,79 @@ static class Dashboard
     }
 
     // Uyarilar sayfasi (SQL Alerts tablosu) + e-posta raporu durumu
+    // ------------------------------------------------------------------
+    // KUYRUK SAYFASI
+    // Bekleyen isler + teslim edilemeyip KENARA ALINANLAR (karantina, suresi
+    // dolan). Eskiden kenara alinan isler yalnizca gunlukte gorunuyordu;
+    // uyari kacirilirsa is fiilen kayboluyordu. Artik burada listelenir ve
+    // tek tusla yeniden gonderilebilir.
+    // ------------------------------------------------------------------
+    static string PageKuyruk(HttpListenerRequest req)
+    {
+        var sb = new StringBuilder();
+        string sonuc = Ortak.SorguDegeri(req.RawUrl, "sonuc");
+        if (!string.IsNullOrEmpty(sonuc))
+            sb.Append("<div class='info'>").Append(H(sonuc)).Append("</div>");
+
+        // 1) Bekleyen isler
+        var bekleyen = new List<string[]>();   // makine, dosya, durum
+        try
+        {
+            if (Directory.Exists(Kuyruk.Kok))
+                foreach (var d in Directory.GetDirectories(Kuyruk.Kok))
+                    foreach (var f in new DirectoryInfo(d).GetFiles("*.gz").OrderBy(x => x.CreationTime))
+                    {
+                        string m = Path.GetFileName(d), ad = f.Name.Substring(0, f.Name.Length - 3);
+                        bekleyen.Add(new[] { m, ad, Kuyruk.DurumMetni(m, ad) ?? "" });
+                    }
+        }
+        catch (Exception ex) { sb.Append("<div class='warn'>Kuyruk okunamadi: ").Append(H(ex.Message)).Append("</div>"); }
+
+        var ayrilan = Kuyruk.Ayrilanlar();
+        Card(sb, bekleyen.Count.ToString(), "Kuyrukta bekleyen");
+        Card(sb, ayrilan.Count(a => a.Tur == "karantina").ToString(), "Karantinada");
+        Card(sb, ayrilan.Count(a => a.Tur == "suresi-dolan").ToString(), "S&uuml;resi dolan");
+
+        sb.Append("<h2>Bekleyen i&#351;ler</h2>");
+        if (bekleyen.Count == 0) sb.Append("<div class='mut'>Bo&#351; &mdash; t&uuml;m i&#351;ler istemcilere ula&#351;t&#305;.</div>");
+        else
+        {
+            sb.Append("<table><tr><th>Hedef makine</th><th>&#304;&#351;</th><th>Durum</th></tr>");
+            foreach (var b in bekleyen.Take(300))
+            {
+                bool sorun = b[2].StartsWith("BEKLIYOR");
+                sb.Append("<tr><td>").Append(H(b[0])).Append("</td><td>").Append(H(b[1])).Append("</td><td")
+                  .Append(sorun ? " style='color:#c0392b;font-weight:600'" : "").Append(">").Append(H(b[2])).Append("</td></tr>");
+            }
+            sb.Append("</table>");
+        }
+
+        sb.Append("<h2>Teslim edilemeyip kenara al&#305;nan i&#351;ler</h2>");
+        sb.Append("<div class='mut'><b>Karantina:</b> i&#351; defalarca verildi ama istemci hi&ccedil; onaylamad&#305;; kuyru&#287;u t&#305;kamamas&#305; i&ccedil;in ay&#305;r&#305;ld&#305;. ")
+          .Append("<b>S&uuml;resi dolan:</b> ").Append(Kuyruk.SureSaat / 24).Append(" g&uuml;nden uzun bekledi; eski belgeler s&uuml;rpriz &#351;ekilde yaz&#305;c&#305;dan &ccedil;&#305;kmas&#305;n diye durduruldu. ")
+          .Append("Dosyalar silinmez. <b>Yeniden g&ouml;nder</b> i&#351;i kuyru&#287;a geri koyar; hedef makine ba&#287;l&#305;ysa hemen yazd&#305;r&#305;l&#305;r.</div>");
+        if (ayrilan.Count == 0) sb.Append("<div class='mut'>Yok.</div>");
+        else
+        {
+            sb.Append("<table><tr><th>Tarih</th><th>T&uuml;r</th><th>Hedef makine</th><th>&#304;&#351;</th><th>Boyut</th><th></th></tr>");
+            foreach (var a in ayrilan.Take(300))
+            {
+                sb.Append("<tr><td>").Append(a.Tarih.ToString("yyyy-MM-dd HH:mm")).Append("</td><td>")
+                  .Append(a.Tur == "karantina" ? "<span style='color:#c0392b;font-weight:600'>Karantina</span>" : "S&uuml;resi doldu")
+                  .Append("</td><td>").Append(H(a.Makine)).Append("</td><td>").Append(H(a.Dosya))
+                  .Append("</td><td>").Append(Math.Max(1, a.Bayt / 1024)).Append(" KB</td><td>")
+                  .Append("<form method='post' action='/kuyruk/geri' style='margin:0'>")
+                  .Append("<input type='hidden' name='tur' value='").Append(H(a.Tur)).Append("'>")
+                  .Append("<input type='hidden' name='makine' value='").Append(H(a.Makine)).Append("'>")
+                  .Append("<input type='hidden' name='dosya' value='").Append(H(a.Dosya)).Append("'>")
+                  .Append("<button type='submit' style='background:#1f3a5f;color:#fff;border:0;border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer'>&#8635; Yeniden g&ouml;nder</button>")
+                  .Append("</form></td></tr>");
+            }
+            sb.Append("</table>");
+        }
+        return sb.ToString();
+    }
+
     static string PageAlerts()
     {
         var sb = new StringBuilder();
@@ -2176,6 +2298,11 @@ static class Dashboard
                         if (n <= 20) satir.Append("<tr><td>").Append(H(Path.GetFileName(d))).Append("</td><td>")
                             .Append(H(Path.GetFileName(f))).Append("</td></tr>");
                     }
+            int ayr = Kuyruk.Ayrilanlar().Count;
+            if (ayr > 0)
+                sb.Append("<div class='warn'>").Append(ayr)
+                  .Append(" i&#351; teslim edilemeyip kenara al&#305;nd&#305; (karantina / s&uuml;resi dolan). ")
+                  .Append("<a href='/kuyruk'>Kuyruk sayfas&#305;ndan</a> yeniden g&ouml;nderilebilir.</div>");
             if (n == 0) sb.Append("<div class='mut'>Bo&#351; &mdash; bekleyen i&#351; yok.</div>");
             else sb.Append("<table><tr><th>Makine</th><th>&#304;&#351;</th></tr>").Append(satir)
                    .Append("</table><div class='warn'>").Append(n)
@@ -2649,11 +2776,15 @@ static class Dashboard
         if (okn == null) okn = Db.OkunmamisUyari();   // SQL yoksa dosyadan
         string rozet = okn != null && Convert.ToInt32(okn) > 0
             ? " <span style='background:#e05555;color:#fff;border-radius:10px;padding:1px 8px;font-size:11px'>" + Convert.ToInt32(okn) + "</span>" : "";
+        int ayrilanSayi = Kuyruk.Ayrilanlar().Count;
+        NavLink(sb, "/kuyruk", "kuyruk", active, "&#128230; Kuyruk" + (ayrilanSayi > 0
+            ? " <span style='background:#e05555;color:#fff;border-radius:10px;padding:1px 8px;font-size:11px'>" + ayrilanSayi + "</span>" : ""));
         NavLink(sb, "/uyarilar", "uyarilar", active, "&#128276; Uyar&#305;lar" + rozet);
         if (AuthAktif())
             sb.Append("<a href='/cikis' style='margin-top:18px;opacity:.75'>&#128274; &Ccedil;&#305;k&#305;&#351;</a>");
         sb.Append("</nav><main><h1>")
-          .Append(active == "makineler" ? "Makineler &mdash; Active Directory Takibi"
+          .Append(active == "kuyruk" ? "G&ouml;nderim Kuyru&#287;u"
+                : active == "makineler" ? "Makineler &mdash; Active Directory Takibi"
                 : active == "yazicilar" ? "Yaz&#305;c&#305; Sa&#287;l&#305;&#287;&#305;"
                 : active == "kullanicilar" ? "Kullan&#305;c&#305;lar Raporu"
                 : active == "periyot" ? "Yazd&#305;rma Periyotlar&#305;"
@@ -2742,18 +2873,7 @@ static class Dashboard
 
     // ---------------- Excel'e aktar (CSV; Turkce Excel icin ';' ayirici + UTF-8 BOM) ----------------
 
-    static string CsvAlan(string s)
-    {
-        s = s ?? "";
-        // FORMUL ENJEKSIYONU: belge ve kullanici adlari disaridan gelir.
-        // "=", "+", "-", "@" ile baslayan bir alan, rapor Excel'de acildiginda
-        // FORMUL olarak yorumlanir (orn. =cmd|'/c calc'!A1). Basa tek tirnak
-        // koyunca Excel alani metin sayar; goruntude tirnak gorunmez.
-        if (s.Length > 0 && "=+-@".IndexOf(s[0]) >= 0) s = "'" + s;
-        if (s.Contains(";") || s.Contains("\"") || s.Contains("\n"))
-            return "\"" + s.Replace("\"", "\"\"") + "\"";
-        return s;
-    }
+    static string CsvAlan(string s) { return Ortak.CsvAlan(s); }
 
     static string CsvOut(HttpListenerContext ctx, string dosyaAdi, StringBuilder icerik)
     {
@@ -2948,20 +3068,7 @@ static class Dashboard
 
     // Gunluk dosyasi 5 MB'i gecince .1 uzantisiyla devreder; iki kusak tutulur.
     // Boylece yogun sunucularda gunluk suresiz buyuyup diski doldurmaz.
-    const long LOG_SINIR = 5 * 1024 * 1024;
 
-    static void LogDevret(string dosya)
-    {
-        try
-        {
-            var fi = new FileInfo(dosya);
-            if (!fi.Exists || fi.Length < LOG_SINIR) return;
-            string eski = dosya + ".1";
-            if (File.Exists(eski)) File.Delete(eski);
-            File.Move(dosya, eski);
-        }
-        catch { }
-    }
 
     // ---------------------------------------------------------------------
     // GUNLUK YAZIMI KILITLIDIR.
@@ -2971,25 +3078,9 @@ static class Dashboard
     // ve catch { } bunu SESSIZCE yutar. Olcum: 7 thread x 200 satirin
     // %56,8'i hic yazilmadi - yani gunlugun en cok gerektigi an (sistem
     // yogunken) tam da satirlarin kayboldugu andi.
-    static readonly object logKilit = new object();
 
-    // Tek yazim noktasi: kilit + kisa yeniden deneme (virus tarayici veya
-    // dizin olusturucu dosyayi bir an tutabilir).
-    static void DosyayaEkle(string dosya, string satir)
-    {
-        lock (logKilit)
-        {
-            for (int i = 0; i < 5; i++)
-            {
-                try { File.AppendAllText(dosya, satir); return; }
-                catch { Thread.Sleep(50); }
-            }
-        }
-    }
+    static void DosyayaEkle(string dosya, string satir) { Ortak.DosyayaEkle(dosya, satir); }
 
-    static void Log(string msg)
-    {
-        lock (logKilit) { LogDevret(logFile); }
-        DosyayaEkle(logFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + msg + "\r\n");
-    }
+    // Kilitli + devreden gunluk: bkz. Ortak.Gunluk
+    static void Log(string msg) { Ortak.Gunluk(logFile, msg); }
 }

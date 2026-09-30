@@ -151,6 +151,7 @@ static class Panel360
         nav.Children.Add(NavBtn("periyot", "\U0001F4C5  Periyotlar"));
         nav.Children.Add(NavBtn("isler", "\U0001F4C4  İşler"));
         nav.Children.Add(NavBtn("yetki", "\U0001F6AB  Yetkiler"));
+        nav.Children.Add(NavBtn("kuyruk", "\U0001F4E6  Kuyruk"));
         nav.Children.Add(NavBtn("uyarilar", "\U0001F514  Uyarılar"));
         var yenile = NavBtn("yenile", "↻  Yenile");
         yenile.Margin = new Thickness(8, 24, 8, 0);
@@ -456,6 +457,7 @@ static class Panel360
                 case "isler": icerik.Content = SayfaIsler(""); break;
                 case "yetki": icerik.Content = SayfaYetki(); break;
                 case "uyarilar": icerik.Content = SayfaUyarilar(); break;
+                case "kuyruk": icerik.Content = SayfaKuyruk(); break;
                 default: icerik.Content = SayfaGenel(); break;
             }
         }
@@ -895,6 +897,95 @@ static class Panel360
         };
         sp.Children.Add(kaydet);
         return sp;
+    }
+
+    // Tablo satiri. DataGrid yalnizca OZELLIKLERI sutun yapar; tur/makine/dosya
+    // ALAN oldugu icin gorunmez ama "yeniden gonder" icin elde kalir.
+    class AyrilanSatir
+    {
+        public string Tarih { get; set; }
+        public string Tur { get; set; }
+        public string Makine { get; set; }
+        public string Is { get; set; }
+        public string Boyut { get; set; }
+        public string turKod, makineKod, dosyaKod;
+    }
+
+    // KUYRUK: bekleyen isler + teslim edilemeyip kenara alinanlar.
+    // Kenara alinan isler eskiden yalnizca gunlukte gorunuyordu; uyari
+    // kacirilirsa is fiilen kayboluyordu. Burada listelenir ve yeniden
+    // gonderilebilir.
+    static UIElement SayfaKuyruk()
+    {
+        var sp = new StackPanel();
+        sp.Children.Add(Baslik("Gönderim Kuyruğu"));
+
+        var bekleyen = new List<object>();
+        try
+        {
+            if (Directory.Exists(Kuyruk.Kok))
+                foreach (var d in Directory.GetDirectories(Kuyruk.Kok))
+                    foreach (var f in new DirectoryInfo(d).GetFiles("*.gz").OrderBy(x => x.CreationTime))
+                    {
+                        string m = Path.GetFileName(d), ad = f.Name.Substring(0, f.Name.Length - 3);
+                        bekleyen.Add(new { Makine = m, Is = ad, Durum = Kuyruk.DurumMetni(m, ad) ?? "" });
+                    }
+        }
+        catch { }
+        var ayrilan = Kuyruk.Ayrilanlar();
+
+        var kartlar = new WrapPanel();
+        kartlar.Children.Add(Kart(bekleyen.Count.ToString(), "Kuyrukta bekleyen"));
+        kartlar.Children.Add(Kart(ayrilan.Count(a => a.Tur == "karantina").ToString(), "Karantinada"));
+        kartlar.Children.Add(Kart(ayrilan.Count(a => a.Tur == "suresi-dolan").ToString(), "Süresi dolan"));
+        sp.Children.Add(kartlar);
+
+        sp.Children.Add(AltBaslik("Bekleyen işler"));
+        if (bekleyen.Count == 0) sp.Children.Add(Bilgi("Boş — tüm işler istemcilere ulaştı."));
+        else sp.Children.Add(Tablo(bekleyen));
+
+        sp.Children.Add(AltBaslik("Teslim edilemeyip kenara alınan işler"));
+        sp.Children.Add(Bilgi("Karantina: iş defalarca verildi ama istemci hiç onaylamadı; kuyruğu tıkamaması için ayrıldı. "
+            + "Süresi dolan: " + (Kuyruk.SureSaat / 24) + " günden uzun bekledi. Dosyalar silinmez; "
+            + "\"Yeniden gönder\" işi kuyruğa geri koyar, hedef makine bağlıysa hemen yazdırılır."));
+        if (ayrilan.Count == 0) { sp.Children.Add(Bilgi("Yok.")); return sp; }
+
+        var satirlar = ayrilan.Select(a => new AyrilanSatir
+        {
+            Tarih = a.Tarih.ToString("yyyy-MM-dd HH:mm"),
+            Tur = a.Tur == "karantina" ? "Karantina" : "Süresi doldu",
+            Makine = a.Makine, Is = a.Dosya, Boyut = Math.Max(1, a.Bayt / 1024) + " KB",
+            turKod = a.Tur, makineKod = a.Makine, dosyaKod = a.Dosya
+        }).ToList();
+        var tablo = Tablo(satirlar);
+
+        var gonder = ModernBtn("↻  Seçileni yeniden gönder", true);
+        gonder.Margin = new Thickness(0, 0, 0, 10);
+        gonder.HorizontalAlignment = HorizontalAlignment.Left;
+        gonder.Click += (o, e) =>
+        {
+            var sec = tablo.SelectedItem as AyrilanSatir;
+            if (sec == null)
+            {
+                MessageBox.Show("Önce tablodan bir iş seçin.", "Print360", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            string hata;
+            if (Kuyruk.GeriAl(sec.turKod, sec.makineKod, sec.dosyaKod, out hata))
+                MessageBox.Show("Yeniden kuyruğa alındı:\n" + sec.Is + "\n→ " + sec.Makine,
+                                "Print360", MessageBoxButton.OK, MessageBoxImage.Information);
+            else
+                MessageBox.Show("Kuyruğa alınamadı: " + hata, "Print360", MessageBoxButton.OK, MessageBoxImage.Warning);
+            Goster("kuyruk");
+        };
+        sp.Children.Add(gonder);
+        sp.Children.Add(tablo);
+        return sp;
+    }
+
+    static TextBlock Bilgi(string t)
+    {
+        return new TextBlock { Text = t, Foreground = Gri, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
     }
 
     static UIElement SayfaUyarilar()

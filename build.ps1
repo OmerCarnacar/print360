@@ -14,6 +14,7 @@ $binS   = Join-Path $root "setup\bin-server"
 $binC   = Join-Path $root "setup\bin-client"
 $dist   = Join-Path $root "dist"
 $db     = Join-Path $root "server\Print360.Db.cs"
+$ortak  = Join-Path $root "server\Print360.Ortak.cs"   # sunucu + istemci + testler ORTAK
 $lic    = Join-Path $root "server\Print360.License.cs"
 $verCs  = Join-Path $root "server\Print360.Version.cs"
 # SQLite (MSSQL yoksa yerel veritabani) - vendor\sqlite altinda
@@ -81,12 +82,12 @@ Adim "1/3  Bilesenler derleniyor"
 New-Item -ItemType Directory -Force $binS, $binC | Out-Null
 
 & $csc /nologo /target:winexe /r:System.Data.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:"$sqliteRef" `
-    /out:"$binS\Print360.ServerAgent.exe" "$root\server\Print360.ServerAgent.cs" $db $lic $asmCs $verCs "$root\server\Print360.VChannel.cs"
+    /out:"$binS\Print360.ServerAgent.exe" "$root\server\Print360.ServerAgent.cs" $db $ortak $lic $asmCs $verCs "$root\server\Print360.VChannel.cs"
 if ($LASTEXITCODE -ne 0) { throw "ServerAgent derlemesi basarisiz." }
 Ok "Print360.ServerAgent.exe"
 
 & $csc /nologo /target:winexe /r:System.DirectoryServices.dll /r:System.Data.dll /r:"$sqliteRef" `
-    /out:"$binS\Print360.Dashboard.exe" "$root\server\Print360.Dashboard.cs" $db $lic $verCs $asmCs
+    /out:"$binS\Print360.Dashboard.exe" "$root\server\Print360.Dashboard.cs" $db $ortak $lic $verCs $asmCs
 if ($LASTEXITCODE -ne 0) { throw "Dashboard derlemesi basarisiz." }
 Ok "Print360.Dashboard.exe"
 
@@ -95,12 +96,12 @@ Ok "Print360.Dashboard.exe"
 & $csc /nologo /target:winexe /lib:"$fw\WPF" `
     /r:PresentationFramework.dll /r:PresentationCore.dll /r:WindowsBase.dll /r:System.Xaml.dll `
     /r:System.DirectoryServices.dll /r:System.Data.dll /r:"$sqliteRef" `
-    /out:"$binS\Print360.Panel.exe" "$root\server\Print360.Panel.cs" $db $lic $asmCs $verCs
+    /out:"$binS\Print360.Panel.exe" "$root\server\Print360.Panel.cs" $db $ortak $lic $asmCs $verCs
 if ($LASTEXITCODE -ne 0) { throw "Panel derlemesi basarisiz." }
 Ok "Print360.Panel.exe (saf WPF - harici bilesen yok)"
 
 & $csc /nologo /target:winexe /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Management.dll `
-    /out:"$binC\Print360.ClientAgent.exe" "$root\client\Print360.ClientAgent.cs" $verCs $asmCs
+    /out:"$binC\Print360.ClientAgent.exe" "$root\client\Print360.ClientAgent.cs" $ortak $verCs $asmCs
 if ($LASTEXITCODE -ne 0) { throw "ClientAgent derlemesi basarisiz." }
 Ok "Print360.ClientAgent.exe (v$fullVer)"
 
@@ -153,6 +154,13 @@ if (Test-Path $vcDll) {
 # --- 2) Setup.exe uretimi ---
 # NOT: Urun UCRETSIZ surumdur; lisans anahtari uretimi (vendor\KeyGen) artik
 # yapim akisinda degildir. Kaynagi tarihsel olarak vendor\ altinda durur.
+# TESTLER: uretim kodunu derleyip sinar. Biri bile basarisizsa paket
+# URETILMEZ - bozuk surum sahaya cikmasin.
+Adim "Testler (tests\calistir.ps1)"
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "tests\calistir.ps1")
+if ($LASTEXITCODE -ne 0) { throw "TESTLER BASARISIZ - paket uretilmedi." }
+Ok "Tum testler gecti"
+
 Adim "2/3  Kurulum paketleri uretiliyor (Inno Setup)"
 # Inno Setup, BOM'suz duz metni secili dilin ANSI kod sayfasiyla okur; UTF-8
 # olan LICENSE dosyasi sihirbazda bozuk Turkce karakterle cikar. BOM'lu bir

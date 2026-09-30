@@ -490,39 +490,13 @@ static class ServerAgent
         if (eski.Length > 0) BekleyenleriTasi(eski, yeni);
     }
 
-    // Yanlis (eski) makinenin kuyrugunda kalan isleri kullanicinin SIMDI bagli
-    // oldugu makineye tasir. Yalnizca BU kullanicinin ve son 24 saatin isleri
-    // tasinir: baskasinin isine dokunulmaz, gunler onceki bir belge de
-    // kullaniciyi sasirtacak sekilde birden yazicidan cikmaz.
-    // Dosya adi: yyyyMMdd_HHmmss_fff_<kullanici>[__TUR][~belge].pdf.gz
+    // Yanlis (eski) makinenin kuyrugunda kalan isleri SIMDI bagli olunan makineye
+    // tasir. Mantik Kuyruk.KullaniciIsleriniTasi'dadir (tests\IstemciDegisimi sinar).
     static void BekleyenleriTasi(string eskiMakine, string yeniMakine)
     {
         try
         {
-            string kaynak = Path.Combine(@"C:\Print360\queue", Sanitize(eskiMakine));
-            if (!Directory.Exists(kaynak)) return;
-            string hedef = Path.Combine(@"C:\Print360\queue", Sanitize(yeniMakine));
-            int tasinan = 0;
-            foreach (var f in new DirectoryInfo(kaynak).GetFiles("*.gz"))
-            {
-                if (f.CreationTime < DateTime.Now.AddHours(-24)) continue;
-                string[] b = f.Name.Split(new[] { '_' }, 4);          // tarih, saat, ms, kalan
-                if (b.Length < 4) continue;
-                string kalan = b[3];
-                bool benim = kalan.StartsWith(user + "__", StringComparison.OrdinalIgnoreCase)
-                          || kalan.StartsWith(user + "~",  StringComparison.OrdinalIgnoreCase)
-                          || kalan.StartsWith(user + ".",  StringComparison.OrdinalIgnoreCase);
-                if (!benim) continue;
-                try
-                {
-                    Directory.CreateDirectory(hedef);
-                    string yeniYol = Path.Combine(hedef, f.Name);
-                    if (File.Exists(yeniYol)) continue;
-                    File.Move(f.FullName, yeniYol);
-                    tasinan++;
-                }
-                catch (Exception ex) { Log("Bekleyen is tasinamadi: " + f.Name + " | " + ex.Message); }
-            }
+            int tasinan = Kuyruk.KullaniciIsleriniTasi(eskiMakine, yeniMakine, user);
             if (tasinan > 0)
                 Log("Bekleyen " + tasinan + " is '" + eskiMakine + "' kuyrugundan '" + yeniMakine
                   + "' kuyruguna tasindi (kullanici artik bu makineden bagli).");
@@ -1068,34 +1042,8 @@ static class ServerAgent
 
     // Gunluk dosyasi 5 MB'i gecince .1 uzantisiyla devreder; iki kusak tutulur.
     // Boylece yogun sunucularda gunluk suresiz buyuyup diski doldurmaz.
-    const long LOG_SINIR = 5 * 1024 * 1024;
-    static readonly object logKilit = new object();
 
-    static void LogDevret(string dosya)
-    {
-        try
-        {
-            var fi = new FileInfo(dosya);
-            if (!fi.Exists || fi.Length < LOG_SINIR) return;
-            string eski = dosya + ".1";
-            if (File.Exists(eski)) File.Delete(eski);
-            File.Move(dosya, eski);
-        }
-        catch { }
-    }
 
-    static void Log(string msg)
-    {
-        // Kilit + yeniden deneme: ajan birden fazla thread calistirir; kilitsiz
-        // es zamanli yazimda satirlar sessizce kayboluyordu (bkz. Dashboard).
-        lock (logKilit)
-        {
-            LogDevret(logFile);
-            for (int i = 0; i < 5; i++)
-            {
-                try { File.AppendAllText(logFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + msg + "\r\n"); return; }
-                catch { Thread.Sleep(50); }
-            }
-        }
-    }
+    // Kilitli + devreden gunluk: bkz. Ortak.Gunluk
+    static void Log(string msg) { Ortak.Gunluk(logFile, msg); }
 }

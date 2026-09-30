@@ -85,6 +85,7 @@ static class Kurulum
             // yarida kalirsa bunu GERI ALMAK sart: aksi halde gorev devre disi
             // kalir, ajan hic baslamaz ve sistem sessizce calismaz olur.
             try { Calistir("schtasks.exe", "/Change /TN \"Print360 Yazdirma Ajani\" /ENABLE", 20); } catch { }
+            SonucYaz(surum, mod, "HATA", ex.Message);
             Console.Error.WriteLine(ex.Message);
             return 1;
         }
@@ -98,6 +99,8 @@ static class Kurulum
             foreach (var u in _uyarilar) Console.WriteLine("UYARI: " + u);
         }
         else Yaz("Kurulum sorunsuz tamamlandi.");
+        SonucYaz(surum, mod, _uyarilar.Count > 0 ? "UYARI" : "OK",
+                 _uyarilar.Count > 0 ? _uyarilar.Count + " uyari: " + string.Join(" | ", _uyarilar.ToArray()) : "");
 
         // KANIT DOSYASI: Kurulum sihirbazi, yapilandirmanin GERCEKTEN calistigini
         // bu dosyadan anlar. Sihirbaz her calismada benzersiz bir isaret uretip
@@ -118,6 +121,25 @@ static class Kurulum
         // geciktirmesin - Setup burada bekler kalirdi.
         Environment.Exit(0);
         return 0;
+    }
+
+    // KURULUM SONUCU (uzaktan dogrulama icin). Sunucu paneli bunu /api/surum
+    // ile yayinlar: "kurdum" denildiginde hangi surumun, ne zaman, hangi
+    // sonucla kuruldugu saniyeler icinde gorulur. Eskiden kurulumun sessizce
+    // basarisiz oldugu ya da baska sunucuya yapildigi anlasilamiyordu.
+    // Bicim: surum|tarih|mod|OK/UYARI/HATA|ayrinti
+    static void SonucYaz(string surum, string mod, string sonuc, string ayrinti)
+    {
+        try
+        {
+            if (mod != "sunucu" && mod != "istemci") return;
+            ayrinti = (ayrinti ?? "").Replace("|", "/").Replace("\r", " ").Replace("\n", " ");
+            if (ayrinti.Length > 400) ayrinti = ayrinti.Substring(0, 400) + "...";
+            File.WriteAllText(Path.Combine(Path.Combine(BASE, "logs"), "kurulum-sonuc.txt"),
+                surum + "|" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "|" + mod + "|" + sonuc + "|" + ayrinti,
+                Encoding.UTF8);
+        }
+        catch { }
     }
 
     // Her satira saat yaz: kurulum takilirsa gunlukte SON satir nerede
@@ -336,12 +358,8 @@ static class Kurulum
             //   x64 DLL -> SOFTWARE\Microsoft\...            (64-bit gorunum)
             //   x86 DLL -> SOFTWARE\WOW6432Node\Microsoft\... (32-bit gorunum)
             bool altmisDort = PeX64(vcDll);
-            string dogruKok = altmisDort
-                ? @"SOFTWARE\Microsoft\Terminal Server Client\Default\AddIns\Print360"
-                : @"SOFTWARE\WOW6432Node\Microsoft\Terminal Server Client\Default\AddIns\Print360";
-            string yanlisKok = altmisDort
-                ? @"SOFTWARE\WOW6432Node\Microsoft\Terminal Server Client\Default\AddIns\Print360"
-                : @"SOFTWARE\Microsoft\Terminal Server Client\Default\AddIns\Print360";
+            string dogruKok = EklentiKoku(altmisDort);
+            string yanlisKok = EklentiKoku(!altmisDort);
 
             // Onceki surumlerin yanlis dala yazdigi kayit varsa TEMIZLE - aksi
             // halde o makinede RDP acilmamaya devam ederdi.
@@ -1005,7 +1023,15 @@ static class Kurulum
 
     // Bir DLL'in 64-bit olup olmadigini PE basligindan okur.
     // Yanlis mimarideki bir AddIn, mstsc.exe'nin hic acilmamasina yol acar.
-    static bool PeX64(string dosya)
+    // RDP eklentisinin kayit dali DLL'in mimarisine gore secilir (tests\PeMimari sinar).
+    internal static string EklentiKoku(bool x64)
+    {
+        return x64
+            ? @"SOFTWARE\Microsoft\Terminal Server Client\Default\AddIns\Print360"
+            : @"SOFTWARE\WOW6432Node\Microsoft\Terminal Server Client\Default\AddIns\Print360";
+    }
+
+    internal static bool PeX64(string dosya)
     {
         try
         {

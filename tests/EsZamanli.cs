@@ -1,17 +1,16 @@
 // REGRESYON TESTI: es zamanlilik ve CSV formul enjeksiyonu
 //
-// 1) GUNLUK KAYBI - Log() kilitsizken es zamanli AppendAllText cagrilari
-//    "dosya kullanimda" hatasi veriyor ve catch { } bunu yutuyordu. Olcumde
-//    7 thread x 200 satirin %56,8'i hic yazilmadi. Gunlugun en cok gerektigi
-//    an (sistem yogunken) tam da satirlarin kayboldugu andi.
-// 2) OTURUM SOZLUGU - dinleyici cok is parcacikli oldugundan kilitsiz
-//    Dictionary'ye es zamanli yazma ic yapiyi bozar (%100 CPU / istisna).
-// 3) CSV FORMUL ENJEKSIYONU - "=" ile baslayan belge adi, rapor Excel'de
-//    acildiginda formul olarak yorumlanir.
+// URETIM KODUNU SINAR: server\Print360.Ortak.cs ile birlikte derlenir
+// (Ortak.DosyayaEkle, OturumDeposu, Ortak.CsvAlan). Eskiden bu test mantigin
+// bir KOPYASINI sinardi; uretim kodu degisse de gecmeye devam ederdi.
+//
+// 1) GUNLUK KAYBI - kilitsiz es zamanli AppendAllText cagrilari "dosya
+//    kullanimda" hatasi veriyor, catch { } bunu yutuyordu: 7 thread x 200
+//    satirin %56,8'i hic yazilmadi.
+// 2) OTURUM DEPOSU - kilitsiz Dictionary'ye es zamanli yazma ic yapiyi bozar.
+// 3) CSV FORMUL ENJEKSIYONU - "=" ile baslayan belge adi Excel'de formul olur.
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Threading;
 
 class EsZamanli
@@ -24,70 +23,55 @@ class EsZamanli
         Console.WriteLine("   " + ayrinti);
     }
 
-    // ---- 1) Gunluk: uretimdeki kilitli yazim ----
-    static readonly object logKilit = new object();
-    static string logFile;
-    static void Log(string msg)
-    {
-        lock (logKilit)
-        {
-            for (int i = 0; i < 5; i++)
-            {
-                try { File.AppendAllText(logFile, msg + "\r\n"); return; }
-                catch { Thread.Sleep(50); }
-            }
-        }
-    }
-
     static void GunlukTesti()
     {
-        logFile = Path.Combine(Path.GetTempPath(), "p360-eszamanli.log");
-        if (File.Exists(logFile)) File.Delete(logFile);
+        string dosya = Path.Combine(Path.GetTempPath(), "p360-eszamanli.log");
+        if (File.Exists(dosya)) File.Delete(dosya);
         const int T = 7, N = 200;
         var th = new Thread[T];
         for (int i = 0; i < T; i++)
         {
             int no = i;
-            th[i] = new Thread(delegate() { for (int j = 0; j < N; j++) Log("t" + no + " s" + j); });
+            th[i] = new Thread(delegate() { for (int j = 0; j < N; j++) Ortak.Gunluk(dosya, "t" + no + " s" + j); });
         }
         foreach (var x in th) x.Start();
         foreach (var x in th) x.Join();
-        int yazilan = File.ReadAllLines(logFile).Length;
-        File.Delete(logFile);
-        Kontrol(yazilan == T * N, "gunluk satiri kaybolmuyor (7 thread x 200 satir)",
+        int yazilan = File.ReadAllLines(dosya).Length;
+        File.Delete(dosya);
+        Kontrol(yazilan == T * N, "gunluk satiri kaybolmuyor (7 thread x 200 satir, Ortak.Gunluk)",
                 "beklenen " + (T * N) + ", yazilan " + yazilan + ", kayip " + (T * N - yazilan));
     }
 
-    // ---- 2) Oturum sozlugu: uretimdeki kilitli erisim ----
-    static readonly object durumKilit = new object();
-    static Dictionary<string, DateTime> sessions = new Dictionary<string, DateTime>();
+    static void DevirTesti()
+    {
+        string dosya = Path.Combine(Path.GetTempPath(), "p360-devir.log");
+        try { File.Delete(dosya); File.Delete(dosya + ".1"); } catch { }
+        using (var fs = new FileStream(dosya, FileMode.Create)) fs.SetLength(Ortak.GunlukSiniri + 10);
+        Ortak.Gunluk(dosya, "devirden sonraki ilk satir");
+        bool ok = File.Exists(dosya + ".1") && new FileInfo(dosya).Length < 1024
+               && File.ReadAllText(dosya).Contains("devirden sonraki ilk satir");
+        try { File.Delete(dosya); File.Delete(dosya + ".1"); } catch { }
+        Kontrol(ok, "5 MB'i gecen gunluk .1 olarak devrediliyor", ok ? "yeni gunluk basladi, eskisi .1" : "DEVREDILMEDI");
+    }
 
     static void OturumTesti()
     {
+        var depo = new OturumDeposu();
         const int T = 8, N = 400;
         var th = new Thread[T];
         int hata = 0;
         for (int i = 0; i < T; i++)
         {
-            int no = i;
             th[i] = new Thread(delegate()
             {
                 for (int j = 0; j < N; j++)
                 {
-                    string tok = "t" + no + "-" + j;
                     try
                     {
-                        lock (durumKilit)
-                        {
-                            foreach (var k in sessions.Where(x => x.Value < DateTime.Now).Select(x => x.Key).ToList())
-                                sessions.Remove(k);
-                            sessions[tok] = DateTime.Now.AddHours(12);
-                        }
-                        DateTime bitis;
-                        bool auth;
-                        lock (durumKilit) auth = sessions.TryGetValue(tok, out bitis) && bitis > DateTime.Now;
-                        if (!auth) Interlocked.Increment(ref hata);
-                        lock (durumKilit) sessions.Remove(tok);
+                        string jeton = depo.Ac(TimeSpan.FromHours(12));
+                        if (!depo.Gecerli(jeton)) Interlocked.Increment(ref hata);
+                        depo.Kapat(jeton);
+                        if (depo.Gecerli(jeton)) Interlocked.Increment(ref hata);
                     }
                     catch { Interlocked.Increment(ref hata); }
                 }
@@ -95,18 +79,13 @@ class EsZamanli
         }
         foreach (var x in th) x.Start();
         foreach (var x in th) x.Join();
-        Kontrol(hata == 0 && sessions.Count == 0, "oturum sozlugu es zamanli erisimde bozulmuyor",
-                (T * N) + " giris/cikis dongusu, hata " + hata + ", kalan oturum " + sessions.Count);
-    }
+        Kontrol(hata == 0 && depo.Sayi == 0, "oturum deposu es zamanli erisimde bozulmuyor",
+                (T * N) + " ac/dogrula/kapat dongusu, hata " + hata + ", kalan oturum " + depo.Sayi);
 
-    // ---- 3) CSV formul enjeksiyonu: uretimdeki CsvAlan ----
-    static string CsvAlan(string s)
-    {
-        s = s ?? "";
-        if (s.Length > 0 && "=+-@".IndexOf(s[0]) >= 0) s = "'" + s;
-        if (s.Contains(";") || s.Contains("\"") || s.Contains("\n"))
-            return "\"" + s.Replace("\"", "\"\"") + "\"";
-        return s;
+        var d2 = new OturumDeposu();
+        string eski = d2.Ac(TimeSpan.FromMilliseconds(-1));   // aninda suresi dolmus
+        Kontrol(!d2.Gecerli(eski) && !d2.Gecerli("") && !d2.Gecerli(null),
+                "suresi dolmus / bos jeton gecersiz", "dogru");
     }
 
     static void CsvTesti()
@@ -122,23 +101,25 @@ class EsZamanli
         int ok = 0;
         foreach (var d in durum)
         {
-            string cikti = CsvAlan(d[0]);
+            string cikti = Ortak.CsvAlan(d[0]);
             string ic = cikti.StartsWith("\"") ? cikti.Substring(1) : cikti;
             if (ic.StartsWith(d[1])) ok++;
             else Console.WriteLine("   BEKLENMEDIK: " + d[0] + " -> " + cikti);
         }
         Kontrol(ok == durum.Length, "CSV alanlari Excel'de formul olarak calismiyor",
                 ok + "/" + durum.Length + " (=, +, -, @ ile baslayanlar metne cevrildi)");
+        Kontrol(Ortak.CsvAlan("a;b") == "\"a;b\"" && Ortak.CsvAlan("x\"y") == "\"x\"\"y\"",
+                "ayirici ve tirnak iceren alanlar dogru tirnaklaniyor", Ortak.CsvAlan("a;b") + "  " + Ortak.CsvAlan("x\"y"));
     }
 
-    static void Main()
+    static int Main()
     {
-        Console.OutputEncoding = System.Text.Encoding.UTF8;
         GunlukTesti();
+        DevirTesti();
         OturumTesti();
         CsvTesti();
         Console.WriteLine();
         Console.WriteLine("Sonuc: " + gecti + "/" + toplam);
-        Environment.Exit(gecti == toplam ? 0 : 1);
+        return gecti == toplam ? 0 : 1;
     }
 }

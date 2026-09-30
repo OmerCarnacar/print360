@@ -33,3 +33,7 @@ secrets*
 Thumbs.db
 desktop.ini
 setup/LICENSE-kurulum.txt
+
+# test ciktilari (tests\calistir.ps1 uretir)
+tests/bin/
+tests/*.exe

@@ -50,9 +50,26 @@ server/    Sunucu ajanı, web paneli, WPF paneli, veri katmanı
 client/    İstemci ajanı (durum penceresi + baskı motoru)
 setup/     Native yapılandırıcı (C#) + Inno Setup betikleri
 vc/        RDP Virtual Channel eklentisi (C++) + protokol testi
+tests/     Regresyon testleri + çalıştırıcı (tests/calistir.ps1)
 assets/    Logo üreteci
 docs/      Belgeler ve ekran görüntüleri
 ```
+
+## Testler
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tests\calistir.ps1
+```
+
+Her test **üretim kaynağıyla birlikte derlenir** (kopyasıyla değil); test
+geçiyorsa üretimdeki kod gerçekten doğru çalışıyor demektir. `build.ps1`
+testleri paketlemeden önce çalıştırır ve biri bile başarısızsa paket
+üretmez; GitHub CI da aynı betiği çalıştırır.
+
+Yeni bir test yazarken sınanan mantığı test dosyasına **kopyalamayın**:
+paylaşılan kod `server/Print360.Ortak.cs` veya `server/Print360.Db.cs`
+içindeyse onu derleyin, bir bileşenin içindeyse `internal` yapıp o dosyayı
+derleyin. Ardından testi `tests/calistir.ps1` listesine ekleyin.
 
 ## Kod tarzı
 

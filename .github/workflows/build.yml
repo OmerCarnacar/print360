@@ -56,7 +56,7 @@ jobs:
           $sq  = "vendor/sqlite/System.Data.SQLite.dll"
           & $csc /nologo /target:winexe /r:System.Data.dll /r:System.Windows.Forms.dll `
                  /r:System.Drawing.dll /r:"$sq" /out:out\Print360.ServerAgent.exe `
-                 server\Print360.ServerAgent.cs server\Print360.Db.cs server\Print360.License.cs `
+                 server\Print360.ServerAgent.cs server\Print360.Db.cs server\Print360.Ortak.cs server\Print360.License.cs `
                  server\Print360.AssemblyInfo.cs server\Print360.Version.cs server\Print360.VChannel.cs
           if ($LASTEXITCODE -ne 0) { throw "ServerAgent derlenemedi" }
 
@@ -66,7 +66,7 @@ jobs:
           $csc = "${{ steps.csc.outputs.yol }}"
           & $csc /nologo /target:winexe /r:System.DirectoryServices.dll /r:System.Data.dll `
                  /r:"vendor/sqlite/System.Data.SQLite.dll" /out:out\Print360.Dashboard.exe `
-                 server\Print360.Dashboard.cs server\Print360.Db.cs server\Print360.License.cs server\Print360.Version.cs
+                 server\Print360.Dashboard.cs server\Print360.Db.cs server\Print360.Ortak.cs server\Print360.License.cs server\Print360.Version.cs
           if ($LASTEXITCODE -ne 0) { throw "Dashboard derlenemedi" }
 
       - name: Masaustu paneli (WPF)
@@ -78,7 +78,7 @@ jobs:
                  /r:PresentationFramework.dll /r:PresentationCore.dll /r:WindowsBase.dll /r:System.Xaml.dll `
                  /r:System.DirectoryServices.dll /r:System.Data.dll /r:"vendor/sqlite/System.Data.SQLite.dll" `
                  /out:out\Print360.Panel.exe `
-                 server\Print360.Panel.cs server\Print360.Db.cs server\Print360.License.cs server\Print360.Version.cs
+                 server\Print360.Panel.cs server\Print360.Db.cs server\Print360.Ortak.cs server\Print360.License.cs server\Print360.Version.cs
           if ($LASTEXITCODE -ne 0) { throw "Panel derlenemedi" }
 
       - name: Istemci ajani
@@ -87,7 +87,7 @@ jobs:
           $csc = "${{ steps.csc.outputs.yol }}"
           & $csc /nologo /target:winexe /r:System.Drawing.dll /r:System.Windows.Forms.dll `
                  /r:System.Management.dll /out:out\Print360.ClientAgent.exe `
-                 client\Print360.ClientAgent.cs server\Print360.Version.cs
+                 client\Print360.ClientAgent.cs server\Print360.Ortak.cs server\Print360.Version.cs
           if ($LASTEXITCODE -ne 0) { throw "ClientAgent derlenemedi" }
 
       - name: Kurulum yapilandiricisi
@@ -98,6 +98,14 @@ jobs:
                  /r:System.IO.Compression.FileSystem.dll /r:Microsoft.CSharp.dll `
                  /out:out\Print360.Setup.exe setup\Print360.Setup.cs server\Print360.AssemblyInfo.cs
           if ($LASTEXITCODE -ne 0) { throw "Setup derlenemedi" }
+
+      # Testler URETIM kodunu derleyip sinar (kopyasini degil). Biri bile
+      # basarisizsa is KIRMIZI olur: "derlendi" artik "dogru calisiyor" demek.
+      - name: Testler
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tests\calistir.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Testler basarisiz" }
 
       - name: Sonuc
         shell: pwsh

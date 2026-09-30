@@ -91,6 +91,35 @@ class KuyrukKorumalari
         Kontrol(!Kuyruk.Bekliyor("EVOPC", "20260919_100000_001_FS~Bozuk.pdf", out dk),
                 "karantinadaki is 'kuyrukta bekliyor' sayilmiyor", null);
 
+        // --- 6) GORUNURLUK: kenara alinan is panelde "Teslim edildi" GORUNMEMELI
+        string dk1 = Kuyruk.DurumMetni("EVOPC", "20260919_100000_001_FS~Bozuk.pdf");
+        Kontrol(dk1 != null && dk1.StartsWith("KARANTINADA"), "karantinadaki is panelde KARANTINADA gorunuyor", dk1);
+        string dk2 = Kuyruk.DurumMetni("EVOPC", "20260901_090000_003_FS~Eski Gizli Belge.pdf");
+        Kontrol(dk2 != null && dk2.StartsWith("SURESI DOLDU"), "suresi dolan is panelde SURESI DOLDU gorunuyor", dk2);
+
+        var ayr = Kuyruk.Ayrilanlar();
+        Kontrol(ayr.Count == 2 && ayr.Exists(x => x.Tur == "karantina") && ayr.Exists(x => x.Tur == "suresi-dolan"),
+                "Ayrilanlar() ikisini de listeliyor", ayr.Count + " is");
+
+        // --- 7) YENIDEN GONDER: is kuyruga doner, zamani sifirlanir, hemen yeniden ayrilmaz
+        string hata;
+        bool geri1 = Kuyruk.GeriAl("suresi-dolan", "EVOPC", "20260901_090000_003_FS~Eski Gizli Belge.pdf", out hata);
+        string donen = Path.Combine(q, "20260901_090000_003_FS~Eski Gizli Belge.pdf.gz");
+        Kontrol(geri1 && File.Exists(donen) && (DateTime.Now - File.GetCreationTime(donen)).TotalMinutes < 1,
+                "suresi dolan is kuyruga dondu, olusturma zamani SIMDI yapildi", geri1 ? "tamam" : hata);
+        Kontrol(Kuyruk.SuresiDolanlariAyir().Count == 0 && File.Exists(donen),
+                "geri alinan is bir sonraki taramada YENIDEN ayrilmiyor", null);
+
+        bool geri2 = Kuyruk.GeriAl("karantina", "EVOPC", "20260919_100000_001_FS~Bozuk.pdf", out hata);
+        Kontrol(geri2 && File.Exists(zehirli), "karantinadaki is kuyruga dondu", geri2 ? "tamam" : hata);
+        Kontrol(!Kuyruk.SorunluysaAyir(zehirli, out hata), "geri alinan isin deneme sayaci sifirlandi", null);
+
+        // --- 8) GUVENLIK: yol gecisi ve gecersiz girdiler reddedilir
+        bool yg1 = Kuyruk.GeriAl("karantina", @"..\..\Windows", "x.pdf", out hata);
+        bool yg2 = Kuyruk.GeriAl("baska-tur", "EVOPC", "x.pdf", out hata);
+        bool yg3 = Kuyruk.GeriAl("karantina", "EVOPC", @"..\..\..\gizli.pdf", out hata);
+        Kontrol(!yg1 && !yg2 && !yg3, "yol gecisi / gecersiz tur / olmayan dosya reddediliyor", hata);
+
         Console.WriteLine();
         Console.WriteLine("Sonuc: " + gecti + "/" + toplam);
         try { Directory.Delete(kok, true); } catch { }

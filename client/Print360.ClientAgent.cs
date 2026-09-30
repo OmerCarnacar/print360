@@ -873,15 +873,7 @@ static class ClientAgent
         }
         string line = sb.ToString();
         // Istatistik satiri da birden fazla thread'den yazilabilir.
-        string csvHata = null;
-        lock (logKilit)
-        {
-            for (int i = 0; i < 5; i++)
-            {
-                try { File.AppendAllText(printedCsv, line + "\r\n"); csvHata = null; break; }
-                catch (Exception ex) { csvHata = ex.Message; Thread.Sleep(50); }
-            }
-        }
+        string csvHata = Ortak.DosyayaEkle(printedCsv, line + "\r\n");
         if (csvHata != null) Log("Istatistik yazilamadi: " + csvHata);
         PushToServer(line);
     }
@@ -1196,35 +1188,7 @@ static class ClientAgent
     // TEK SEFERLIK yeniden deneme yapiyoruz. Zaman asimi gibi gercek hatalarda
     // tekrar denemiyoruz - sadece dongunun bir sonraki turunu bekliyoruz.
 
-    // Yuzde-kodlu adi coz. Eski sunucular kodsuz gonderir; "%" yoksa oldugu
-    // gibi birakilir, boylece surum karisimi da calisir.
-    // ASCII IS KIMLIGI (Base64Url) - sunucudaki B64Kodla/B64Coz ile ayni.
-    // Turkce harfler HTTP basliginda ve sorgu dizesinde bozulabiliyordu; kimlik
-    // ve ad artik yalnizca A-Z a-z 0-9 - _ karakterleriyle tasiniyor.
-    static string B64Coz(string s)
-    {
-        if (string.IsNullOrEmpty(s)) return null;
-        for (int i = 0; i < s.Length; i++)
-        {
-            char c = s[i];
-            bool gecerli = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
-                        || (c >= '0' && c <= '9') || c == '-' || c == '_';
-            if (!gecerli) return null;
-        }
-        string b = s.Replace('-', '+').Replace('_', '/');
-        int kalan = b.Length % 4;
-        if (kalan == 1) return null;
-        if (kalan == 2) b += "==";
-        else if (kalan == 3) b += "=";
-        try { return Encoding.UTF8.GetString(Convert.FromBase64String(b)); }
-        catch { return null; }
-    }
 
-    static string CozKodlu(string s)
-    {
-        if (string.IsNullOrEmpty(s) || s.IndexOf('%') < 0) return s;
-        try { return Uri.UnescapeDataString(s); } catch { return s; }
-    }
 
     static bool FetchOneJob(string baseUrl, string key)
     {
@@ -1273,8 +1237,8 @@ static class ClientAgent
                 string id = resp.Headers["X-Job-Id"] ?? "";
                 // Once SAF ASCII basligi (yeni sunucu), yoksa yuzde-kodlu (eski sunucu).
                 string fnameB64 = resp.Headers["X-File-Name-B64"];
-                string fname = (fnameB64 != null) ? B64Coz(fnameB64) : null;
-                if (fname == null) fname = CozKodlu(resp.Headers["X-File-Name"] ?? (id + ".pdf"));
+                string fname = (fnameB64 != null) ? Ortak.B64Coz(fnameB64) : null;
+                if (fname == null) fname = Ortak.YuzdeCoz(resp.Headers["X-File-Name"] ?? (id + ".pdf"));
                 foreach (char c in Path.GetInvalidFileNameChars()) fname = fname.Replace(c, '_');
                 string hedef = Path.Combine(jobsDir, fname);
                 bool zatenVar = File.Exists(hedef) || File.Exists(Path.Combine(doneDir, fname));
@@ -1685,38 +1649,10 @@ static class ClientAgent
 
     // Gunluk dosyasi 5 MB'i gecince .1 uzantisiyla devreder; iki kusak tutulur.
     // Boylece yogun sunucularda gunluk suresiz buyuyup diski doldurmaz.
-    const long LOG_SINIR = 5 * 1024 * 1024;
-    static readonly object logKilit = new object();
 
-    static void LogDevret(string dosya)
-    {
-        try
-        {
-            var fi = new FileInfo(dosya);
-            if (!fi.Exists || fi.Length < LOG_SINIR) return;
-            string eski = dosya + ".1";
-            if (File.Exists(eski)) File.Delete(eski);
-            File.Move(dosya, eski);
-        }
-        catch { }
-    }
 
-    static void Log(string msg)
-    {
-        // KILIT SART: ajan yedi ayri thread calistirir (RDP izleyici, kalp
-        // atisi, is yoklama, guncelleme, is dongusu, arayuz...). Kilitsiz
-        // es zamanli AppendAllText cagrilarinin %56,8'i olcumde SESSIZCE
-        // kayboldu - adim adim gunluk tam da yogun anda eksik cikiyordu.
-        lock (logKilit)
-        {
-            LogDevret(logFile);
-            for (int i = 0; i < 5; i++)
-            {
-                try { File.AppendAllText(logFile, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + msg + "\r\n"); return; }
-                catch { Thread.Sleep(50); }
-            }
-        }
-    }
+    // Kilitli + devreden gunluk: bkz. Ortak.Gunluk (ajan yedi thread calistirir)
+    static void Log(string msg) { Ortak.Gunluk(logFile, msg); }
 
     // ==================== ARAYUZ ====================
     // Tepsi simgesi + durum penceresi: baglanti durumu, yazici listesi, gorevler.
