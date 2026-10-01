@@ -94,7 +94,15 @@ static class Dashboard
                     catch (Exception ex) { Log("Baslatilamadi: " + ex.Message); return; }
                 }
             }
-            Log("Dashboard basladi: http://localhost:" + Port);
+            Log("Dashboard basladi: http://localhost:" + Port + " | surum " + Surum.V
+                + " | hesap: " + Environment.UserDomainName + "\\" + Environment.UserName
+                + " | oturum: " + System.Diagnostics.Process.GetCurrentProcess().SessionId);
+            foreach (var m in Ortak.KlasorDenetle(new[] { @"C:\Print360\queue", @"C:\Print360\logs",
+                                                          @"C:\Print360\stats", @"C:\Print360\update" }))
+            {
+                Log("BASLANGIC SORUNU: " + m);
+                try { Db.Alert("Kurulum", "Panel sunucusu: " + m); } catch { }
+            }
             Db.EnsureSchema();
             new Thread(AlertMonitor) { IsBackground = true }.Start();
             new Thread(MailMonitor) { IsBackground = true }.Start();
@@ -933,6 +941,41 @@ static class Dashboard
         }
     }
 
+    // BILGISAYAR ADI DEGISTI: ayni kurulum kimligi yeni bir adla geliyor.
+    // Eskiden eski adin kuyrugunda bekleyen isler orada unutuluyordu; panelde
+    // eski ad "cevrimdisi" gorunuyor, kimse nedenini bilmiyordu.
+    static readonly KimlikDefteri kimlikDefteri = new KimlikDefteri(@"C:\Print360\stats\kimlikler.csv");
+    static readonly HashSet<string> cakismaUyarilan = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    static void AdDegisimiDenetle(string machine, string iid, string ip)
+    {
+        if (iid.Length == 0) return;                  // eski surum istemci
+        string eski;
+        string sonuc = kimlikDefteri.Gorus(iid, machine, DateTime.Now, out eski);
+        if (sonuc == "ad-degisti")
+        {
+            int n = Kuyruk.MakineAdiDegisti(eski, machine);
+            string m = "BILGISAYAR ADI DEGISTI: '" + eski + "' -> '" + machine + "' (ayni kurulum kimligi, IP: " + ip + "). "
+                     + (n > 0 ? n + " bekleyen is yeni ada tasindi." : "Eski adla bekleyen is yoktu.")
+                     + " Eski ad panelde cevrimdisi gorunmeye devam eder; Makineler'den silinebilir.";
+            Log(m);
+            Db.Alert("Makine", m);
+        }
+        else if (sonuc == "gozleniyor")
+        {
+            Log("Gozlem: '" + machine + "' kayitli olmayan bir adla geldi ama kimligi daha once baska adla goruldu; "
+              + "ad degisikligi mi yoksa iki makinede ayni kimlik mi oldugu " + (int)kimlikDefteri.Bekleme.TotalMinutes + " dk izleniyor.");
+        }
+        else if (sonuc == "cakisma")
+        {
+            lock (cakismaUyarilan) if (!cakismaUyarilan.Add(iid)) return;
+            string m = "AYNI KURULUM KIMLIGI IKI MAKINEDE: '" + eski + "' ve '" + machine + "' (IP: " + ip + "). "
+                     + "Bilgisayarlar diskiyle birlikte klonlanmis ve BIOS kimlikleri de ayni olabilir. Birinde "
+                     + "C:\\Print360\\kimlik.txt dosyasini silip Print360 Client'i yeniden baslatin. Isler TASINMADI.";
+            Log("UYARI: " + m);
+            Db.Alert("Guvenlik", m);
+        }
+    }
+
     // Istemci kalp atisi: cevrimici takibi + baglanti logu
     static void HandleHeartbeat(HttpListenerContext ctx)
     {
@@ -947,6 +990,7 @@ static class Dashboard
             if (!ClientAuth(ctx, machine, out ilkKayit)) return;
             if (ilkKayit) Db.Alert("YeniMakine", "Yeni istemci kaydedildi (sifreli): " + machine + " (IP: " + ip + ")");
             AyniAdliMakineDenetle(machine, Q(ctx, "iid") ?? "", ip);
+            AdDegisimiDenetle(machine, Q(ctx, "iid") ?? "", ip);
             lock (hbLock)
             {
                 var hb = LoadHb();

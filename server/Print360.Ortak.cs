@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Text;
 using System.Threading;
 
@@ -124,6 +125,18 @@ static class Ortak
         return hata;
     }
 
+    // GUNLUGUN KENDISI YAZILAMAZSA (logs klasorune izin yok, disk dolu, dosya
+    // kilitli) eskiden HICBIR iz kalmiyordu: sorunun kaydi tam da sorun yuzunden
+    // yok oluyordu. Bu durumda %TEMP%\Print360-<ad> yedek gunlugune yazilir;
+    // yedege gecis ve sebebi ilk satirda belirtilir.
+    public static string YedekKlasor = Path.GetTempPath();
+    static readonly HashSet<string> yedegeGecildi = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    public static string YedekGunlukYolu(string dosya)
+    {
+        return Path.Combine(YedekKlasor, "Print360-" + Path.GetFileName(dosya));
+    }
+
     // Gunluk 5 MB'i gecince ".1" olarak devredilir (tek kusak) - disk dolmaz.
     public static void Gunluk(string dosya, string mesaj)
     {
@@ -141,7 +154,239 @@ static class Ortak
             }
             catch { }
         }
-        DosyayaEkle(dosya, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + mesaj + "\r\n");
+        string satir = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + mesaj + "\r\n";
+        string hata = DosyayaEkle(dosya, satir);
+        if (hata == null) return;
+        string yedek = YedekGunlukYolu(dosya);
+        bool ilk;
+        lock (yedegeGecildi) ilk = yedegeGecildi.Add(dosya);
+        if (ilk)
+            DosyayaEkle(yedek, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  GUNLUK YAZILAMIYOR: " + dosya
+                + " | hata: " + hata + " | kayitlar bu yedek dosyaya yaziliyor\r\n");
+        DosyayaEkle(yedek, satir);
+    }
+
+    // ------------------------------------------------------------------
+    // KLASOR DENETIMI (baslangicta). Klasor yoksa olusturulur; yazma izni,
+    // disk doluluğu ayri ayri sinanir. Sorun yoksa bos liste doner.
+    // Eskiden izin sorunu ilk iste, belirsiz bir "Erisim engellendi" ile
+    // ortaya cikiyordu - hangi klasor, hangi kullanici belli degildi.
+    // ------------------------------------------------------------------
+    public const long AzBosAlanBayt = 500L * 1024 * 1024;
+
+    public static List<string> KlasorDenetle(IEnumerable<string> klasorler)
+    {
+        var sorunlar = new List<string>();
+        string kim = Environment.UserDomainName + "\\" + Environment.UserName;
+        foreach (var k in klasorler)
+        {
+            try { Directory.CreateDirectory(k); }
+            catch (Exception ex) { sorunlar.Add("KLASOR OLUSTURULAMADI: " + k + " | kullanici: " + kim + " | " + ex.Message); continue; }
+            string deneme = Path.Combine(k, ".yazma-denemesi-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+            try { File.WriteAllText(deneme, "x"); File.Delete(deneme); }
+            catch (Exception ex) { sorunlar.Add("YAZMA IZNI YOK: " + k + " | kullanici: " + kim + " | " + ex.Message); continue; }
+            try
+            {
+                string kok = Path.GetPathRoot(Path.GetFullPath(k));
+                if (!string.IsNullOrEmpty(kok) && !kok.StartsWith("\\\\"))
+                {
+                    var d = new DriveInfo(kok);
+                    if (d.IsReady && d.AvailableFreeSpace < AzBosAlanBayt)
+                        sorunlar.Add("DISK DOLMAK UZERE: " + kok + " bos alan " + (d.AvailableFreeSpace / (1024 * 1024)) + " MB ("
+                                   + k + ") - yeni isler yazilamayabilir");
+                }
+            }
+            catch { }
+        }
+        return sorunlar;
+    }
+
+    // ------------------------------------------------------------------
+    // BAGLANTI HATASINI INSAN DILINE CEVIR. "Unable to connect to the remote
+    // server" kimseye sorunun nerede oldugunu soylemiyordu. Her durum icin
+    // OLASI SEBEP ve NEREYE BAKILACAGI yazilir.
+    // ------------------------------------------------------------------
+    public static string BaglantiHatasiAcikla(WebExceptionStatus durum, int httpKodu, string ham, string makine)
+    {
+        if (httpKodu == 403)
+            return "ISTEMCI SIFRESI REDDEDILDI (403): bu makine sunucuda BASKA bir sifreyle kayitli. "
+                 + "Print360.ini icindeki ClientKey'i sunucudakiyle ayni yapin ya da sunucu panelinden '"
+                 + makine + "' kaydini silip istemciyi yeniden baslatin.";
+        if (httpKodu == 404)
+            return "SUNUCU ADRESI YANLIS ya da sunucu eski surumde (404): adres Print360 paneline mi gidiyor? | " + ham;
+        if (httpKodu >= 500)
+            return "SUNUCU HATASI (" + httpKodu + "): sunucu istegi isleyemedi - sunucudaki C:\\Print360\\logs\\dashboard.log'a bakin | " + ham;
+        switch (durum)
+        {
+            case WebExceptionStatus.NameResolutionFailure:
+                return "SUNUCU ADI COZULEMEDI (DNS): ad yanlis yazilmis ya da bu agdan gorunmuyor - IP adresiyle deneyin | " + ham;
+            case WebExceptionStatus.ConnectFailure:
+                return "SUNUCUYA BAGLANILAMADI: sunucu kapali, panel calismiyor ya da guvenlik duvari portu engelliyor | " + ham;
+            case WebExceptionStatus.Timeout:
+                return "ZAMAN ASIMI: sunucu yanit vermedi - ag cok yavas ya da sunucu asiri mesgul | " + ham;
+            case WebExceptionStatus.TrustFailure:
+            case WebExceptionStatus.SecureChannelFailure:
+                return "GUVENLI BAGLANTI KURULAMADI: sunucu sertifikasi degismis ya da Print360.ini'deki CertHash eslesmiyor | " + ham;
+            case WebExceptionStatus.ReceiveFailure:
+            case WebExceptionStatus.ConnectionClosed:
+            case WebExceptionStatus.KeepAliveFailure:
+                return "BAGLANTI AKTARIM SIRASINDA KOPTU: is sunucuda kuyrukta kalir ve yeniden indirilir | " + ham;
+            case WebExceptionStatus.ProxyNameResolutionFailure:
+                return "VEKIL SUNUCU (PROXY) BULUNAMADI: Windows proxy ayarlarini denetleyin | " + ham;
+            default:
+                return ham + " (" + durum + ")";
+        }
+    }
+
+    public static string BaglantiHatasiAcikla(Exception ex, string makine)
+    {
+        var wex = ex as WebException;
+        if (wex == null) return ex.Message;
+        var r = wex.Response as HttpWebResponse;
+        int kod = 0;
+        try { if (r != null) kod = (int)r.StatusCode; } catch { }
+        return BaglantiHatasiAcikla(wex.Status, kod, wex.Message, makine);
+    }
+
+    // ------------------------------------------------------------------
+    // YARIM DOSYA DENETIMI. Aktarim yarida kesilirse (RDP koptu, ag dustu)
+    // dosya eksik kalir. Eskiden yaziciya gonderiliyor, PDF motoru anlamsiz bir
+    // cikis koduyla dusuyor ya da yazicidan bozuk sayfa cikiyordu.
+    // PDF: "%PDF" ile baslar, son 2 KB icinde "%%EOF" bulunur. XPS: ZIP (PK).
+    // ------------------------------------------------------------------
+    public static bool DosyaButunMu(string yol, out string neden)
+    {
+        neden = null;
+        try
+        {
+            var fi = new FileInfo(yol);
+            if (!fi.Exists) { neden = "dosya yok"; return false; }
+            if (fi.Length == 0) { neden = "dosya BOS (0 bayt) - aktarim hic tamamlanmamis"; return false; }
+            string uz = fi.Extension.ToLowerInvariant();
+            using (var fs = new FileStream(yol, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            {
+                var bas = new byte[4];
+                int n = fs.Read(bas, 0, 4);
+                if (uz == ".pdf")
+                {
+                    if (n < 4 || bas[0] != '%' || bas[1] != 'P' || bas[2] != 'D' || bas[3] != 'F')
+                    { neden = "PDF basligi yok (%PDF) - dosya bozuk ya da PDF degil"; return false; }
+                    int sonBoy = (int)Math.Min(2048, fi.Length);
+                    fs.Seek(-sonBoy, SeekOrigin.End);
+                    var son = new byte[sonBoy];
+                    int okunan = 0;
+                    while (okunan < sonBoy) { int r = fs.Read(son, okunan, sonBoy - okunan); if (r <= 0) break; okunan += r; }
+                    string kuyruk = Encoding.ASCII.GetString(son, 0, okunan);
+                    if (kuyruk.IndexOf("%%EOF", StringComparison.Ordinal) < 0)
+                    { neden = "PDF YARIM: dosya sonu (%%EOF) yok, " + (fi.Length / 1024) + " KB - aktarim yarida kesilmis olabilir"; return false; }
+                }
+                else if (uz == ".xps" || uz == ".oxps")
+                {
+                    if (n < 2 || bas[0] != 'P' || bas[1] != 'K')
+                    { neden = "XPS dosyasi bozuk (ZIP basligi yok)"; return false; }
+                }
+            }
+            return true;
+        }
+        catch (Exception ex) { neden = "dosya okunamadi: " + ex.Message; return false; }
+    }
+}
+
+// ------------------------------------------------------------------
+// TEKRAR FILTRESI: "anlik ama gurultusuz" gunluk.
+// Ilk hata HEMEN yazilir; ayni hata tekrarlanirsa bastirilir ve sayilir;
+// hata DEGISINCE ya da duzelince onceki hatanin kac kez tekrarlandigi yazilir.
+// Eskiden ayni hata 2 dakikada bir yaziliyor, araya giren FARKLI hatalar
+// da bu sure yuzunden kayboluyordu.
+// ------------------------------------------------------------------
+class TekrarFiltresi
+{
+    readonly object kilit = new object();
+    string sonMesaj; int tekrar; DateTime ilkZaman, sonOzet;
+    public TimeSpan OzetAraligi = TimeSpan.FromMinutes(5);
+    public Func<DateTime> Simdi = delegate { return DateTime.Now; };
+
+    // Yazilmasi gereken satirlari doner (0, 1 ya da 2 satir).
+    public List<string> Hata(string mesaj)
+    {
+        var cik = new List<string>();
+        lock (kilit)
+        {
+            DateTime t = Simdi();
+            if (mesaj == sonMesaj)
+            {
+                tekrar++;
+                if (t - sonOzet >= OzetAraligi)
+                {
+                    cik.Add("(devam ediyor) " + mesaj + " | " + ilkZaman.ToString("HH:mm:ss") + "'den beri " + (tekrar + 1) + " kez");
+                    sonOzet = t;
+                }
+                return cik;
+            }
+            if (sonMesaj != null && tekrar > 0)
+                cik.Add("(onceki hata " + (tekrar + 1) + " kez tekrarlandi, " + ilkZaman.ToString("HH:mm:ss") + " - " + t.ToString("HH:mm:ss") + ")");
+            cik.Add(mesaj);
+            sonMesaj = mesaj; tekrar = 0; ilkZaman = t; sonOzet = t;
+        }
+        return cik;
+    }
+
+    // Hata duzeldiginde cagrilir; bir hata vardiysa kapanis satirini doner.
+    public string Duzeldi(string neYapildi)
+    {
+        lock (kilit)
+        {
+            if (sonMesaj == null) return null;
+            string m = "DUZELDI: " + neYapildi + " | onceki hata " + (tekrar + 1) + " kez, "
+                     + ilkZaman.ToString("HH:mm:ss") + " - " + Simdi().ToString("HH:mm:ss") + ": " + sonMesaj;
+            sonMesaj = null; tekrar = 0;
+            return m;
+        }
+    }
+}
+
+// ------------------------------------------------------------------
+// TAKILMA IZLEYICI: bir dosya surekli "hazir degil" (kilitli, boyutu
+// degisiyor) sayilip atlaniyorsa eskiden HICBIR iz kalmiyordu - is sonsuza
+// kadar bekliyordu. Esik asilinca BIR KEZ, sebebiyle bildirilir.
+// ------------------------------------------------------------------
+class TakilmaIzleyici
+{
+    readonly Dictionary<string, DateTime> ilk = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+    readonly HashSet<string> bildirildi = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    public TimeSpan Esik = TimeSpan.FromMinutes(2);
+    public Func<DateTime> Simdi = delegate { return DateTime.Now; };
+
+    // Dosya hazir degil: esik asildiysa bildirilecek mesaji doner (bir kez).
+    public string HazirDegil(string yol, string sebep)
+    {
+        lock (ilk)
+        {
+            DateTime t = Simdi(), bas;
+            if (!ilk.TryGetValue(yol, out bas)) { ilk[yol] = t; return null; }
+            if (t - bas < Esik || !bildirildi.Add(yol)) return null;
+            return "TAKILDI: " + Path.GetFileName(yol) + " " + (int)(t - bas).TotalMinutes + " dakikadir islenemiyor | sebep: " + sebep
+                 + " | klasor: " + Path.GetDirectoryName(yol);
+        }
+    }
+
+    // Dosya islendi ya da kayboldu: kaydi temizle. Takildi bildirildiyse kapanis mesaji doner.
+    public string Hazir(string yol)
+    {
+        lock (ilk)
+        {
+            ilk.Remove(yol);
+            return bildirildi.Remove(yol) ? "TAKILMA COZULDU: " + Path.GetFileName(yol) + " islenebiliyor" : null;
+        }
+    }
+
+    public void Temizle(IEnumerable<string> mevcut)
+    {
+        lock (ilk)
+        {
+            var kume = new HashSet<string>(mevcut, StringComparer.OrdinalIgnoreCase);
+            foreach (var k in ilk.Keys.Where(x => !kume.Contains(x)).ToList()) { ilk.Remove(k); bildirildi.Remove(k); }
+        }
     }
 }
 

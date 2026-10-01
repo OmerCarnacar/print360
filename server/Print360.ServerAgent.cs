@@ -83,6 +83,18 @@ static class ServerAgent
             Directory.CreateDirectory(clientsDir);
             Log("Ajan basladi (v" + Surum.Etiket + "). Spool: " + spoolDir + "\\" + user + ".*  Istemci: " + clientName);
             CiftOturumDenetle();
+            // BASLANGIC DENETIMI: klasor izinleri ve disk alani. Eskiden izin
+            // sorunu ilk iste belirsiz bir hata olarak ortaya cikiyordu.
+            int sorun = 0;
+            foreach (var m in Ortak.KlasorDenetle(new[] { spoolDir, @"C:\Print360\queue", Path.GetDirectoryName(logFile),
+                                                          @"C:\Print360\stats", clientsDir, @"C:\Print360\archive" }))
+            {
+                Log("BASLANGIC SORUNU: " + m);
+                Db.Alert("Kurulum", "'" + user + "' oturumu (" + (clientName.Length > 0 ? clientName : "?") + "): " + m);
+                sorun++;
+            }
+            Log(sorun == 0 ? "Baslangic denetimi: klasorler yazilabilir, disk alani yeterli."
+                           : "Baslangic denetimi: " + sorun + " sorun (yukarida).");
             VarsayilanYaziciAyarla(); // RDP oturumunda varsayilan = Print360 (dogrudan lokal PC'ye)
             // VC modu: istemciden gelen onay/sayac/heartbeat'i RDP kanalindan oku
             // (ayni "P360" kanali cift yonlu). Bayrak kapaliysa hicbir sey degismez.
@@ -99,7 +111,7 @@ static class ServerAgent
                     foreach (var t in jobTypes)
                     {
                         string sp = SpoolPath(t);
-                        if (File.Exists(sp) && IsStable(sp)) Dispatch(t, sp);
+                        if (File.Exists(sp)) SpoolKontrol(t, sp);
                     }
                     // Istemci adini tazele: ajan RDP oturumu tam kurulmadan baslamis
                     // olabilir VEYA ayni oturuma baska makineden baglanilmis olabilir.
@@ -135,6 +147,66 @@ static class ServerAgent
             Db.Alert("Oturum", m);
         }
         catch { }
+    }
+
+    // ------------------------------------------------------------------
+    // SPOOL DENETIMI. Uc durum eskiden SESSIZDI:
+    //   1) dosya surekli kilitli / boyutu degisiyor -> is sonsuza kadar bekliyordu
+    //   2) yazdiran uygulama yarida coktu -> dosya yarim kaliyor (%%EOF yok);
+    //      boyutu degismedigi icin "hazir" sayilip YARIM PDF istemciye gidiyordu
+    //   3) yavas bir uygulama 1 sn'den uzun durakladi -> yazilmakta olan dosya
+    //      erken gonderiliyordu
+    // Artik PDF butunlugu de sinanir; yarim dosya beklenir. 2 dakika sonra hala
+    // sorunluysa bildirilir, yarim PDF ise spool\_bozuk klasorune alinir (silinmez).
+    // ------------------------------------------------------------------
+    static readonly TakilmaIzleyici spoolTakilma = new TakilmaIzleyici();
+
+    static void SpoolKontrol(string tur, string sp)
+    {
+        string sebep;
+        if (!SpoolHazir(sp, out sebep))
+        {
+            string m = spoolTakilma.HazirDegil(sp, sebep);
+            if (m == null) return;
+            Log("UYARI: " + m);
+            Db.Alert("Spool", "'" + user + "': " + m);
+            if (sebep.StartsWith("PDF YARIM") || sebep.StartsWith("PDF basligi") || sebep.StartsWith("dosya BOS"))
+            {
+                try
+                {
+                    string dir = Path.Combine(spoolDir, "_bozuk");
+                    Directory.CreateDirectory(dir);
+                    string hedef = Path.Combine(dir, DateTime.Now.ToString("yyyyMMdd_HHmmss") + "_" + Path.GetFileName(sp));
+                    File.Move(sp, hedef);
+                    spoolTakilma.Hazir(sp);
+                    Log("YARIM BASKI kenara alindi: " + hedef + " - yazdiran uygulama islemi tamamlamadan durmus olabilir; "
+                        + "kullanici belgeyi yeniden yazdirmali.");
+                }
+                catch (Exception ex) { Log("Yarim spool dosyasi tasinamadi: " + ex.Message); }
+            }
+            return;
+        }
+        string c = spoolTakilma.Hazir(sp);
+        if (c != null) Log(c);
+        Dispatch(tur, sp);
+    }
+
+    static bool SpoolHazir(string path, out string sebep)
+    {
+        sebep = null;
+        try
+        {
+            long s1 = new FileInfo(path).Length;
+            if (s1 == 0) { sebep = "dosya BOS (0 bayt) - yazdirma surucusu henuz yazmadi"; return false; }
+            Thread.Sleep(1000);
+            long s2 = new FileInfo(path).Length;
+            if (s1 != s2) { sebep = "boyutu degisiyor (" + s1 / 1024 + " -> " + s2 / 1024 + " KB) - hala yaziliyor"; return false; }
+            using (File.Open(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) { }
+        }
+        catch (Exception ex) { sebep = "dosya kilitli ya da erisilemiyor: " + ex.Message; return false; }
+        string bozuk;
+        if (!Ortak.DosyaButunMu(path, out bozuk)) { sebep = bozuk; return false; }
+        return true;
     }
 
     static bool IsStable(string path)

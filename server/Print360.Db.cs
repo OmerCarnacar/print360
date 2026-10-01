@@ -1029,4 +1029,129 @@ static class Kuyruk
         }
         catch (Exception ex) { hata = ex.Message; return false; }
     }
+
+    // ------------------------------------------------------------------
+    // BILGISAYAR ADI DEGISTI: eski adin kuyrugundaki TUM isler (makine ayni,
+    // yalnizca adi degisti; hangi kullanicinin oldugu fark etmez) yeni ada
+    // tasinir. Eskiden bu isler eski adin klasorunde sonsuza kadar kaliyordu.
+    // ------------------------------------------------------------------
+    public static int MakineAdiDegisti(string eskiAd, string yeniAd)
+    {
+        if (string.IsNullOrEmpty(eskiAd) || string.IsNullOrEmpty(yeniAd)) return 0;
+        string kaynak = Path.Combine(Kok, Sanitize(eskiAd)), hedef = Path.Combine(Kok, Sanitize(yeniAd));
+        if (!Directory.Exists(kaynak) || string.Equals(kaynak, hedef, StringComparison.OrdinalIgnoreCase)) return 0;
+        int n = 0;
+        foreach (var f in new DirectoryInfo(kaynak).GetFiles("*.gz"))
+        {
+            try
+            {
+                Directory.CreateDirectory(hedef);
+                string y = Path.Combine(hedef, f.Name);
+                if (File.Exists(y)) continue;
+                File.Move(f.FullName, y);
+                n++;
+            }
+            catch { }
+        }
+        if (n > 0) AnligiBoz();
+        return n;
+    }
+}
+
+// ------------------------------------------------------------------
+// KIMLIK DEFTERI: kurulum kimligi (iid) -> kayitli bilgisayar adi.
+// Ayni kimlik BASKA bir adla gelirse iki ihtimal vardir:
+//   a) bilgisayarin ADI DEGISTI  -> eski ad bir daha gorunmez
+//   b) iki makine ayni kimligi tasiyor (disk klonu + ayni BIOS UUID) -> iki
+//      ad SIRAYLA gelmeye devam eder.
+// Karar "eski ad son bir kac dakikada gorulmus mu" sorusuyla VERILMEZ: hizli
+// bir yeniden baslatmada (ad degisikligi genelde yeniden baslatma ister) eski
+// adin son kalp atisi 3 dakikadan yeni olabilir ve ad degisikligi yanlislikla
+// "cakisma" sayilirdi. Bunun yerine yeni ad GOZLEMLENIR: Bekleme suresi
+// boyunca eski ad bir daha gelmezse ad degismistir; gelirse ikisi de canlidir.
+// Cakismada isler TASINMAZ: aksi halde iki makine her kalp atisinda isleri
+// birbirinin kuyruguna tasirdi. Defter dosyada tutulur (panel yeniden
+// baslasa da ad degisikligi taninsin).
+// ------------------------------------------------------------------
+class KimlikDefteri
+{
+    readonly object kilit = new object();
+    readonly System.Collections.Generic.Dictionary<string, string> defter =
+        new System.Collections.Generic.Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    // iid -> [aday ad, ilk gorulme (ticks)]
+    readonly System.Collections.Generic.Dictionary<string, string[]> aday =
+        new System.Collections.Generic.Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+    readonly string dosya;
+    bool yuklendi;
+    public TimeSpan Bekleme = TimeSpan.FromMinutes(3);
+
+    public KimlikDefteri(string dosya) { this.dosya = dosya; }
+
+    // Sonuc: "yeni" | "ayni" | "gozleniyor" | "ad-degisti" | "cakisma".
+    // eskiAd: ad-degisti/cakisma'da kayitli (onceki) ad.
+    public string Gorus(string iid, string makine, DateTime simdi, out string eskiAd)
+    {
+        eskiAd = null;
+        if (string.IsNullOrEmpty(iid) || string.IsNullOrEmpty(makine)) return "ayni";
+        lock (kilit)
+        {
+            Yukle();
+            string kayitli;
+            if (!defter.TryGetValue(iid, out kayitli)) { defter[iid] = makine; Kaydet(); return "yeni"; }
+            string[] a;
+            bool adayVar = aday.TryGetValue(iid, out a);
+
+            if (string.Equals(kayitli, makine, StringComparison.OrdinalIgnoreCase))
+            {
+                // Kayitli ad yeniden geldi. Bu arada BASKA bir ad goruldu ise
+                // ikisi de canli: ayni kimlik iki makinede.
+                if (adayVar)
+                {
+                    aday.Remove(iid);
+                    eskiAd = a[0];
+                    return "cakisma";
+                }
+                return "ayni";
+            }
+
+            if (!adayVar || !string.Equals(a[0], makine, StringComparison.OrdinalIgnoreCase))
+            {
+                aday[iid] = new[] { makine, simdi.Ticks.ToString() };
+                return "gozleniyor";
+            }
+            if (simdi - new DateTime(long.Parse(a[1])) < Bekleme) return "gozleniyor";
+            aday.Remove(iid);
+            eskiAd = kayitli;
+            defter[iid] = makine; Kaydet();
+            return "ad-degisti";
+        }
+    }
+
+    void Yukle()
+    {
+        if (yuklendi) return;
+        yuklendi = true;
+        try
+        {
+            if (!File.Exists(dosya)) return;
+            foreach (var l in File.ReadAllLines(dosya))
+            {
+                int v = l.IndexOf(',');
+                if (v > 0) defter[l.Substring(0, v).Trim()] = l.Substring(v + 1).Trim();
+            }
+        }
+        catch { }
+    }
+
+    void Kaydet()
+    {
+        try
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var kv in defter) sb.Append(kv.Key).Append(',').Append(kv.Value).Append("\r\n");
+            Directory.CreateDirectory(Path.GetDirectoryName(dosya));
+            File.WriteAllText(dosya, sb.ToString());
+        }
+        catch { }
+    }
 }

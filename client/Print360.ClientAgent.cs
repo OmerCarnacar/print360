@@ -85,7 +85,11 @@ static class ClientAgent
     static string sonYaziciRapor = "";   // HeartbeatLoop'ta uretilen WMI raporu (cache)
     static bool rdpAcik;                 // su an aktif RDP oturumu var mi (RdpIzleyici gunceller)
     static int sunucuBagli;              // su an ulasilabilen sunucu sayisi (tepsi ipucunda gosterilir)
-    static DateTime sonIsHatasi = DateTime.MinValue;   // is cekme hatasi gunlugunu kisitlar
+    // Is cekme hatalari: ilk hata ANINDA, ayni hata tekrarlanirsa sayilir, hata
+    // degisince ya da duzelince ozet yazilir (bkz. TekrarFiltresi).
+    static readonly TekrarFiltresi isHatasi = new TekrarFiltresi();
+    // Dosya surekli "hazir degil" sayiliyorsa bir kez bildir (bkz. TakilmaIzleyici).
+    static readonly TakilmaIzleyici takilma = new TakilmaIzleyici();
     // MAKINE KIMLIGI: sunucu, AYNI bilgisayar adinin iki farkli kimlikle
     // baglandigini gorurse uyarir (iki makine ayni kuyrugu paylasir, cikti
     // yanlis makineden cikar).
@@ -127,18 +131,8 @@ static class ClientAgent
         }
     }
 
-    // Sunucu hatasini INSAN DILINE cevir. 403 = istemci sifresi sunucudaki
-    // kayitla eslesmiyor; genel "(403) Yasak" mesaji kimseye bir sey anlatmiyordu.
-    static string HataAcikla(Exception ex)
-    {
-        var wex = ex as WebException;
-        var r = wex != null ? wex.Response as HttpWebResponse : null;
-        if (r != null && r.StatusCode == HttpStatusCode.Forbidden)
-            return "ISTEMCI SIFRESI REDDEDILDI (403): bu makine sunucuda BASKA bir sifreyle kayitli. "
-                 + "Ya Print360.ini icindeki ClientKey'i sunucudakiyle ayni yapin, ya da sunucu panelinden "
-                 + "'" + Environment.MachineName + "' kaydini silip istemciyi yeniden baslatin.";
-        return ex.Message;
-    }
+    // Baglanti hatasini INSAN DILINE cevir: sebep + nereye bakilacagi (Ortak.BaglantiHatasiAcikla).
+    static string HataAcikla(Exception ex) { return Ortak.BaglantiHatasiAcikla(ex, Environment.MachineName); }
 
     static DateTime sonSurumUyarisi = DateTime.MinValue;   // "sunucu eski surumde" uyarisini kisitlar
     static string sonTekrarEdenIs;                      // sunucunun tekrar verdigi is (dongu korumasi)
@@ -307,7 +301,9 @@ static class ClientAgent
             Directory.CreateDirectory(failedDir);
             Directory.CreateDirectory(Path.Combine(baseDir, "logs"));
             Directory.CreateDirectory(Path.Combine(baseDir, "stats"));
-            Log("Ajan basladi (v" + Surum.Etiket + "). Izlenen klasor: " + jobsDir);
+            Log("Ajan basladi (v" + Surum.Etiket + "). Izlenen klasor: " + jobsDir
+                + " | bilgisayar: " + Environment.MachineName + " | kullanici: " + Environment.UserName);
+            BaslangicDenetimi();
         RdpEklentiSagligi();   // bozuk kayit RDP'yi actirmaz - onar
             VarsayilanYaziciyiKurDefaults();   // istemcide her zaman bir varsayilan bulunsun
             new Thread(RdpIzleyici) { IsBackground = true }.Start();   // RDP acilir acilmaz algila
@@ -335,13 +331,30 @@ static class ClientAgent
         {
             try
             {
-                foreach (var f in Directory.GetFiles(jobsDir)
+                var dosyalar = Directory.GetFiles(jobsDir)
                          .Where(f => !f.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
-                         .OrderBy(f => f))
+                         .OrderBy(f => f).ToList();
+                foreach (var f in dosyalar)
                 {
-                    if (!IsStable(f)) continue;
+                    string sebep;
+                    if (!HazirMi(f, out sebep))
+                    {
+                        string m = takilma.HazirDegil(f, sebep);
+                        if (m != null) Log("UYARI: " + m);
+                        continue;
+                    }
+                    string c = takilma.Hazir(f);
+                    if (c != null) Log(c);
+                    // YARIM/BOZUK DOSYA yaziciya gonderilmez: anlamsiz hata ya da bozuk sayfa cikardi.
+                    string bozuk;
+                    if (!Ortak.DosyaButunMu(f, out bozuk))
+                    {
+                        Basarisiz(f, Path.GetFileName(f), "-", "YARIM/BOZUK DOSYA - " + bozuk);
+                        continue;
+                    }
                     PrintJob(f);
                 }
+                takilma.Temizle(dosyalar);
                 Prune();
             }
             catch (Exception ex) { Log("HATA: " + ex.Message); }
@@ -349,18 +362,141 @@ static class ClientAgent
         }
     }
 
-    static bool IsStable(string path)
+    // Dosya islenmeye hazir mi? Degilse SEBEBI doner (takilma bildirimi icin).
+    static bool HazirMi(string path, out string sebep)
     {
+        sebep = null;
         try
         {
             long s1 = new FileInfo(path).Length;
-            if (s1 == 0) return false;
+            if (s1 == 0) { sebep = "dosya bos (0 bayt) - yazilmaya devam ediyor ya da aktarim kopmus"; return false; }
             Thread.Sleep(500);
-            if (new FileInfo(path).Length != s1) return false;
+            long s2 = new FileInfo(path).Length;
+            if (s2 != s1) { sebep = "boyutu degisiyor (" + s1 / 1024 + " -> " + s2 / 1024 + " KB) - hala yaziliyor"; return false; }
             using (File.Open(path, FileMode.Open, FileAccess.Read, FileShare.None)) { }
             return true;
         }
-        catch { return false; }
+        catch (Exception ex) { sebep = "dosya kilitli ya da erisilemiyor: " + ex.Message; return false; }
+    }
+
+    // ------------------------------------------------------------------
+    // BASLANGIC DENETIMI: ajan her acilista once ortami sinar ve gordugu
+    // her sorunu ACIKCA yazar. Eskiden bu sorunlar ilk iste, belirsiz bir
+    // hata olarak ya da hic gorunmeden ortaya cikiyordu.
+    //   - klasor izinleri ve bos disk alani
+    //   - onceki oturumdan YARIM KALAN yazdirma (ajan baski sirasinda kapandi)
+    //   - YARIM KALAN indirme (baglanti aktarim sirasinda koptu)
+    //   - bilgisayar adinin degismesi
+    // ------------------------------------------------------------------
+    const string BaskiIsareti = ".basiliyor.tmp";
+
+    static void BaslangicDenetimi()
+    {
+        int sorun = 0;
+        try
+        {
+            foreach (var m in Ortak.KlasorDenetle(new[] { baseDir, jobsDir, doneDir, failedDir,
+                                                          Path.Combine(baseDir, "logs"), Path.Combine(baseDir, "stats") }))
+            {
+                Log("BASLANGIC SORUNU: " + m);
+                sorun++;
+            }
+            if (sorun > 0)
+                Bildir("Print360 klasor sorunu", sorun + " sorun bulundu; ayrinti: C:\\Print360\\logs\\client.log", false);
+        }
+        catch (Exception ex) { Log("Klasor denetimi yapilamadi: " + ex.Message); }
+
+        try
+        {
+            // 1) Yazdirilirken kapanan isler (isaret dosyasi kaldi)
+            foreach (var isaret in Directory.GetFiles(jobsDir, "*" + BaskiIsareti))
+            {
+                string isDosyasi = isaret.Substring(0, isaret.Length - BaskiIsareti.Length);
+                string zaman = "";
+                try { zaman = File.ReadAllText(isaret).Trim(); } catch { }
+                Log("YARIM KALDI: " + Path.GetFileName(isDosyasi) + " yazdirilirken ajan kapandi"
+                    + (zaman.Length > 0 ? " (baski baslangici " + zaman + ")" : "")
+                    + (File.Exists(isDosyasi) ? " - YENIDEN YAZDIRILACAK; yazici ilk denemeyi almissa CIKTI IKI KEZ GELEBILIR"
+                                              : " - is dosyasi yok, yeniden denenmeyecek"));
+                try { File.Delete(isaret); } catch { }
+                sorun++;
+            }
+            // 2) Yarim kalan indirmeler (onay gonderilmedigi icin is sunucuda bekliyor)
+            foreach (var tmp in Directory.GetFiles(jobsDir, "*.tmp"))
+            {
+                long kb = 0; try { kb = new FileInfo(tmp).Length / 1024; } catch { }
+                try { File.Delete(tmp); } catch { }
+                Log("YARIM INDIRME silindi: " + Path.GetFileName(tmp) + " (" + kb + " KB) - baglanti aktarim sirasinda kopmus; "
+                    + "onay gonderilmedigi icin is sunucuda kuyrukta bekliyor ve yeniden indirilecek");
+                sorun++;
+            }
+        }
+        catch (Exception ex) { Log("Yarim is denetimi yapilamadi: " + ex.Message); }
+
+        // 3) Bilgisayar adi degisti mi?
+        try
+        {
+            string adDosyasi = Path.Combine(baseDir, "makine-adi.txt");
+            string onceki = File.Exists(adDosyasi) ? File.ReadAllText(adDosyasi).Trim() : "";
+            if (onceki.Length > 0 && !onceki.Equals(Environment.MachineName, StringComparison.OrdinalIgnoreCase))
+            {
+                Log("BILGISAYAR ADI DEGISTI: '" + onceki + "' -> '" + Environment.MachineName + "'. Sunucu bu makineyi "
+                    + "kurulum kimliginden taniyip '" + onceki + "' adina bekleyen isleri yeni ada tasir (sunucu "
+                    + "2026.10.01 ve ustu). Istemci sifresi yeni ad icin sunucuya yeniden kaydedilir.");
+                sorun++;
+            }
+            if (!onceki.Equals(Environment.MachineName, StringComparison.OrdinalIgnoreCase))
+                File.WriteAllText(adDosyasi, Environment.MachineName);
+        }
+        catch (Exception ex) { Log("Bilgisayar adi denetimi: " + ex.Message); }
+
+        Log(sorun == 0 ? "Baslangic denetimi: sorun yok (klasorler yazilabilir, yarim is yok)."
+                       : "Baslangic denetimi: " + sorun + " bulgu (yukaridaki satirlar).");
+    }
+
+    // ------------------------------------------------------------------
+    // YAZICI ANLIK DURUMU. Sorun yoksa null; varsa okunabilir aciklama.
+    // Cevrimdisi / kagit / toner / sikisma ve Windows kuyrugunda hataya
+    // dusmus isler bildirilir. Eskiden SumatraPDF "basarili" dediyse is
+    // "Basildi" sayiliyordu; yazici kagitsizsa cikti Windows kuyrugunda
+    // bekliyor, kullanici nedenini bilmiyordu.
+    // ------------------------------------------------------------------
+    static string YaziciAnlikDurum(string ad)
+    {
+        if (string.IsNullOrEmpty(ad)) return null;
+        var sorunlar = new List<string>();
+        try
+        {
+            string wql = ad.Replace("\\", "\\\\").Replace("'", "\\'");
+            using (var ps = new System.Management.ManagementObjectSearcher(
+                       "SELECT PrinterStatus, DetectedErrorState, WorkOffline FROM Win32_Printer WHERE Name='" + wql + "'"))
+                foreach (System.Management.ManagementObject p in ps.Get())
+                {
+                    int st = 0; try { st = Convert.ToInt32(p["PrinterStatus"]); } catch { }
+                    int err = 0; try { err = Convert.ToInt32(p["DetectedErrorState"]); } catch { }
+                    bool off = false; try { off = p["WorkOffline"] != null && (bool)p["WorkOffline"]; } catch { }
+                    string d = YaziciDurum(st, off);
+                    if (off || st == 6 || st == 7) sorunlar.Add(d);
+                    string h = YaziciHata(err);
+                    if (h.Length > 0 && h != d) sorunlar.Add(h);
+                }
+            int hatali = 0; string ornek = "";
+            using (var js = new System.Management.ManagementObjectSearcher("SELECT Name, JobStatus, Status FROM Win32_PrintJob"))
+                foreach (System.Management.ManagementObject j in js.Get())
+                {
+                    string n = Convert.ToString(j["Name"]);
+                    int vi = n.LastIndexOf(',');
+                    if (!(vi > 0 ? n.Substring(0, vi).Trim() : n).Equals(ad, StringComparison.OrdinalIgnoreCase)) continue;
+                    string js2 = Convert.ToString(j["JobStatus"]) ?? "", st2 = Convert.ToString(j["Status"]) ?? "";
+                    string k = (js2 + " " + st2).ToLowerInvariant();
+                    if (k.Contains("error") || k.Contains("offline") || k.Contains("paper") || k.Contains("blocked")
+                        || k.Contains("intervention") || k.Contains("paused") || k.Contains("degraded"))
+                    { hatali++; if (ornek.Length == 0) ornek = (js2.Length > 0 ? js2 : st2).Trim(); }
+                }
+            if (hatali > 0) sorunlar.Add("Windows kuyrugunda " + hatali + " is hatada (" + ornek + ")");
+        }
+        catch (Exception ex) { return "yazici durumu okunamadi: " + ex.Message; }
+        return sorunlar.Count == 0 ? null : string.Join("; ", sorunlar.ToArray());
     }
 
     static void PrintJob(string file)
@@ -424,9 +560,19 @@ static class ClientAgent
         Adim(5, "YAZDIRMA", fname,
              File.Exists(sumatra) ? "SumatraPDF motoru ile basiliyor (en fazla 3 deneme)"
                                   : "SumatraPDF yok; Windows printto motoru denenecek");
-        Log("Yazdiriliyor: " + fname + " -> " + hedef);
+        string onDurum = YaziciAnlikDurum(hedef);
+        if (onDurum != null)
+            Log("UYARI: YAZICI SORUNLU: '" + hedef + "' | " + onDurum
+                + " | is yine de Windows kuyruguna verilecek; sorun giderilince basilir");
+        long boyutKb = 0; try { boyutKb = new FileInfo(file).Length / 1024; } catch { }
+        Log("Yazdiriliyor: " + fname + " -> " + hedef + " (" + boyutKb + " KB)");
+        // ISARET: ajan baski sirasinda kapanirsa bir sonraki acilista "YARIM KALDI" denir.
+        string isaret = file + BaskiIsareti;
+        try { File.WriteAllText(isaret, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " -> " + hedef); } catch { }
+        try {
         for (int deneme = 1; deneme <= 3 && !basarili; deneme++)
         {
+            var dkron = System.Diagnostics.Stopwatch.StartNew();
             // 1. motor: SumatraPDF (sessiz, guvenilir)
             if (File.Exists(sumatra))
             {
@@ -470,11 +616,18 @@ static class ClientAgent
             }
             if (!basarili)
             {
-                Log("Deneme " + deneme + "/3 basarisiz: " + sonHata);
+                Log("Deneme " + deneme + "/3 basarisiz (" + dkron.ElapsedMilliseconds + " ms): " + sonHata);
                 Thread.Sleep(2000 * deneme);
             }
         }
-        if (!basarili) { Basarisiz(file, fname, YerelEtiket(hedef), sonHata); return; }
+        }
+        finally { try { File.Delete(isaret); } catch { } }
+        if (!basarili)
+        {
+            string sonDurum = YaziciAnlikDurum(hedef);
+            Basarisiz(file, fname, YerelEtiket(hedef), sonHata + (sonDurum != null ? " | yazici: " + sonDurum : ""));
+            return;
+        }
 
         string dst = Path.Combine(doneDir, fname);
         if (File.Exists(dst)) File.Delete(dst);
@@ -485,6 +638,17 @@ static class ClientAgent
         Adim(7, "RAPORLANDI", GorunenBelgeAdi(fname),
              "sunucuya 'basildi' bildirildi; panelde sayaclara islenir");
         Log("Tamamlandi: " + fname + " -> " + hedef);
+        // Is Windows kuyruguna verildi; yazici o anda hata veriyorsa SOYLE.
+        // (Cikti fiziksel olarak dogrulanamaz; ama kagit bitti / cevrimdisi gibi
+        // durumlar okunabilir. Eskiden "Basildi" denip sessiz kaliniyordu.)
+        Thread.Sleep(1500);
+        string sonra = YaziciAnlikDurum(hedef);
+        if (sonra != null)
+        {
+            Log("UYARI: CIKTI WINDOWS KUYRUGUNDA BEKLIYOR: " + fname + " -> '" + hedef + "' | " + sonra);
+            Bildir("Cikti bekliyor", "Yazici: " + hedef + "\r\n" + sonra, false);
+            return;   // "Yazdirildi" balonu bu uyariyi ortmesin
+        }
         // Kullaniciya BILDIR: is bitti, cikti yaziciya gitti.
         // KISA bildirim: belge adi + yazici (tek satir, 3 sn)
         Bildir("Yazdirildi", GorunenBelgeAdi(fname) + "  ->  " + hedef, true);
@@ -1249,6 +1413,8 @@ static class ClientAgent
             using (var resp = (HttpWebResponse)req.GetResponse())
             {
                 basligaKadar = kron.ElapsedMilliseconds;
+                string duzeldi = isHatasi.Duzeldi("sunucudan yeniden is alinabiliyor (" + baseUrl + ")");
+                if (duzeldi != null) Log(duzeldi);
                 if (resp.StatusCode == HttpStatusCode.NoContent) return false;
                 ham = resp.ContentLength;
                 // Sunucu adlari YUZDE-KODLU gonderir (HTTP basliklari ASCII tasir;
@@ -1345,14 +1511,12 @@ static class ClientAgent
             {
                 // Hangi ASAMADA takildigini yaziyoruz: "sunucudan yanit bekleniyor"
                 // goruluyorsa sorun SUNUCUDA, "is indiriliyor" goruluyorsa AG'da.
-                // Ilk hata hemen yazilir; tekrarlari 2 dakikada bir (gunluk sismesin).
-                bool ilk = (sonIsHatasi == DateTime.MinValue);
-                if (ilk || (DateTime.Now - sonIsHatasi).TotalMinutes >= 2)
-                {
-                    sonIsHatasi = DateTime.Now;
-                    Log(string.Format("IS ALINAMADI [{0}] asama: {1} | gecen {2} ms | durum: {3} | {4}",
-                        baseUrl, asama, kron.ElapsedMilliseconds, ex.Status, HataAcikla(ex)));
-                }
+                // Ilk hata ANINDA yazilir; ayni hata tekrar ederse sayilir; FARKLI bir
+                // hata hemen yazilir (eskiden 2 dk'lik kisitlama araya gireni yutuyordu).
+                // Sure (ms) mesaja girmez: her denemede farkli olur, tekrar sayilamazdi.
+                foreach (var satir in isHatasi.Hata(string.Format("IS ALINAMADI [{0}] asama: {1} | durum: {2} | {3}",
+                             baseUrl, asama, ex.Status, HataAcikla(ex))))
+                    Log(satir + (satir.StartsWith("IS ALINAMADI") ? " | gecen " + kron.ElapsedMilliseconds + " ms" : ""));
                 return false;
             }
             throw;   // gecici baglanti hatasi: cagiran tek sefer yeniden dener

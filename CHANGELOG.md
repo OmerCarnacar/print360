@@ -10,6 +10,49 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [2026.10.01.0854]
+
+Baskı yolundaki **sessiz kalan** hata durumları tarandı. Her biri artık
+**anında**, sebebi ve yapılacak işle birlikte günlüğe yazılıyor.
+
+### Senaryolar
+
+| Senaryo | Eskiden | Şimdi |
+|---|---|---|
+| **Bilgisayar adı değişti** | Eski adla bekleyen işler eski klasörde kalıyordu; eski ad panelde "çevrimdışı" | İstemci açılışta `BILGISAYAR ADI DEGISTI: A -> B` yazar. Sunucu aynı kurulum kimliğini yeni adla görür, 3 dk gözler; eski ad gelmezse bekleyen işleri yeni ada taşır |
+| **Bağlantı koptu** | Hata 2 dk'da bir yazılıyor, araya giren farklı hatalar kayboluyordu | İlk hata anında; aynısı tekrar ederse sayılır; farklı hata hemen; düzelince `DUZELDI`. Sebep insan diliyle: DNS, port, zaman aşımı, sertifika, aktarım sırasında kopma, 403/404/500 |
+| **Yazdırma yarım kaldı** (ajan baskı sırasında kapandı) | İz yoktu | Sonraki açılışta `YARIM KALDI ... yeniden yazdırılacak, çıktı iki kez gelebilir` |
+| **İndirme yarım kaldı** | `.tmp` sessizce kalıyordu | Açılışta silinir: "iş sunucuda bekliyor, yeniden indirilecek" |
+| **Yarım PDF** (uygulama çöktü, RDP koptu) | Yazıcıya gidiyor, bozuk sayfa ya da anlamsız hata kodu | `%PDF` / `%%EOF` denetimi. İstemci yazıcıya göndermez; sunucu tamamlanmasını bekler, 2 dk sonra `spool\_bozuk`'a alır (silmez) |
+| **Klasöre erişim yok / disk dolu** | İlk işte belirsiz "Erişim engellendi" | Üç bileşen de açılışta her klasörü dener: klasör + kullanıcı + Windows hatası; 500 MB altında disk uyarısı |
+| **Günlüğün kendisi yazılamıyor** | Sorunun kaydı da kayboluyordu | `%TEMP%\Print360-...` yedeğine yazılır; geçiş ve sebebi bir kez |
+| **Dosya sürekli kilitli / büyüyor** | İş sonsuza kadar bekliyordu | 2 dk sonra bir kez: dosya, süre, sebep; çözülünce `TAKILMA COZULDU` |
+| **Yazıcıda kâğıt yok / çevrimdışı** | "Basıldı" denip sessiz kalınıyordu | Baskıdan önce ve sonra yazıcı durumu ve Windows kuyruğundaki hatalı işler okunur; günlük + tepside uyarı |
+
+### Ayrıca
+- Aynı kurulum kimliği iki ayrı adla **sırayla** gelmeye devam ederse (disk
+  klonu + aynı BIOS kimliği) iş taşınmaz, `AYNI KURULUM KIMLIGI IKI MAKINEDE`
+  uyarısı verilir. Karar "eski ad gözlemlenerek" verilir; hızlı bir yeniden
+  başlatmada ad değişikliği yanlışlıkla çakışma sayılmaz.
+- Başlangıç satırları sürüm, hesap, bilgisayar adı ve oturum numarasını da yazar.
+
+### Test
+- `tests/OlayGunlugu.cs` (yeni, 42 kontrol): klasörün yazma izni Windows'ta
+  gerçekten kaldırılarak, `%%EOF`'suz gerçek bir yarım PDF ile, tekrar
+  filtresi, takılma izleyici, ad değişikliği ve çakışma kararı.
+- Yazıcı durumu geliştirme makinesindeki gerçek yazıcılarla çalıştırıldı;
+  çevrimdışı bir yazıcı doğru bildirildi.
+- 10 test dosyası, 116 kontrol.
+
+### Bilinen sınırlar
+- Kâğıdın fiziksel olarak çıktığı doğrulanamaz; görülebilen son nokta
+  Windows'un yazıcı ve kuyruk durumudur.
+- Yazıcı durumu her işte iki kez okunur; iş başına ~2,5 sn eklenir.
+- İstemci açılış denetimi, sunucu spool denetimi ve ad değişikliğinde taşıma
+  canlı bir sunucu-istemci ortamında denenmedi; karar mantığı testlerle sınandı.
+
+---
+
 ## [2026.10.01.0825]
 
 Son dört sürümde eklenen kodun baştan sona incelemesi. Altı hata düzeltildi.

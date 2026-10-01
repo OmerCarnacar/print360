@@ -30,6 +30,7 @@ $testler = @(
     @{ Ad = "IstemciDegisimi";  Kaynak = @("tests\IstemciDegisimi.cs", $db);     Ref = @("System.Data.dll", $sqlite); Main = "" },
     @{ Ad = "KuyrukDurumu";     Kaynak = @("tests\KuyrukDurumu.cs", $db);        Ref = @("System.Data.dll", $sqlite); Main = "" },
     @{ Ad = "KuyrukKorumalari"; Kaynak = @("tests\KuyrukKorumalari.cs", $db);    Ref = @("System.Data.dll", $sqlite); Main = "" },
+    @{ Ad = "OlayGunlugu";      Kaynak = @("tests\OlayGunlugu.cs", $ortak, $db);  Ref = @("System.Data.dll", $sqlite); Main = "" },
     @{ Ad = "SurumRaporu";      Kaynak = @("tests\SurumRaporu.cs", "server\Print360.Dashboard.cs", $db, $ortak, "server\Print360.License.cs", "server\Print360.Version.cs");
        Ref = @("System.Data.dll", "System.DirectoryServices.dll", $sqlite); Main = "SurumTest" },
     @{ Ad = "PeMimari";         Kaynak = @("tests\PeMimari.cs", $setup);
