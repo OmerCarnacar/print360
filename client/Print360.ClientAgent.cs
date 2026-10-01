@@ -86,25 +86,45 @@ static class ClientAgent
     static bool rdpAcik;                 // su an aktif RDP oturumu var mi (RdpIzleyici gunceller)
     static int sunucuBagli;              // su an ulasilabilen sunucu sayisi (tepsi ipucunda gosterilir)
     static DateTime sonIsHatasi = DateTime.MinValue;   // is cekme hatasi gunlugunu kisitlar
-    // KURULUM KIMLIGI: bu kuruluma ozel rastgele deger. Sunucu, AYNI bilgisayar
-    // adinin iki farkli kimlikle baglandigini gorurse (klonlanmis imaj) uyarir.
+    // MAKINE KIMLIGI: sunucu, AYNI bilgisayar adinin iki farkli kimlikle
+    // baglandigini gorurse uyarir (iki makine ayni kuyrugu paylasir, cikti
+    // yanlis makineden cikar).
+    //
+    // Yalnizca diskteki rastgele deger (kimlik.txt) YETMEZ: bu ozelligin hedefi
+    // KLONLANMIS imajlardir ve klonlanan diskte kimlik.txt de aynen kopyalanir -
+    // yani tespit tam da tasarlandigi durumda calismazdi. Bu yuzden donanim
+    // kimligi (SMBIOS UUID) ile birlestirilir: klon disk ayni, donanim farkli.
+    // Ucuz anakartlarda UUID hepsi ayni (FFFF...) olabilir; o zaman da disk
+    // degeri farkli olacagindan ayrim yine yapilir. Ikisi birden ayniysa
+    // tespit edilemez - yanlis alarm degil, yalnizca kacirma olur.
+    // Ham UUID sunucuya gonderilmez; yalnizca ozeti (SHA-256, 32 hane).
     static string _kurulumKimligi;
     static string KurulumKimligi()
     {
         if (_kurulumKimligi != null) return _kurulumKimligi;
+        string disk = "";
         string yol = Path.Combine(baseDir, "kimlik.txt");
         try
         {
-            if (File.Exists(yol))
-            {
-                string k = File.ReadAllText(yol).Trim();
-                if (k.Length >= 16) return _kurulumKimligi = k;
-            }
-            string yeni = Guid.NewGuid().ToString("N");
-            File.WriteAllText(yol, yeni);
-            return _kurulumKimligi = yeni;
+            if (File.Exists(yol)) disk = File.ReadAllText(yol).Trim();
+            if (disk.Length < 16) { disk = Guid.NewGuid().ToString("N"); File.WriteAllText(yol, disk); }
         }
-        catch { return _kurulumKimligi = ""; }
+        catch { }
+        string donanim = "";
+        try
+        {
+            using (var ara = new System.Management.ManagementObjectSearcher("SELECT UUID FROM Win32_ComputerSystemProduct"))
+                foreach (System.Management.ManagementObject o in ara.Get()) { donanim = Convert.ToString(o["UUID"]) ?? ""; break; }
+        }
+        catch { }
+        if (disk.Length == 0 && donanim.Length == 0) return _kurulumKimligi = "";
+        using (var sha = System.Security.Cryptography.SHA256.Create())
+        {
+            var b = sha.ComputeHash(Encoding.UTF8.GetBytes(disk + "|" + donanim.Trim().ToUpperInvariant()));
+            var sb = new StringBuilder();
+            for (int i = 0; i < 16; i++) sb.Append(b[i].ToString("x2"));
+            return _kurulumKimligi = sb.ToString();
+        }
     }
 
     // Sunucu hatasini INSAN DILINE cevir. 403 = istemci sifresi sunucudaki

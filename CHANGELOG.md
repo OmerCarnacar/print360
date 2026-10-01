@@ -10,6 +10,93 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [2026.10.01.0825]
+
+Son dört sürümde eklenen kodun baştan sona incelemesi. Altı hata düzeltildi.
+
+### Düzeltildi — panel sunucusu, oturumunu kapatan kullanıcıyla birlikte kapanıyordu
+
+En önemli bulgu. Panel sunucusu (`Print360.Dashboard.exe`) yalnızca web
+paneli değildir; **HTTPS ile bağlanan istemcilerin iş aldığı `/api/jobs`** de
+odur. Bugüne kadar `HKLM\...\Run` kaydıyla, sunucuda oturum açan **ilk
+kullanıcının oturumunda** başlıyordu. Sonuçları:
+
+- O kullanıcı oturumunu **kapattığında** panel de kapanıyordu. Başka biri
+  yeni oturum açana kadar hiçbir HTTPS istemcisi çıktı alamıyor, kalp atışı
+  gönderemiyordu; panelde işler "Gönderildi"de kalıyordu. Tipik senaryo:
+  yönetici güne sunucuya bağlanarak başlar, akşam çıkış yapar.
+- Her oturum açılışı yeni bir panel kopyası başlatmaya çalışıyordu. Yönetici
+  oturumlarındaki kopyalar `localhost`'a bağlanıp **çalışmaya devam ediyor**,
+  uyarıları ve günlük e-posta raporunu iki kez üretebiliyordu.
+
+Artık panel **"Print360 Panel Sunucusu"** zamanlanmış göreviyle **SYSTEM**
+olarak çalışıyor:
+- sunucu açılışında başlar, kimsenin oturum açmasını beklemez,
+- hiçbir kullanıcının oturumuna bağlı değildir,
+- çökerse en geç **5 dakikada** geri gelir (bekçi tetikleyicisi),
+- makine genelinde tek kopya çalışır (`Global\` kilidi).
+
+Kurulum, görev kurulamaz ya da 15 saniye içinde başlamazsa **eski davranışa
+döner** ve bunu uyarı olarak yazar; hiçbir durumda paneli çalışmaz bırakmaz.
+Güncelleme sırasında görev durdurulur (kopyalama sırasında paneli yeniden
+başlatıp dosyayı kilitlemesin), kaldırmada silinir.
+
+### Düzeltildi — "aynı adlı iki makine" tespiti klonlanmış imajlarda çalışmıyordu
+
+Tespit, her kurulumun diske yazdığı rastgele bir kimliğe dayanıyordu. Oysa
+özelliğin hedefi klonlanmış imajlardır ve **klonlanan diskte kimlik dosyası da
+aynen kopyalanır** — yani tespit tam da tasarlandığı durumda devre dışı
+kalıyordu. Kimlik artık donanım kimliğiyle (SMBIOS UUID) birleştirilerek
+üretiliyor: klon disk aynı, donanım farklı. Sunucuya ham UUID değil, yalnızca
+özeti (SHA-256) gönderiliyor.
+
+### Düzeltildi — tanı sayfası panel SYSTEM olarak çalışınca hep "BOŞ!" diyecekti
+
+"Bu oturumun RDP istemci adı" kontrolü panelin **kendi** oturumuna
+bakıyordu; bu zaten ne paneli açan kişinin ne de yazdıran kullanıcının
+oturumuydu. Yerine sunucudaki **tüm kullanıcı oturumları** ve bağlı oldukları
+makineler listeleniyor; istemci adı boş olan etkin oturum varsa uyarılıyor.
+
+### Düzeltildi — `/api/surum` var olmayan bir hizmetten söz ediyordu
+
+"Dosyalar yeni ama çalışan panel eski" durumunda "'Print360 Dashboard'
+servisini yeniden başlatın" yazıyordu; böyle bir hizmet yok. Artık doğru
+komutu veriyor (`schtasks /End` + `/Run`), eski kurulumlar için de yolu
+belirtiyor.
+
+### Düzeltildi — panel tabloları ve CSV dışa aktarımı büyük geçmişte yavaşlıyordu
+
+Her satır için üç ayrı dosya kontrolü yapılıyordu (kuyruk, karantina, süresi
+dolan). Yılların geçmişini içeren bir CSV raporunda bu on binlerce disk
+erişimi demekti. Kuyruk artık tek taramada okunuyor ve 3 saniye tutuluyor;
+kuyruğu değiştiren her işlem (karantina, süre, yeniden gönderme, taşıma)
+önbelleği hemen bozuyor.
+
+### Düzeltildi — sunucu günlüğü 5 dakikada bir aynı uyarıyı yazıyordu
+
+`update\` klasöründeki istemci sürümü panelden farklıysa uyarı her önbellek
+yenilemesinde (günde ~288 kez) tekrar yazılıyordu. Artık her fark bir kez.
+
+### Test
+9 test dosyası, 74 kontrol — hepsi üretim kodu üzerinde:
+- `PanelGorevi` (yeni, 10): kurulumun ürettiği görev XML'i — SYSTEM, süre
+  sınırı yok, tek kopya, açılış + 5 dk bekçi (tekrarın açılış tetikleyicisinde
+  **olmadığı**, çünkü orada ancak bir sonraki açılışta başlardı). Ayrıca XML
+  **Windows Görev Zamanlayıcı'ya gerçekten kaydettirilip** geri okunuyor ve
+  siliniyor (yönetici gerektiren iki öğe kullanıcı eşdeğerleriyle değiştirilerek).
+- `SurumRaporu` (+1): tanı sayfasının oturum listesi — `WTSEnumerateSessions`
+  yapı hizalaması, bu sürecin kendi oturumunu doğru kullanıcıyla bulmasıyla sınanıyor.
+- `KuyrukKorumalari` (+3): anlık görüntü önbelleği gerçekten çalışıyor ve
+  karantina onu bozuyor.
+- İstemci kimliği derlenmiş istemci üzerinde çalıştırıldı: iki ayrı süreçte
+  aynı 32 haneli değer, ham UUID içermiyor.
+
+Panel görevinin **SYSTEM olarak açılışta** çalışması bu sürümde canlı bir
+sunucuda denenmedi (geliştirme makinesinde yönetici yetkisi yok). Bu yüzden
+kurulum, görev başlamazsa eski yola dönecek şekilde yazıldı.
+
+---
+
 ## [2026.09.30.0839]
 
 Proje analizinde öne çıkan üç açığın kapatılması.

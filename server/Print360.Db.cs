@@ -741,6 +741,7 @@ static class Kuyruk
             if (File.Exists(karantinaYolu)) File.Delete(karantinaYolu);
             File.Move(tamYol, karantinaYolu);
             lock (_verilme) _verilme.Remove(tamYol);
+            AnligiBoz();
             return true;
         }
         catch { karantinaYolu = null; return false; }   // tasinamadiysa vermeye devam et
@@ -775,6 +776,7 @@ static class Kuyruk
             }
         }
         catch { }
+        if (sonuc.Count > 0) AnligiBoz();
         return sonuc;
     }
 
@@ -849,6 +851,55 @@ static class Kuyruk
     }
 
     // Panelde gosterilecek durum. Is kuyrukta degilse null doner.
+    // ------------------------------------------------------------------
+    // ANLIK GORUNTU. Panel tablolari ve CSV disa aktarimi HER SATIR icin uc
+    // dosya kontrolu yapiyordu (kok, karantina, suresi dolan). Yillarin
+    // gecmisini iceren bir raporda bu on binlerce disk erisimi demekti.
+    // Kuyrugun tamami tek taramada okunur ve kisa sure tutulur; kuyrugu
+    // degistiren her islem (karantina, sure, geri alma, tasima) goruntuyu bozar.
+    // ------------------------------------------------------------------
+    public static int AnlikSureMs = 3000;          // testler 0 yapar (her cagri taze)
+    static readonly object _anlikKilit = new object();
+    static System.Collections.Generic.Dictionary<string, object[]> _anlik;   // "makine|dosya" -> [tur, olusturma]
+    static DateTime _anlikZaman;
+
+    public static void AnligiBoz() { lock (_anlikKilit) _anlik = null; }
+
+    static System.Collections.Generic.Dictionary<string, object[]> Anlik()
+    {
+        lock (_anlikKilit)
+        {
+            if (_anlik != null && (DateTime.Now - _anlikZaman).TotalMilliseconds < AnlikSureMs) return _anlik;
+            var d = new System.Collections.Generic.Dictionary<string, object[]>(StringComparer.OrdinalIgnoreCase);
+            Action<string, string, string> tara = (klasor, makine, tur) =>
+            {
+                try
+                {
+                    if (!Directory.Exists(klasor)) return;
+                    foreach (var f in new DirectoryInfo(klasor).GetFiles("*.gz"))
+                        d[makine + "|" + f.Name.Substring(0, f.Name.Length - 3)] = new object[] { tur, f.CreationTime };
+                }
+                catch { }
+            };
+            try
+            {
+                if (Directory.Exists(Kok))
+                    foreach (var m in Directory.GetDirectories(Kok))
+                    {
+                        string ad = Path.GetFileName(m);
+                        tara(m, ad, "kok");
+                        tara(Path.Combine(m, KarantinaKlasoru), ad, "karantina");
+                    }
+                if (Directory.Exists(SuresiDolanKok))
+                    foreach (var m in Directory.GetDirectories(SuresiDolanKok))
+                        tara(m, Path.GetFileName(m), "suresi-dolan");
+            }
+            catch { }
+            _anlik = d; _anlikZaman = DateTime.Now;
+            return d;
+        }
+    }
+
     public const string KarantinaKlasoru = "_sorunlu";
 
     // Panelde gosterilecek durum. Is hicbir yerde yoksa (istemci aldi) null doner.
@@ -857,21 +908,15 @@ static class Kuyruk
     // HIC teslim edilmediler.
     public static string DurumMetni(string makine, string dosya)
     {
-        int dk;
-        if (!Bekliyor(makine, dosya, out dk))
-        {
-            if (string.IsNullOrEmpty(makine) || string.IsNullOrEmpty(dosya)) return null;
-            try
-            {
-                string ad = dosya + ".gz", m = Sanitize(makine);
-                if (File.Exists(Path.Combine(Path.Combine(Path.Combine(Kok, m), KarantinaKlasoru), ad)))
-                    return "KARANTINADA - teslim edilemedi (panel > Kuyruk'tan yeniden gonderilebilir)";
-                if (File.Exists(Path.Combine(Path.Combine(SuresiDolanKok, m), ad)))
-                    return "SURESI DOLDU - teslim edilmedi (panel > Kuyruk'tan yeniden gonderilebilir)";
-            }
-            catch { }
-            return null;
-        }
+        if (string.IsNullOrEmpty(makine) || string.IsNullOrEmpty(dosya)) return null;
+        object[] k;
+        if (!Anlik().TryGetValue(Sanitize(makine) + "|" + dosya, out k)) return null;
+        string tur = (string)k[0];
+        if (tur == "karantina")
+            return "KARANTINADA - teslim edilemedi (panel > Kuyruk'tan yeniden gonderilebilir)";
+        if (tur == "suresi-dolan")
+            return "SURESI DOLDU - teslim edilmedi (panel > Kuyruk'tan yeniden gonderilebilir)";
+        int dk = (int)Math.Max(0, (DateTime.Now - (DateTime)k[1]).TotalMinutes);
         string sure = dk < 1 ? "az once" : dk < 60 ? dk + " dk" : (dk / 60) + " sa " + (dk % 60) + " dk";
         if (Cevrimici(makine)) return "Kuyrukta (" + sure + ")";
         DateTime son = SonGorulme(makine);
@@ -912,6 +957,7 @@ static class Kuyruk
             }
             catch { }
         }
+        if (tasinan > 0) AnligiBoz();
         return tasinan;
     }
 
@@ -978,6 +1024,7 @@ static class Kuyruk
             File.Move(kaynak, hedef);
             File.SetCreationTime(hedef, DateTime.Now);
             lock (_verilme) _verilme.Remove(hedef);
+            AnligiBoz();
             return true;
         }
         catch (Exception ex) { hata = ex.Message; return false; }

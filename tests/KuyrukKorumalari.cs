@@ -42,6 +42,7 @@ class KuyrukKorumalari
         string kok = Path.Combine(Path.GetTempPath(), "p360-test-korumalar");
         if (Directory.Exists(kok)) Directory.Delete(kok, true);
         Kuyruk.Kok = kok;
+        Kuyruk.AnlikSureMs = 0;   // test dosyalari dogrudan olusturur: her cagri taze okusun
         Kuyruk.SuresiDolanKok = Path.Combine(kok, "_suresi-dolan-test");
         Kuyruk.Simdi = delegate { return saat; };
 
@@ -119,6 +120,25 @@ class KuyrukKorumalari
         bool yg2 = Kuyruk.GeriAl("baska-tur", "EVOPC", "x.pdf", out hata);
         bool yg3 = Kuyruk.GeriAl("karantina", "EVOPC", @"..\..\..\gizli.pdf", out hata);
         Kontrol(!yg1 && !yg2 && !yg3, "yol gecisi / gecersiz tur / olmayan dosya reddediliyor", hata);
+
+        // --- 9) ANLIK GORUNTU: panel/CSV icin onbellekli tarama
+        // Kuyrugu degistiren islem onbellegi BOZMALI; aksi halde panel eski durumu gosterir.
+        Kuyruk.AnlikSureMs = 600000;   // uretimdeki gibi onbellekli (cok uzun tut)
+        string yeniIs = "20260919_120000_009_FS~Anlik.pdf";
+        Kuyruk.AnligiBoz();
+        Kontrol(Kuyruk.DurumMetni("EVOPC", yeniIs) == null, "olmayan is null (goruntu alindi)", null);
+        File.WriteAllText(Path.Combine(q, yeniIs + ".gz"), "x");
+        Kontrol(Kuyruk.DurumMetni("EVOPC", yeniIs) == null,
+                "onbellek suresi icinde dogrudan eklenen dosya gorunmez (onbellek gercekten calisiyor)", null);
+        string yol9 = Path.Combine(q, yeniIs + ".gz");
+        saat = saat.AddHours(1);
+        for (int i = 0; i < 9; i++) Kuyruk.SorunluysaAyir(yol9, out hata);   // karantinaya alinir
+        saat = saat.AddMinutes(5);
+        Kuyruk.SorunluysaAyir(yol9, out hata);
+        string d9 = Kuyruk.DurumMetni("EVOPC", yeniIs);
+        Kontrol(d9 != null && d9.StartsWith("KARANTINADA"),
+                "karantinaya alma onbellegi bozuyor: panel yeni durumu hemen gosteriyor", d9);
+        Kuyruk.AnlikSureMs = 0;
 
         Console.WriteLine();
         Console.WriteLine("Sonuc: " + gecti + "/" + toplam);

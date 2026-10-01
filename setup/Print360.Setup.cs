@@ -29,6 +29,8 @@ using System.Text;
 static class Kurulum
 {
     const string BASE = @"C:\Print360";
+    // Panel sunucusu (Dashboard) ayri bir zamanlanmis gorevle, SYSTEM olarak calisir.
+    const string PANEL_GOREVI = "Print360 Panel Sunucusu";
     static readonly List<string> _uyarilar = new List<string>();
     static StreamWriter _log;
 
@@ -85,6 +87,7 @@ static class Kurulum
             // yarida kalirsa bunu GERI ALMAK sart: aksi halde gorev devre disi
             // kalir, ajan hic baslamaz ve sistem sessizce calismaz olur.
             try { Calistir("schtasks.exe", "/Change /TN \"Print360 Yazdirma Ajani\" /ENABLE", 20); } catch { }
+            try { Calistir("schtasks.exe", "/Change /TN \"" + PANEL_GOREVI + "\" /ENABLE", 20); } catch { }
             SonucYaz(surum, mod, "HATA", ex.Message);
             Console.Error.WriteLine(ex.Message);
             return 1;
@@ -311,10 +314,10 @@ static class Kurulum
         Yaz("[7/8] Ag ve HTTPS hazir (HTTP " + httpPort + " / HTTPS " + httpsPort + ").");
 
         // --- 9) Otomatik baslatma + kisayol + ajanlari baslat ---
-        OtomatikBaslatma();
+        bool panelGoreviKuruldu = OtomatikBaslatma();
         Kisayol(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory), "Print360 Panel.lnk"),
                 Path.Combine(BASE, "Print360.Panel.exe"), "Print360 yonetim paneli");
-        Baslat(Path.Combine(BASE, "Print360.Dashboard.exe"));
+        PaneliBaslat(panelGoreviKuruldu);
         Baslat(Path.Combine(BASE, "Print360.ServerAgent.exe"));
         System.Threading.Thread.Sleep(1500);
         if (Process.GetProcessesByName("Print360.ServerAgent").Length == 0)
@@ -455,7 +458,18 @@ static class Kurulum
         // Yalnizca SUNUCUDA zamanlanmis gorev vardir; istemci Run kaydi kullanir.
         // Istemcide bu cagri "gorev bulunamadi" hatasi uretip gunluge yanilticii
         // bir satir dusuruyordu.
-        if (sunucu) Calistir("schtasks.exe", "/Change /TN \"Print360 Yazdirma Ajani\" /DISABLE", 20);
+        if (sunucu)
+        {
+            Calistir("schtasks.exe", "/Change /TN \"Print360 Yazdirma Ajani\" /DISABLE", 20);
+            // Panel gorevi 5 dakikada bir tekrar eder; kopyalama sirasinda paneli
+            // yeniden baslatip exe'yi kilitlemesin. SYSTEM olarak calisan sureci
+            // Kill ile durdurmak her zaman mumkun olmayabilir: gorev uzerinden durdur.
+            if (GorevVar(PANEL_GOREVI))
+            {
+                Calistir("schtasks.exe", "/Change /TN \"" + PANEL_GOREVI + "\" /DISABLE", 20);
+                Calistir("schtasks.exe", "/End /TN \"" + PANEL_GOREVI + "\"", 20);
+            }
+        }
 
         SurecDurdur("Print360.ServerAgent", "Print360.Dashboard", "Print360.Panel", "Print360.ClientAgent");
         System.Threading.Thread.Sleep(800);   // dosya kilitleri birakilsin
@@ -523,6 +537,11 @@ static class Kurulum
         // SIRA ONEMLI: once otomatik baslatma kaldirilir, sonra surecler
         // durdurulur. Aksi halde zamanlanmis gorev ajani hemen geri baslatabilir.
         Calistir("schtasks.exe", "/Delete /TN \"Print360 Yazdirma Ajani\" /F");
+        if (GorevVar(PANEL_GOREVI))
+        {
+            Calistir("schtasks.exe", "/End /TN \"" + PANEL_GOREVI + "\"", 20);
+            Calistir("schtasks.exe", "/Delete /TN \"" + PANEL_GOREVI + "\" /F", 20);
+        }
         RunKaydiSil("Print360ServerAgent", "Print360Dashboard");
         SurecDurdur("Print360.ServerAgent", "Print360.Dashboard", "Print360.Panel");
         ZamanSinirli("Yazicilari kaldirma", 30, () => YazicilariSil());
@@ -911,17 +930,29 @@ static class Kurulum
     // ============================================================
     //          OTOMATIK BASLATMA (kanal mantigi)
     // ============================================================
-    static void OtomatikBaslatma()
+    // Panel gorevi kurulduysa true doner.
+    static bool OtomatikBaslatma()
     {
         string ajan = Path.Combine(BASE, "Print360.ServerAgent.exe");
         string dash = Path.Combine(BASE, "Print360.Dashboard.exe");
+
+        // PANEL SUNUCUSU KULLANICI OTURUMUNDA CALISMAMALI.
+        // Eskiden HKLM\Run ile oturum acan ILK kullanicinin oturumunda basliyordu.
+        // O kullanici oturumu KAPATINCA panel - ve HTTPS istemcilerinin is aldigi
+        // /api/jobs - onunla birlikte kapaniyordu: baska biri yeni oturum acana
+        // kadar hicbir HTTPS istemcisi cikti alamiyor, panel "Gonderildi"de
+        // kaliyordu. Ayrica her oturum acilisi yeni bir kopya baslatmaya
+        // calisiyordu. Artik SYSTEM olarak, acilista ve 5 dakikada bir
+        // (cokerse geri gelsin) tetiklenen bir gorev calistirir.
+        bool panelGorevi = PanelGoreviKur(dash);
         try
         {
             using (var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true))
                 if (k != null)
                 {
                     k.SetValue("Print360ServerAgent", "\"" + ajan + "\"");
-                    k.SetValue("Print360Dashboard", "\"" + dash + "\"");
+                    if (panelGorevi) k.DeleteValue("Print360Dashboard", false);
+                    else k.SetValue("Print360Dashboard", "\"" + dash + "\"");   // geri donus: eski yol
                 }
         }
         catch (Exception ex) { Uyari("Otomatik baslatma kaydi yazilamadi: " + ex.Message); }
@@ -956,6 +987,93 @@ static class Kurulum
         if (Calistir("schtasks.exe", "/Create /TN \"Print360 Yazdirma Ajani\" /XML \"" + xmlYol + "\" /F") != 0)
             Uyari("Zamanlanmis gorev kurulamadi (ajan yine de oturum acilisinda baslar).");
         try { File.Delete(xmlYol); } catch { }
+        return panelGorevi;
+    }
+
+    internal static string PanelGoreviXml(string dash)
+    {
+        // BootTrigger: acilista, kimse oturum acmadan baslar.
+        // TimeTrigger + Repetition PT5M + IgnoreNew: BEKCI. Calisiyorsa dokunulmaz;
+        //   cokmusse en gec 5 dakikada geri gelir (RestartOnFailure yalnizca 3
+        //   deneme yapar). Tekrar BootTrigger'a degil TimeTrigger'a baglidir:
+        //   BootTrigger tekrari ancak BIR SONRAKI acilista baslardi.
+        // ExecutionTimeLimit PT0S: varsayilan 72 saat sinirinda gorev OLDURULURDU.
+        // SYSTEM (S-1-5-18): oturumdan bagimsiz; https portu icin urlacl gerekmez.
+        return @"<?xml version=""1.0"" encoding=""UTF-16""?>
+<Task version=""1.3"" xmlns=""http://schemas.microsoft.com/windows/2004/02/mit/task"">
+  <RegistrationInfo><Description>Print360 panel sunucusu (web paneli + istemci is dagitimi)</Description></RegistrationInfo>
+  <Triggers>
+    <BootTrigger><Enabled>true</Enabled></BootTrigger>
+    <TimeTrigger>
+      <StartBoundary>" + DateTime.Now.ToString("yyyy-MM-dd'T'HH:mm:ss") + @"</StartBoundary>
+      <Enabled>true</Enabled>
+      <Repetition><Interval>PT5M</Interval><StopAtDurationEnd>false</StopAtDurationEnd></Repetition>
+    </TimeTrigger>
+  </Triggers>
+  <Principals><Principal id=""Author""><UserId>S-1-5-18</UserId><RunLevel>HighestAvailable</RunLevel></Principal></Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings><StopOnIdleEnd>false</StopOnIdleEnd><RestartOnIdle>false</RestartOnIdle></IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand><Enabled>true</Enabled><Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle><WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Priority>5</Priority>
+    <RestartOnFailure><Interval>PT1M</Interval><Count>3</Count></RestartOnFailure>
+  </Settings>
+  <Actions Context=""Author""><Exec><Command>" + dash + @"</Command><WorkingDirectory>" + BASE + @"</WorkingDirectory></Exec></Actions>
+</Task>";
+    }
+
+    static bool PanelGoreviKur(string dash)
+    {
+        string xmlYol = Path.Combine(Path.GetTempPath(), "Print360Panel.xml");
+        try
+        {
+            File.WriteAllText(xmlYol, PanelGoreviXml(dash), new UnicodeEncoding(false, true));
+            Calistir("schtasks.exe", "/Delete /TN \"" + PANEL_GOREVI + "\" /F", 20);
+            if (Calistir("schtasks.exe", "/Create /TN \"" + PANEL_GOREVI + "\" /XML \"" + xmlYol + "\" /F") == 0)
+            {
+                Yaz("  Panel sunucusu gorevi kuruldu (SYSTEM, acilista + 5 dk'da bir denetim).");
+                return true;
+            }
+            Uyari("Panel sunucusu gorevi kurulamadi; panel eskisi gibi oturum acilisinda baslayacak "
+                + "(oturumu acan kullanici cikis yapinca panel de kapanir).");
+            return false;
+        }
+        catch (Exception ex) { Uyari("Panel gorevi: " + ex.Message); return false; }
+        finally { try { File.Delete(xmlYol); } catch { } }
+    }
+
+    static bool GorevVar(string ad)
+    {
+        return Calistir("schtasks.exe", "/Query /TN \"" + ad + "\"", 20) == 0;
+    }
+
+    // Paneli gorev uzerinden baslat; 15 sn icinde surec gorunmezse eski yola don.
+    // Hicbir durumda kurulum paneli calismaz halde birakmaz.
+    static void PaneliBaslat(bool gorevle)
+    {
+        string dash = Path.Combine(BASE, "Print360.Dashboard.exe");
+        if (gorevle)
+        {
+            Calistir("schtasks.exe", "/Change /TN \"" + PANEL_GOREVI + "\" /ENABLE", 20);
+            Calistir("schtasks.exe", "/Run /TN \"" + PANEL_GOREVI + "\"", 20);
+            for (int i = 0; i < 15; i++)
+            {
+                System.Threading.Thread.Sleep(1000);
+                if (Process.GetProcessesByName("Print360.Dashboard").Length > 0)
+                {
+                    Yaz("  Panel sunucusu calisiyor (SYSTEM gorevi).");
+                    return;
+                }
+            }
+            Uyari("Panel gorevi 15 sn icinde baslamadi; panel bu oturumda baslatiliyor. "
+                + "Gorev, sunucu yeniden basladiginda ya da 5 dakika icinde devralir.");
+        }
+        Baslat(dash);
     }
 
     // ============================================================

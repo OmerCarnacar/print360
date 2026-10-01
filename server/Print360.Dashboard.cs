@@ -58,7 +58,16 @@ static class Dashboard
     static void Main()
     {
         bool created;
-        using (var mx = new Mutex(true, "Print360Dashboard", out created))
+        // MAKINE GENELINDE TEK KOPYA ("Global\\"). Eski ad oturuma ozeldi: her
+        // oturum acilisi (HKLM\\Run) yeni bir kopya baslatiyordu. Yonetici
+        // oturumlarindaki kopyalar localhost'a baglanip CALISMAYA DEVAM ediyor,
+        // uyari ve gunluk e-postalarini IKI KEZ uretebiliyordu. Panel artik
+        // SYSTEM gorevinde calisir; SYSTEM'in mutex'ini kullanici surecleri
+        // acamaz (UnauthorizedAccess) - bu da "baska kopya var" demektir.
+        Mutex mx;
+        try { mx = new Mutex(true, "Global\\Print360Dashboard", out created); }
+        catch (UnauthorizedAccessException) { return; }
+        using (mx)
         {
             if (!created) return;
             Db.ConnStr();                 // db.ini'yi yukle (port ayarlari dahil)
@@ -483,7 +492,7 @@ static class Dashboard
     // (dosya kilitli vb.) panel "yeni surum var" der, istemci indirir, kendini
     // yeniden baslatir, surum yine eskidir - ve bu 30 dakikada bir SONSUZA KADAR
     // tekrarlanirdi. Artik dosyanin kendi surum bilgisi okunur.
-    static string _dagitilanSurum; static DateTime _dagitilanZaman, _dagitilanDosyaZamani;
+    static string _dagitilanSurum, _dagitilanUyarilan; static DateTime _dagitilanZaman, _dagitilanDosyaZamani;
     static string DagitilanIstemciSurumu()
     {
         const string yol = @"C:\Print360\update\Print360.ClientAgent.exe";
@@ -496,10 +505,11 @@ static class Dashboard
             string v = System.Diagnostics.FileVersionInfo.GetVersionInfo(yol).FileVersion ?? "";
             Version a, b;
             if (!Version.TryParse(v.Trim(), out a)) v = Surum.V;
-            else if (Version.TryParse(Surum.V, out b) && a != b)
+            else if (Version.TryParse(Surum.V, out b) && a != b && _dagitilanUyarilan != v.Trim())
                 Log("UYARI: update\\Print360.ClientAgent.exe surumu (" + v + ") panel surumunden (" + Surum.V
                   + ") FARKLI - kurulum bu dosyayi guncelleyememis olabilir. Istemcilere " + v + " dagitilacak.");
             _dagitilanSurum = v.Trim(); _dagitilanZaman = DateTime.Now; _dagitilanDosyaZamani = fi.LastWriteTimeUtc;
+            _dagitilanUyarilan = _dagitilanSurum;   // ayni farki 5 dakikada bir yeniden yazma
             return _dagitilanSurum;
         }
         catch { return Surum.V; }
@@ -566,7 +576,9 @@ static class Dashboard
             not = "Kurulu sunucu dosyalari (C:\\Print360\\Print360.Dashboard.exe / ServerAgent.exe) okunamadi - kurulum eksik olabilir.";
         else if (panelDisk != calisan)
             not = "Diskteki panel " + panelDisk + " ama CALISAN panel " + calisan
-                + " - servis yeniden baslatilmamis. 'Print360 Dashboard' servisini yeniden baslatin.";
+                + " - panel yeniden baslatilmamis. Yonetici komut isteminde: "
+                + "schtasks /End /TN \"Print360 Panel Sunucusu\" ve ardindan schtasks /Run /TN \"Print360 Panel Sunucusu\" "
+                + "(eski kurulumlarda: Print360.Dashboard.exe surecini kapatip yeniden baslatin ya da sunucuyu yeniden baslatin).";
         else if (!ayniSurum)
             not = "Bilesenler farkli surumlerde (ajan " + ajan + ", masaustu " + masaustu + ", istemci " + istemci
                 + ") - kurulum bazi dosyalari guncelleyememis olabilir (logs\\kurulum.log).";
@@ -2095,6 +2107,45 @@ static class Dashboard
                                                   out IntPtr ppBuffer, out uint pBytesReturned);
     [DllImport("wtsapi32.dll")]
     static extern void WTSFreeMemory(IntPtr pMemory);
+    [DllImport("wtsapi32.dll", SetLastError = true)]
+    static extern bool WTSEnumerateSessions(IntPtr hServer, int reserved, int version,
+                                            out IntPtr ppSessionInfo, out int pCount);
+    [StructLayout(LayoutKind.Sequential)]
+    struct WTS_SESSION_INFO { public int SessionId; public IntPtr pWinStationName; public int State; }
+
+    static string WtsMetin(int oturum, int sinif)
+    {
+        IntPtr b; uint n;
+        if (!WTSQuerySessionInformation(IntPtr.Zero, oturum, sinif, out b, out n)) return "";
+        try { return (Marshal.PtrToStringUni(b) ?? "").Trim(); } finally { WTSFreeMemory(b); }
+    }
+
+    // Sunucudaki oturumlar: [oturumNo, kullanici, istemciAdi, durum, istasyon]
+    internal static List<string[]> OturumListesi()
+    {
+        var l = new List<string[]>();
+        IntPtr bas; int sayi;
+        try
+        {
+            if (!WTSEnumerateSessions(IntPtr.Zero, 0, 1, out bas, out sayi)) return l;
+            try
+            {
+                int boy = Marshal.SizeOf(typeof(WTS_SESSION_INFO));
+                string[] durumAd = { "Active", "Connected", "ConnectQuery", "Shadow", "Disconnected", "Idle", "Listen", "Reset", "Down", "Init" };
+                for (int i = 0; i < sayi; i++)
+                {
+                    var si = (WTS_SESSION_INFO)Marshal.PtrToStructure(new IntPtr(bas.ToInt64() + (long)i * boy), typeof(WTS_SESSION_INFO));
+                    string ist = Marshal.PtrToStringAnsi(si.pWinStationName) ?? "";
+                    l.Add(new[] { si.SessionId.ToString(), WtsMetin(si.SessionId, 5 /*WTSUserName*/),
+                                  WtsMetin(si.SessionId, 10 /*WTSClientName*/),
+                                  si.State >= 0 && si.State < durumAd.Length ? durumAd[si.State] : si.State.ToString(), ist });
+                }
+            }
+            finally { WTSFreeMemory(bas); }
+        }
+        catch { }
+        return l;
+    }
 
     static List<string[]> Yazicilar()
     {
@@ -2245,23 +2296,31 @@ static class Dashboard
                 : "<b>AJAN &Ccedil;ALI&#350;MIYOR!</b> &#304;&#351;ler yakalanmaz. Ba&#351;lat&#305;n: " +
                   "<code>C:\\Print360\\Print360.ServerAgent.exe</code>");
 
-        // 3b) RDP istemci adi - BOSSA is kuyruga yazilamaz (isler spool'da birikir)
-        string istAdi = "";
-        try
+        // 3b) Oturumlar ve RDP istemci adlari.
+        // Eskiden PANELIN KENDI oturumuna bakiliyordu - oysa paneli acan kisinin
+        // ya da yazdiran kullanicinin oturumu degil. Panel artik SYSTEM olarak
+        // (oturum 0) calistigi icin o kontrol her zaman "BOS!" derdi. Simdi
+        // sunucudaki TUM kullanici oturumlari ve bagli olduklari makineler listelenir:
+        // isler her kullanicinin kendi oturumundaki ajan tarafindan o makineye gonderilir.
+        var oturumlar = OturumListesi();
+        var bossuz = oturumlar.Where(o => o[1].Length > 0).ToList();
+        int adsiz = bossuz.Count(o => o[2].Length == 0 && o[3] == "Active" && o[4] != "Console");
+        var ot = new StringBuilder();
+        if (bossuz.Count == 0) ot.Append("Sunucuda oturum a&ccedil;m&#305;&#351; kullan&#305;c&#305; yok.");
+        else
         {
-            IntPtr b; uint n;
-            if (WTSQuerySessionInformation(IntPtr.Zero, -1, 10 /*WTSClientName*/, out b, out n))
-            { try { istAdi = (Marshal.PtrToStringUni(b) ?? "").Trim(); } finally { WTSFreeMemory(b); } }
+            ot.Append("<table><tr><th>Kullan&#305;c&#305;</th><th>Ba&#287;l&#305; makine (RDP istemcisi)</th><th>Durum</th></tr>");
+            foreach (var o in bossuz)
+                ot.Append("<tr><td>").Append(H(o[1])).Append("</td><td>")
+                  .Append(o[2].Length > 0 ? "<b>" + H(o[2]) + "</b>" : (o[4] == "Console" ? "(konsol)" : "<b>BO&#350;</b>"))
+                  .Append("</td><td>").Append(o[3] == "Active" ? "Ba&#287;l&#305;" : o[3] == "Disconnected" ? "Ba&#287;lant&#305; kesik" : H(o[3]))
+                  .Append("</td></tr>");
+            ot.Append("</table>");
+            if (adsiz > 0)
+                ot.Append("<b>").Append(adsiz).Append(" etkin oturumun istemci ad&#305; bo&#351;:</b> o kullan&#305;c&#305;lar&#305;n &ccedil;&#305;kt&#305;lar&#305; ")
+                  .Append("hangi makineye gidece&#287;i bilinemedi&#287;i i&ccedil;in bekletilir.");
         }
-        catch { }
-        if (istAdi.Length == 0) istAdi = (Environment.GetEnvironmentVariable("CLIENTNAME") ?? "").Trim();
-        TaniKutu(sb, "3b. Bu oturumun RDP istemci ad&#305;", istAdi.Length > 0,
-            istAdi.Length > 0
-                ? "&#304;stemci: <b>" + H(istAdi) + "</b> &mdash; i&#351;ler bu makineye g&ouml;nderilir."
-                : "<b>BO&#350;!</b> Bu oturum bir RDP oturumu de&#287;il (konsol/hizmet oturumu). " +
-                  "Ajan b&ouml;yle bir oturumda &ccedil;al&#305;&#351;&#305;rsa i&#351;in K&#304;ME g&ouml;nderilece&#287;ini bilemez ve " +
-                  "i&#351;ler spool'da birikir.<br>Yazd&#305;ran kullan&#305;c&#305; sunucuya <b>RDP ile</b> ba&#287;lanmal&#305; ve " +
-                  "ajan o oturumda &ccedil;al&#305;&#351;mal&#305;d&#305;r.");
+        TaniKutu(sb, "3b. Oturumlar ve ba&#287;l&#305; makineler", adsiz == 0, ot.ToString());
 
         // 4) Spool (yakalanmayi bekleyen isler)
         sb.Append("<h2>4. Spool klas&ouml;r&uuml; <span class='mut'>(C:\\Print360\\spool)</span></h2>");

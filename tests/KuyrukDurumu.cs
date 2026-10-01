@@ -25,6 +25,7 @@ class KuyrukDurumu
         string kok = Path.Combine(Path.GetTempPath(), "p360-test-kuyrukdurumu");
         if (Directory.Exists(kok)) Directory.Delete(kok, true);
         Kuyruk.Kok = kok;
+        Kuyruk.AnlikSureMs = 0;   // test dosyalari dogrudan olusturur: her cagri taze okusun
 
         var kalp = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         kalp["EVOPC"]           = DateTime.Now.AddSeconds(-20);      // cevrimici

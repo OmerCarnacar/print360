@@ -32,8 +32,8 @@ class SurumTest
 
         // Sahadaki en sinsi durum: dosyalar yeni, calisan servis eski
         j = Dashboard.SurumRaporuUret(E, Y, Y, Y, Y, ok);
-        Kontrol(Var(j, "\"tutarli\":false") && Var(j, "servis yeniden baslatilmamis"),
-                "dosyalar yeni ama CALISAN panel eski -> servis yeniden baslatilmamis", j);
+        Kontrol(Var(j, "\"tutarli\":false") && Var(j, "panel yeniden baslatilmamis") && Var(j, "schtasks /Run"),
+                "dosyalar yeni ama CALISAN panel eski -> gorevi yeniden baslatma komutu veriliyor", j);
 
         // Kurulum update\ exe'yi guncelleyemedi
         j = Dashboard.SurumRaporuUret(Y, Y, Y, Y, E, ok);
@@ -57,6 +57,17 @@ class SurumTest
         j = Dashboard.SurumRaporuUret(Y, Y, Y, Y, Y, Y + "|t|sunucu|HATA|C:\\yol \"tirnak\"\r\nyeni satir");
         bool jsonTemiz = !j.Contains("\r") && !j.Contains("\n") && Var(j, "C:\\\\yol \\\"tirnak\\\"");
         Kontrol(jsonTemiz, "ozel karakterler JSON icinde kacisli", j);
+
+        // --- Tani sayfasi: oturum listesi (WTSEnumerateSessions P/Invoke)
+        // Yapi (struct) hizalamasi yanlis olursa 64-bit'te cop deger okunur ya da
+        // surec coker. Bu surecin KENDI oturumu listede, dogru kullaniciyla olmali.
+        var ot = Dashboard.OturumListesi();
+        int benimOturum = System.Diagnostics.Process.GetCurrentProcess().SessionId;
+        var ben = ot.Find(o => o[0] == benimOturum.ToString());
+        string kullanici = Environment.UserName;
+        bool otOk = ben != null && (ben[1].Equals(kullanici, StringComparison.OrdinalIgnoreCase) || benimOturum == 0);
+        Kontrol(otOk, "oturum listesi bu sureci dogru kullaniciyla buluyor (" + ot.Count + " oturum)",
+                ben == null ? "oturum " + benimOturum + " listede yok" : string.Join(" | ", ben));
 
         Console.WriteLine();
         Console.WriteLine("Sonuc: " + gecti + "/" + toplam);

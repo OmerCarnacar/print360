@@ -34,7 +34,10 @@ $testler = @(
        Ref = @("System.Data.dll", "System.DirectoryServices.dll", $sqlite); Main = "SurumTest" },
     @{ Ad = "PeMimari";         Kaynak = @("tests\PeMimari.cs", $setup);
        Ref = @("System.Data.dll", "System.IO.Compression.dll", "System.IO.Compression.FileSystem.dll", "Microsoft.CSharp.dll");
-       Main = "PeTest" }
+       Main = "PeTest" },
+    @{ Ad = "PanelGorevi";      Kaynak = @("tests\PanelGorevi.cs", $setup);
+       Ref = @("System.Data.dll", "System.Xml.dll", "System.IO.Compression.dll", "System.IO.Compression.FileSystem.dll", "Microsoft.CSharp.dll");
+       Main = "PanelGoreviTest" }
 )
 
 $basarisiz = @()
