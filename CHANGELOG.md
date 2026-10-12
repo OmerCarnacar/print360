@@ -10,6 +10,105 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [2026.10.12.0853]
+
+`2026.10.01.0854`'ten bu yana yapılan dört çalışmanın birleşik sürümü:
+uzman testi ve bulduğu hatalar, hata ayıklama modu ve tanı paketleri,
+"bazı makinelerde çalışmıyor" sorunları, eski sürüm kalıntıları.
+
+> **Önemli — SQL Server olan sunucular:** önceki sürümlerde panel, yerel
+> SQL Server'a `sa` hesabıyla **boş parolayla** her açılışta ve dakikada bir
+> giriş deniyordu. Bu sürüm bunu durdurur. Sunucunuzda SQL Server varsa en
+> kısa sürede güncelleyin.
+
+### Uzman testi: gerçek sunucu + gerçek istemci + arıza enjeksiyonu
+
+`tests/UzmanTest.cs` üretimdeki panel sunucusu kodunu yerel bir portta,
+üretimdeki istemci kodunu ona bağlı çalıştırır; araya gerçek ağ arızaları
+üreten bir TCP vekili girer. 10 senaryo, 31 kontrol:
+
+| Senaryo | Sonuç |
+|---|---|
+| Normal teslim (Türkçe, `%`, `&`, `=`, `#` içeren adlar) | İçerik bayt bayt aynı, kuyruk boşalır |
+| 20 MB dosya | Bütün gelir |
+| İndirmenin **ortasında** kopma | Yarım dosya yazıcıya gitmez, iş sunucuda kalır, düzelince bütün gelir |
+| Onayın yolda kaybolması | Sunucu yeniden verir, istemci yeniden indirmez — **çift baskı yok** |
+| Aynı PC'de iki ajan, aynı anda 20 iş | Her iş bir kez ve bütün |
+| Yanlış istemci şifresi | İş verilmez, sebep ve çözüm yazılır |
+| Sunucu kapalı | Hızla vazgeçilir, sebep yazılır |
+| Güvenlik duvarı paketi sessizce düşürüyor | 2 sn'de elenir, sonraki turlarda bekletmez |
+| İstemci işi diske yazamıyor | Karantina, arkadaki iş beklemeden gelir |
+| Günlükler | Her adım süresiyle; şifre görünmez |
+
+Aynı test **önceki sürümün istemci koduyla** 5 kontrolde kaldı — aşağıdaki
+hataların gerçek olduğunun kanıtı.
+
+### Düzeltildi (uzman testinin bulduğu)
+- **SQL Server'a boş parolayla `sa` girişi denemesi.** Kurulum her sunucuda
+  `db.ini`'ye `Server=<makine>`, `User=sa`, boş parola yazıyordu. Başarısız
+  giriş kayıtları, güvenlik uyarıları ve parola politikası açıksa `sa`
+  hesabının kilitlenmesi riski. MSSQL artık yalnızca sunucu **ve** parola
+  tanımlıysa denenir; kurulum SQL seçilmediyse `sa` yazmaz.
+- **İndirme ortasında kopma hiç günlüğe düşmüyordu**, yarım `.tmp` kalıyordu.
+- **Aynı PC'de iki ajan aynı geçici dosyaya yazıyordu** (testte 13 artık `.tmp`).
+- **Yolda kaybolan onay "REDDEDİLDİ"** diye yazılıyordu.
+- **`Server=` doluysa RDP ile bağlanılan diğer sunucular hiç yoklanmıyordu**;
+  onlardan yazdırılan işler makineye ulaşmıyordu.
+- **Print360 olmayan bir sunucu her turda 20–60 sn bekletiyordu.** Artık
+  ulaşılamayan sunucu 30 sn'den 10 dk'ya artan sürelerle atlanır; hiç yanıt
+  vermemiş sunucuya önce 2 sn'lik port denetimi yapılır.
+
+### Eklendi — hata ayıklama modu ve tanı paketleri
+- **Hata ayıklama modu** (makine geneli, 24 saatte kendiliğinden kapanır):
+  istemcide tepsi > *Hata ayıklama modu* ya da `--hata-ayiklama ac|kapat`;
+  sunucuda panel > **Tanı**. Açıkken her HTTP isteği, süre, yazıcı kararı,
+  motor çağrısı yazılır; panel her isteği (yöntem, yol, makine, IP, sonuç, süre) kaydeder.
+- **İstemci tanı paketi:** tepsi > *Tanı paketi oluştur* ya da
+  `Print360.ClientAgent.exe --tani [--sessiz]`. 12 bölümlük rapor (kimlik,
+  ajanlar, ayarlar, RDP bağlantıları, ağ testleri, TLS, RDP eklentisi,
+  yazıcılar, motor, izinler, güvenlik olayları, son hatalar) + günlükler +
+  maskelenmiş ayarlar. En üstte otomatik **BULGULAR**.
+- **Sunucu tanı paketi:** panel > Tanı > *Sunucu tanı paketini indir*.
+- Belge içerikleri ve parolalar paketlere **dahil değildir**.
+
+### Düzeltildi — makineye bağlı sorunlar
+- Güncelleme diğer kullanıcıların sunucu ajanını yeniden başlatmıyordu; artık
+  tüm oturumlarda başlatılır, ajansız kalan oturum adıyla raporlanır.
+- İstemci ajanı yükseltilmiş kurulumdan (bazen BT hesabıyla) başlıyordu;
+  artık oturum sahibi olarak başlar. Yanlış hesapla çalışırsa günlüğe yazar.
+- İstemci kurulumu ajanın çalıştığını doğrular; çalışmıyorsa sebebini arar
+  (antivirüs, AppLocker, WDAC, .NET).
+- Windows vekil (proxy) ayarı bağlantıyı engelliyorsa diğer yol denenir;
+  vekilin 403'ü artık "şifre reddedildi" sayılmaz; 407 ayrıca anlatılır.
+- Aynı PC'de iki Windows kullanıcısı: iş kilidiyle çift çıktı önlenir.
+- 32-bit Windows'ta 64-bit RDP eklentisi kaydedilmez.
+- .NET Framework 4.5 yoksa kurulum uyarıp durur.
+
+### Düzeltildi — eski sürümün üzerine kurulum
+- Kalıntılar **genel kuralla** temizlenir: bu sürümün sahip olduğu öğeler
+  listelidir; Print360'a ait olup listede olmayan ikili/betikler silinir,
+  bilinmeyen dosya ve klasörler `eski-surum-kalintilari\<tarih>\` altına
+  taşınır, kullanıcı verisine dokunulmaz. Eski Run kayıtları, görevler,
+  kısayollar, güvenlik duvarı kuralları, yazıcı portları ve süresi dolmuş
+  sertifikalar da temizlenir.
+- İstemci kurulumu aynı makinedeki **sunucunun dosyalarını siliyordu**; düzeldi.
+- Bekleyen işler korunur ve makine bazında raporlanır; veritabanında eski
+  sürümlerden "BEKLİYOR" kalmış kayıtlar gerçek durumla uzlaştırılır.
+- Sunucuya iletilemeyen "basıldı" bildirimi kaybolmaz; bekletilip gönderilir.
+
+### Test
+12 test dosyası, **187 kontrol** — hepsi üretim kodu üzerinde, her yapımda
+ve CI'da çalışır.
+
+### Bilinen sınırlar
+- Uzman testi HTTP üzerinden çalışır (yerel HTTPS sertifikası yönetici
+  gerektirir); TLS katmanı tanı paketinin ağ testleriyle denetlenir.
+- Panelin SYSTEM görevi, ajanın oturum sahibi olarak başlatılması ve tüm
+  oturumlarda yeniden başlatma yönetici yetkisi gerektirdiğinden canlı bir
+  sunucuda ayrıca denenmedi; başarısız olursa kurulum eski yola döner ve uyarır.
+
+---
+
 ## [2026.10.01.0854]
 
 Baskı yolundaki **sessiz kalan** hata durumları tarandı. Her biri artık

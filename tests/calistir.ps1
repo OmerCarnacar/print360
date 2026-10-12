@@ -32,10 +32,18 @@ $testler = @(
     @{ Ad = "KuyrukKorumalari"; Kaynak = @("tests\KuyrukKorumalari.cs", $db);    Ref = @("System.Data.dll", $sqlite); Main = "" },
     @{ Ad = "OlayGunlugu";      Kaynak = @("tests\OlayGunlugu.cs", $ortak, $db);  Ref = @("System.Data.dll", $sqlite); Main = "" },
     @{ Ad = "SurumRaporu";      Kaynak = @("tests\SurumRaporu.cs", "server\Print360.Dashboard.cs", $db, $ortak, "server\Print360.License.cs", "server\Print360.Version.cs");
-       Ref = @("System.Data.dll", "System.DirectoryServices.dll", $sqlite); Main = "SurumTest" },
+       Ref = @("System.Data.dll", "System.DirectoryServices.dll", "System.IO.Compression.dll", $sqlite); Main = "SurumTest" },
     @{ Ad = "PeMimari";         Kaynak = @("tests\PeMimari.cs", $setup);
        Ref = @("System.Data.dll", "System.IO.Compression.dll", "System.IO.Compression.FileSystem.dll", "Microsoft.CSharp.dll");
        Main = "PeTest" },
+    @{ Ad = "UzerineKurulum";   Kaynak = @("tests\UzerineKurulum.cs", $setup);
+       Ref = @("System.Data.dll", "System.IO.Compression.dll", "System.IO.Compression.FileSystem.dll", "Microsoft.CSharp.dll");
+       Main = "UzerineKurulumTest" },
+    @{ Ad = "UzmanTest";        Kaynak = @("tests\UzmanTest.cs", "server\Print360.Dashboard.cs", $db, $ortak, "server\Print360.License.cs",
+                                           "server\Print360.Version.cs", "client\Print360.ClientAgent.cs", "client\Print360.Tani.cs");
+       Ref = @("System.Data.dll", "System.DirectoryServices.dll", "System.IO.Compression.dll", "System.IO.Compression.FileSystem.dll",
+               "System.Windows.Forms.dll", "System.Drawing.dll", "System.Management.dll", $sqlite);
+       Main = "UzmanTest"; Interop = $true },
     @{ Ad = "PanelGorevi";      Kaynak = @("tests\PanelGorevi.cs", $setup);
        Ref = @("System.Data.dll", "System.Xml.dll", "System.IO.Compression.dll", "System.IO.Compression.FileSystem.dll", "Microsoft.CSharp.dll");
        Main = "PanelGoreviTest" }
@@ -59,6 +67,13 @@ foreach ($t in $testler) {
     }
     # SQLite dogrudan kullanilmasa da derleme referansi calisma aninda aranabilir
     if ($t.Ref -contains $sqlite) { Copy-Item $sqlite $out -Force }
+    # Gercek SQLite kullanan testler yerel cekirdege ihtiyac duyar (x64\ / x86\)
+    if ($t.Interop) {
+        foreach ($m in "x64", "x86") {
+            New-Item -ItemType Directory -Force (Join-Path $out $m) | Out-Null
+            Copy-Item (Join-Path $root "vendor\sqlite\SQLite.Interop.$m.dll") (Join-Path $out "$m\SQLite.Interop.dll") -Force
+        }
+    }
 
     $cikti = & $exe 2>&1
     $kod = $LASTEXITCODE

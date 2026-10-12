@@ -42,6 +42,7 @@ class OlayGunlugu
             Tekrar();
             Takilma();
             AdDegisimi();
+            HataAyiklama();
         }
         finally { try { Directory.Delete(kok, true); } catch { } }
         Console.WriteLine();
@@ -123,6 +124,31 @@ class OlayGunlugu
                 "403: hangi makine ve ne yapilacagi", null);
         Kontrol(a(WebExceptionStatus.ProtocolError, 500).Contains("dashboard.log"), "500: sunucu gunlugune yonlendirir", null);
         Kontrol(a(WebExceptionStatus.UnknownError, 0).Contains("ham"), "bilinmeyen durumda ham mesaj korunur", null);
+
+        // 403 kimden geldi? Print360 sifre reddinde govde "YETKISIZ"dir.
+        Func<int, string, string> g = (k, govde) => Ortak.BaglantiHatasiAcikla(WebExceptionStatus.ProtocolError, k, "ham", "PC1", govde);
+        Kontrol(g(403, "YETKISIZ").StartsWith("ISTEMCI SIFRESI REDDEDILDI"), "403 + YETKISIZ: gercekten sifre reddi", null);
+        Kontrol(g(403, "<html>Access Denied by proxy</html>").Contains("YANIT PRINT360'TAN GELMIYOR"),
+                "403 baska govdeyle: VEKIL/guvenlik duvari (eskiden yanlislikla 'sifre reddedildi' deniyordu)", null);
+        Kontrol(g(407, "").StartsWith("VEKIL SUNUCU KIMLIK DOGRULAMASI"), "407: vekil kimlik dogrulamasi", null);
+        Kontrol(a(WebExceptionStatus.SecureChannelFailure, 0).Contains("TLS"), "TLS uyusmazligi ayri anlatiliyor", null);
+
+        // Vekil karari: Windows vekili bu adres icin tanimliysa yol degistirilir
+        var hedef = new Uri("https://91.151.88.119:8443/");
+        Ortak.DogrudanBaglan = false;
+        Ortak.VekilBul = delegate(Uri u) { return new Uri("http://vekil.firma.local:8080/"); };
+        string m1 = Ortak.VekilDegerlendir(hedef, WebExceptionStatus.ConnectFailure, 0);
+        Kontrol(m1 != null && Ortak.DogrudanBaglan && m1.Contains("DOGRUDAN"), "vekil uzerinden ulasilamadi -> dogrudan dene", m1);
+        var istek = (HttpWebRequest)WebRequest.Create(hedef);
+        Ortak.VekilUygula(istek);
+        Kontrol(istek.Proxy == null, "dogrudan modda istek vekilsiz gider", null);
+        string m2 = Ortak.VekilDegerlendir(hedef, WebExceptionStatus.Timeout, 0);
+        Kontrol(m2 != null && !Ortak.DogrudanBaglan && m2.Contains("vekil"), "dogrudan da olmazsa vekile geri doner", m2);
+        Kontrol(Ortak.VekilDegerlendir(hedef, WebExceptionStatus.TrustFailure, 0) == null && !Ortak.DogrudanBaglan,
+                "sertifika hatasi yol degistirmez (yol sorunu degil)", null);
+        Ortak.VekilBul = delegate(Uri u) { return null; };
+        Kontrol(Ortak.VekilDegerlendir(hedef, WebExceptionStatus.ConnectFailure, 0) == null && !Ortak.DogrudanBaglan,
+                "vekil tanimli degilse denenecek baska yol yok", null);
     }
 
     // --- yarim / bozuk dosya
@@ -207,6 +233,34 @@ class OlayGunlugu
         string c = t.Hazir(yol);
         Kontrol(c != null && c.StartsWith("TAKILMA COZULDU"), "cozulunce bildirilir", c);
         Kontrol(t.Hazir(Path.Combine(kok, "hic-takilmadi.pdf")) == null, "takilmayan dosya icin gurultu yok", null);
+    }
+
+    // --- hata ayiklama anahtari: ac, 24 saat sonra kendiliginden kapanir; sifre maskeleme
+    static void HataAyiklama()
+    {
+        var saat = new DateTime(2026, 10, 8, 9, 0, 0);
+        Ortak.HaSimdi = delegate { return saat; };
+        Ortak.HataAyiklamaDosyasi = Path.Combine(kok, "hata-ayiklama.txt");
+        Kontrol(!Ortak.HataAyiklamaAcik(), "varsayilan: kapali", null);
+        Kontrol(Ortak.HataAyiklamaAyarla(true, TimeSpan.FromHours(24)) == null && Ortak.HataAyiklamaAcik(), "acilinca hemen gecerli", null);
+        Kontrol(Ortak.HataAyiklamaBitisi() == saat.AddHours(24), "bitis zamani 24 saat sonra", Ortak.HataAyiklamaBitisi().ToString());
+        saat = saat.AddHours(23).AddMinutes(59);
+        Kontrol(Ortak.HataAyiklamaAcik(), "23 sa 59 dk sonra hala acik", null);
+        saat = saat.AddMinutes(2);
+        Kontrol(!Ortak.HataAyiklamaAcik(), "24 saat dolunca KENDILIGINDEN kapanir (gunluk sismesin)", null);
+        Ortak.HataAyiklamaAyarla(true, TimeSpan.FromHours(24));
+        Ortak.HataAyiklamaAyarla(false, TimeSpan.Zero);
+        Kontrol(!Ortak.HataAyiklamaAcik() && !File.Exists(Ortak.HataAyiklamaDosyasi), "kapatilinca dosya silinir", null);
+        File.WriteAllText(Ortak.HataAyiklamaDosyasi, "bozuk icerik");
+        Ortak.HataAyiklamaAyarla(false, TimeSpan.Zero); File.WriteAllText(Ortak.HataAyiklamaDosyasi, "bozuk icerik");
+        saat = saat.AddMinutes(1);
+        Kontrol(!Ortak.HataAyiklamaAcik(), "bozuk anahtar dosyasi 'kapali' sayilir", null);
+
+        Kontrol(Ortak.GizliMaskele("ClientKey=gizli123") == "ClientKey=*** (8 karakter)"
+             && Ortak.GizliMaskele("Password=x") == "Password=*** (1 karakter)"
+             && Ortak.GizliMaskele("Server=91.151.88.119") == "Server=91.151.88.119"
+             && Ortak.GizliMaskele("ClientKey=") == "ClientKey=(bos)",
+                "tani paketinde sifreler maskelenir, diger ayarlar aynen kalir", Ortak.GizliMaskele("ClientKey=gizli123"));
     }
 
     // --- bilgisayar adi degisti / ayni kimlik iki makinede

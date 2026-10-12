@@ -50,6 +50,33 @@ var
   SunucuPage: TInputQueryWizardPage;
   Isaret: String;   { yapilandiricinin gercekten calistigini kanitlar }
 
+{ .NET FRAMEWORK DENETIMI. Print360 bilesenleri .NET Framework 4.5 ve ustunu
+  gerektirir. Eksik makinede kurulum eskiden uyarmadan bitiyor, ajan hic
+  acilmiyordu ("bazi makinelerde calismiyor"). Release >= 378389 = 4.5. }
+function NetTamam(): Boolean;
+var
+  Surum: Cardinal;
+begin
+  Result := RegQueryDWordValue(HKLM, 'SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full', 'Release', Surum)
+            and (Surum >= 378389);
+end;
+
+function NetUyarisi(): Boolean;
+begin
+  Result := NetTamam();
+  if not Result then
+    MsgBox('Bu bilgisayarda .NET Framework 4.5 veya ustu YOK.' + #13#10#13#10 +
+           'Print360 bu olmadan calismaz. Once Microsoft''un sitesinden' + #13#10 +
+           '.NET Framework 4.8''i kurun, sonra bu kurulumu tekrar calistirin.' + #13#10#13#10 +
+           '(Windows 10/11 ve Windows Server 2016 ve ustunde zaten kuruludur.)',
+           mbCriticalError, MB_OK);
+end;
+
+function InitializeSetup(): Boolean;
+begin
+  Result := NetUyarisi();
+end;
+
 { Acik bir RDP oturumu varsa uzak sunucunun IP'sini netstat ciktisindan bul.
   Boylece kullanici kurulumda sunucu adresini elle yazmak zorunda kalmaz. }
 function RdpSunucuBul(): String;

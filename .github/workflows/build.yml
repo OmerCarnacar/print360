@@ -64,7 +64,7 @@ jobs:
         shell: pwsh
         run: |
           $csc = "${{ steps.csc.outputs.yol }}"
-          & $csc /nologo /target:winexe /r:System.DirectoryServices.dll /r:System.Data.dll `
+          & $csc /nologo /target:winexe /r:System.DirectoryServices.dll /r:System.Data.dll /r:System.IO.Compression.dll `
                  /r:"vendor/sqlite/System.Data.SQLite.dll" /out:out\Print360.Dashboard.exe `
                  server\Print360.Dashboard.cs server\Print360.Db.cs server\Print360.Ortak.cs server\Print360.License.cs server\Print360.Version.cs
           if ($LASTEXITCODE -ne 0) { throw "Dashboard derlenemedi" }
@@ -86,8 +86,9 @@ jobs:
         run: |
           $csc = "${{ steps.csc.outputs.yol }}"
           & $csc /nologo /target:winexe /r:System.Drawing.dll /r:System.Windows.Forms.dll `
-                 /r:System.Management.dll /out:out\Print360.ClientAgent.exe `
-                 client\Print360.ClientAgent.cs server\Print360.Ortak.cs server\Print360.Version.cs
+                 /r:System.Management.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll `
+                 /out:out\Print360.ClientAgent.exe `
+                 client\Print360.ClientAgent.cs client\Print360.Tani.cs server\Print360.Ortak.cs server\Print360.Version.cs
           if ($LASTEXITCODE -ne 0) { throw "ClientAgent derlenemedi" }
 
       - name: Kurulum yapilandiricisi

@@ -30,6 +30,9 @@ static class Db
     //   pdf                   = "Print360 PDF - <user>"  -> istemcide PDF olarak acilir
     public static string VarsayilanYaziciModu = "dogrudan";
 
+    // Test ortami icin yonlendirilebilir yollar (uretimde degismez)
+    public static string DbIniYolu = @"C:\Print360\db.ini";
+
     public static string ConnStr()
     {
         if (cs != null) return cs;
@@ -39,14 +42,14 @@ static class Db
         string server = Environment.MachineName, db = "Print360", user = "sa", pwd = "";
         try
         {
-            string f = @"C:\Print360\db.ini";
+            string f = DbIniYolu;
             if (File.Exists(f))
                 foreach (var l in File.ReadAllLines(f))
                 {
                     var p = l.Split(new[] { '=' }, 2);
                     if (p.Length != 2) continue;
                     var k = p[0].Trim().ToLowerInvariant(); var v = p[1].Trim();
-                    if (k == "server") { server = v; _mssqlIstendi = v.Length > 0; }
+                    if (k == "server") server = v;
                     else if (k == "database") db = v;
                     else if (k == "user") user = v;
                     else if (k == "password") pwd = v;
@@ -58,6 +61,14 @@ static class Db
                 }
         }
         catch { }
+        // MSSQL YALNIZCA GERCEKTEN YAPILANDIRILDIYSA denenir: sunucu VE parola dolu.
+        // Kurulum her sunucuda db.ini'ye "Server=<makine>, User=sa, Password=(bos)"
+        // yaziyordu; panel her acilista ve dakikada bir yerel SQL Server'a 'sa' ile
+        // BOS PAROLAYLA giris deniyordu. Sunucuda SQL Server varsa (ERP sunuculari)
+        // bu, basarisiz giris denetim kayitlari ve guvenlik uyarilari uretiyor,
+        // parola politikasi aciksa 'sa' hesabini KILITLEYEBILIYORDU. Bos parolayla
+        // 'sa' zaten gecerli bir yapilandirma degildir.
+        _mssqlIstendi = server.Length > 0 && pwd.Length > 0;
         cs = "Server=" + server + ";Database=" + db + ";User ID=" + user + ";Password=" + pwd + ";Connect Timeout=4";
         return cs;
     }
@@ -74,7 +85,7 @@ static class Db
     static DbMotor _motor = DbMotor.Yok;
     static bool _motorBelirlendi;
     static readonly object _mKilit = new object();
-    public const string SqliteDosya = @"C:\Print360\print360.db";
+    public static string SqliteDosya = @"C:\Print360\print360.db";   // testler gecici dosyaya yonlendirir
 
     public static DbMotor Motor { get { MotorBelirle(false); MssqlYenidenDene(); return _motor; } }
 
@@ -130,7 +141,9 @@ static class Db
         {
             if (_motorBelirlendi && !zorla) return;
             _motorBelirlendi = true;
-            // 1) MSSQL
+            // 1) MSSQL (yalnizca db.ini'de sunucu VE parola tanimliysa - bkz. ConnStr)
+            ConnStr();
+            if (_mssqlIstendi)
             try
             {
                 using (var c = new SqlConnection(ConnStr())) c.Open();
@@ -577,7 +590,7 @@ IF OBJECT_ID('dbo.JobQueue','U') IS NULL CREATE TABLE dbo.JobQueue(
     //  SQL varsa oraya DA yazilir; yoksa panel bu dosyadan okur.
     //  En yeni 500 kayit tutulur.
     // ============================================================
-    public static readonly string UyariCsv = @"C:\Print360\stats\alerts.csv";
+    public static string UyariCsv = @"C:\Print360\stats\alerts.csv";
     const int UYARI_LIMIT = 500;
     static readonly object _uKilit = new object();
 

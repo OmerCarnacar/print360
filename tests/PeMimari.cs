@@ -40,6 +40,13 @@ class PeTest
         if (dalOk) gecti++;
         Console.WriteLine((dalOk ? "GECTI " : "KALDI ") + "x64 DLL 64-bit dala, x86 DLL WOW6432Node dalina yaziliyor");
 
+        // 32-bit Windows'ta 64-bit eklenti KAYDEDILMEZ (32-bit mstsc yukleyemez)
+        toplam++;
+        bool karar = Kurulum.VcKaydiYapilmali(true, true) && Kurulum.VcKaydiYapilmali(true, false)
+                  && !Kurulum.VcKaydiYapilmali(false, true) && Kurulum.VcKaydiYapilmali(false, false);
+        if (karar) gecti++;
+        Console.WriteLine((karar ? "GECTI " : "KALDI ") + "32-bit Windows'ta 64-bit eklenti kaydedilmiyor");
+
         // Okunamayan dosya x64 varsayilir (bugunku istemcilerin cogu 64-bit)
         toplam++;
         bool yokOk = Kurulum.PeX64(Path.Combine(Path.GetTempPath(), "p360-olmayan-dosya.dll"));

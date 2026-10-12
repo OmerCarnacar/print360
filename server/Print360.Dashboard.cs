@@ -119,13 +119,33 @@ static class Dashboard
                 // ikinciyi istiyor, sunucu hala birinciyi bitirmedigi icin istek
                 // zaman asimina ugruyordu ("1. yazdirma tamam, sonrasi yok").
                 // Ayni sebeple ikinci bir istemcinin kalp atisi ve panel de bekliyordu.
-                ThreadPool.QueueUserWorkItem(delegate(object o) { IstegiIsle((HttpListenerContext)o); }, ctx);
+                ThreadPool.QueueUserWorkItem(delegate(object o) { IstegiIsleGunluklu((HttpListenerContext)o); }, ctx);
             }
         }
     }
 
     // Tek bir HTTP istegini isler. Dinleyici dongusu bunu is parcacigi havuzuna
     // devreder; boylece yavas bir istek digerlerini bekletmez.
+    // HATA AYIKLAMA MODUNDA her istek tek satir: yontem, yol, makine, IP, sonuc, sure.
+    // Sorun istemcide mi sunucuda mi, istek sunucuya HIC ulasiyor mu - net gorunur.
+    static void IstegiIsleGunluklu(HttpListenerContext ctx)
+    {
+        if (!Ortak.HataAyiklamaAcik()) { IstegiIsle(ctx); return; }
+        var kr = System.Diagnostics.Stopwatch.StartNew();
+        string yontem = "", yol = "", makine = "", ip = "";
+        try
+        {
+            yontem = ctx.Request.HttpMethod; yol = ctx.Request.Url.AbsolutePath;
+            makine = Q(ctx, "machine") ?? "";
+            ip = ctx.Request.RemoteEndPoint != null ? ctx.Request.RemoteEndPoint.Address.ToString() : "";
+        }
+        catch { }
+        IstegiIsle(ctx);
+        int kod = 0; try { kod = ctx.Response.StatusCode; } catch { }
+        Log("[AYRINTI] HTTP " + yontem + " " + yol + (makine.Length > 0 ? " | makine " + makine : "") + " | " + ip
+            + " -> " + kod + " (" + kr.ElapsedMilliseconds + " ms)");
+    }
+
     static void IstegiIsle(HttpListenerContext ctx)
     {
         try
@@ -396,6 +416,56 @@ static class Dashboard
         return sb.ToString();
     }
 
+    // ------------------------------------------------------------------
+    // ESKI KUYRUK KAYITLARI. Veritabanindaki JobQueue tablosunda eski
+    // surumlerden "BEKLIYOR" olarak kalmis kayitlar vardi: onay ad uyusmazligi
+    // yuzunden hic kapanmamis, dosyasi coktan alinmis ya da kenara alinmis
+    // isler. Bunlar Genel Bakis'taki "Kuyrukta" sayacini sisiriyor, gercek
+    // durumu gizliyordu. Dosyasi hala kuyruktaysa kayit acik kalir (teslim
+    // edilecek); degilse gercek durumuna gore kapatilir. Silinmez.
+    // ------------------------------------------------------------------
+    static int uzlastirmaSayaci;
+    static void EskiKuyrukKayitlariniUzlastir()
+    {
+        try
+        {
+            var dt = Db.Query("SELECT Id, Makine, Dosya, Yol FROM JobQueue WHERE Durum='BEKLIYOR'");
+            if (dt == null || dt.Rows.Count == 0) return;
+            int acik = 0, kapandi = 0, karantina = 0, dolan = 0;
+            foreach (System.Data.DataRow r in dt.Rows)
+            {
+                string makine = Convert.ToString(r[1]), dosya = Convert.ToString(r[2]), yol = Convert.ToString(r[3]);
+                if (yol.Length > 0 && File.Exists(yol)) { acik++; continue; }
+                // Dosya baska bir makinenin kuyruguna tasinmis olabilir (ad degisikligi,
+                // kullanici degisimi): ada gore ara.
+                string yeni = "KAPANDI";
+                string d = Kuyruk.DurumMetni(makine, dosya);
+                if (d == null)
+                {
+                    try
+                    {
+                        if (Directory.Exists(Kuyruk.Kok) &&
+                            Directory.GetFiles(Kuyruk.Kok, dosya + ".gz", SearchOption.AllDirectories).Length > 0)
+                        { acik++; continue; }
+                        if (Directory.Exists(Kuyruk.SuresiDolanKok) &&
+                            Directory.GetFiles(Kuyruk.SuresiDolanKok, dosya + ".gz", SearchOption.AllDirectories).Length > 0)
+                            yeni = "SURESI DOLDU";
+                    }
+                    catch { }
+                }
+                else if (d.StartsWith("KARANTINADA")) yeni = "KARANTINA";
+                else if (d.StartsWith("SURESI DOLDU")) yeni = "SURESI DOLDU";
+                else { acik++; continue; }
+                Db.Exec("UPDATE JobQueue SET Durum=@d WHERE Id=@i", "@d", yeni, "@i", r[0]);
+                if (yeni == "KARANTINA") karantina++; else if (yeni == "SURESI DOLDU") dolan++; else kapandi++;
+            }
+            if (kapandi + karantina + dolan > 0)
+                Log("Eski kuyruk kayitlari uzlastirildi: " + dt.Rows.Count + " 'BEKLIYOR' kayit -> " + acik + " hala kuyrukta (teslim edilecek), "
+                  + kapandi + " dosyasi artik yok (KAPANDI), " + karantina + " karantinada, " + dolan + " suresi dolmus. Kayitlar silinmedi.");
+        }
+        catch (Exception ex) { Log("Eski kuyruk kayitlari uzlastirilamadi: " + ex.Message); }
+    }
+
     // KUYRUKTA UNUTULAN ISLER. Bir is 10 dakikadir alinmadiysa kullanici
     // muhtemelen yazicinin basinda bekliyordur. Her is icin BIR KEZ uyarilir.
     static readonly HashSet<string> bayatUyarilan = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -455,6 +525,7 @@ static class Dashboard
                 }
                 ilk = false;
                 BayatKuyrukTara();
+                if (++uzlastirmaSayaci % 10 == 1) EskiKuyrukKayitlariniUzlastir();   // acilista + 10 dk'da bir
             }
             catch (Exception ex) { Log("AlertMonitor: " + ex.Message); }
             Thread.Sleep(60000);
@@ -723,7 +794,7 @@ static class Dashboard
             // 1) DOSYA KUYRUGU (birincil - MSSQL GEREKMEZ):
             //    C:\Print360\queue\<makine>\<is>.gz  ->  ilk (en eski) isi ver.
             //    Is-Id olarak dosya adi kullanilir; ACK gelince dosya silinir.
-            string qDir = Path.Combine(@"C:\Print360\queue", Sanitize(machine));
+            string qDir = Path.Combine(Kuyruk.Kok, Sanitize(machine));
             string dosyaYol = null, dosyaAd = null;
             try
             {
@@ -835,7 +906,7 @@ static class Dashboard
                 string kimlik = ham.Substring(2);
                 string cozulmus = Ortak.B64Coz(kimlik);
                 string ad = Path.GetFileName(cozulmus != null ? cozulmus : kimlik);   // yol gecisi engellenir
-                string qDirOnay = Path.Combine(@"C:\Print360\queue", Sanitize(machine));
+                string qDirOnay = Path.Combine(Kuyruk.Kok, Sanitize(machine));
                 string yol2 = Path.Combine(qDirOnay, ad);
                 // Silme birkac kez denenir: dosya o anda baska bir istek tarafindan
                 // okunuyor olabilir (paylasim ihlali). BASARISIZ olursa istemciye
@@ -1335,6 +1406,19 @@ static class Dashboard
         switch (path)
         {
             case "/tani": return Page("tani", PageTani());
+            case "/tani/paket": return SunucuTaniPaketiGonder(ctx);
+            case "/tani/hata-ayiklama":
+            {
+                // Yalnizca POST: bir baglantiya tiklamak (GET) modu degistiremesin.
+                if (req.HttpMethod == "POST")
+                {
+                    bool ac = !Ortak.HataAyiklamaAcik();
+                    string h = Ortak.HataAyiklamaAyarla(ac, TimeSpan.FromHours(24));
+                    Log(h == null ? "=== HATA AYIKLAMA MODU panelden " + (ac ? "ACILDI (24 saat)" : "KAPATILDI") + " ===" : "Hata ayiklama modu degistirilemedi: " + h);
+                }
+                Redirect(ctx, "/tani");
+                return null;
+            }
             case "/veritabani": return Page("veritabani", PageVeritabani(ctx));
             case "/makineler": return Page("makineler", PageMachines());
             case "/yazicilar": return Page("yazicilar", PagePrinters());
@@ -2269,6 +2353,20 @@ static class Dashboard
         var sb = new StringBuilder();
         sb.Append("<div class='info'>Bu sayfa &quot;yazd&#305;r&#305;yorum ama bir &#351;ey olmuyor&quot; sorununu ")
           .Append("ad&#305;m ad&#305;m g&ouml;sterir. Sorun varsa turuncu kutulara bak&#305;n.</div>");
+        // DESTEK ARACLARI
+        bool haAcik = Ortak.HataAyiklamaAcik();
+        string dugme = "background:#1f3a5f;color:#fff;border:0;border-radius:6px;padding:7px 16px;font-size:13px;cursor:pointer;margin-right:8px;text-decoration:none;display:inline-block";
+        sb.Append("<div style='margin:10px 0 18px'>")
+          .Append("<a href='/tani/paket' style='").Append(dugme).Append("'>&#128230; Sunucu tan&#305; paketini indir</a>")
+          .Append("<form method='post' action='/tani/hata-ayiklama' style='display:inline'>")
+          .Append("<button type='submit' style='").Append(dugme).Append(haAcik ? ";background:#c0392b" : "").Append("'>")
+          .Append(haAcik ? "&#128308; Hata ay&#305;klama A&Ccedil;IK (biti&#351; " + Ortak.HataAyiklamaBitisi().ToString("dd.MM HH:mm") + ") &mdash; kapat"
+                         : "&#128270; Hata ay&#305;klama modunu a&ccedil; (24 saat)")
+          .Append("</button></form>")
+          .Append("<div class='mut' style='margin-top:6px'>Hata ay&#305;klama modu bu sunucudaki ajanlar&#305;n ve panelin her ad&#305;m&#305;n&#305; ")
+          .Append("ayr&#305;nt&#305;l&#305; yazar; 24 saat sonra kendili&#287;inden kapan&#305;r. Tan&#305; paketi g&uuml;nl&uuml;kleri, kurulum kay&#305;tlar&#305;n&#305; ")
+          .Append("ve sunucu durumunu tek zip'te toplar (belge i&ccedil;erikleri ve parolalar dahil de&#287;ildir). ")
+          .Append("&#304;stemci i&ccedil;in: tepsi simgesi &gt; <b>Tan&#305; paketi olu&#351;tur</b> ya da <code>Print360.ClientAgent.exe --tani</code>.</div></div>");
 
         // 0) KURULU SURUMLER - "kurdum ama eski surum calisiyor" karisikligini bitirir.
         //    Dosyalarin surumu ile panelin surumu AYNI olmalidir.
@@ -2977,6 +3075,184 @@ static class Dashboard
     // ---------------- Excel'e aktar (CSV; Turkce Excel icin ';' ayirici + UTF-8 BOM) ----------------
 
     static string CsvAlan(string s) { return Ortak.CsvAlan(s); }
+
+    // ------------------------------------------------------------------
+    // SUNUCU TANI PAKETI: gunlukler, kurulum kayitlari ve sunucu durumu tek zip.
+    // Belge icerikleri (spool/queue/archive PDF'leri) ve parolalar DAHIL DEGIL.
+    // ------------------------------------------------------------------
+    static string SunucuTaniPaketiGonder(HttpListenerContext ctx)
+    {
+        byte[] zip = SunucuTaniPaketi();
+        string ad = "Print360-Sunucu-Tani-" + Environment.MachineName + "-" + DateTime.Now.ToString("yyyyMMdd-HHmm") + ".zip";
+        ctx.Response.ContentType = "application/zip";
+        ctx.Response.AddHeader("Content-Disposition", "attachment; filename=" + ad);
+        ctx.Response.ContentLength64 = zip.Length;
+        ctx.Response.OutputStream.Write(zip, 0, zip.Length);
+        ctx.Response.Close();
+        Log("Sunucu tani paketi indirildi (" + zip.Length / 1024 + " KB)");
+        return null;
+    }
+
+    internal static byte[] SunucuTaniPaketi()
+    {
+        using (var ms = new MemoryStream())
+        {
+            using (var zip = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, true))
+            {
+                ZipMetin(zip, "rapor.txt", SunucuTaniRaporu());
+                string logs = @"C:\Print360\logs";
+                try
+                {
+                    if (Directory.Exists(logs))
+                        foreach (var f in Directory.GetFiles(logs))
+                        {
+                            string n = Path.GetFileName(f).ToLowerInvariant();
+                            if (n.EndsWith(".lock")) continue;
+                            ZipDosya(zip, f, "logs/" + Path.GetFileName(f));
+                        }
+                }
+                catch { }
+                try { foreach (var f in Directory.GetFiles(Path.GetTempPath(), "Print360-*")) ZipDosya(zip, f, "yedek-gunlukler/" + Path.GetFileName(f)); } catch { }
+                foreach (var ad in new[] { "kurulum-sunucu.txt", "kurulum-istemci.txt", "rules.csv" })
+                    ZipDosya(zip, Path.Combine(@"C:\Print360", ad), ad);
+                foreach (var ad in new[] { "db.ini", "mail.ini", "Print360.ini" })
+                {
+                    string f = Path.Combine(@"C:\Print360", ad);
+                    try
+                    {
+                        if (File.Exists(f))
+                            ZipMetin(zip, ad + " (maskeli).txt",
+                                     string.Join("\r\n", File.ReadAllLines(f).Select(l => Ortak.GizliMaskele(l)).ToArray()));
+                    }
+                    catch (Exception ex) { ZipMetin(zip, ad + " (OKUNAMADI).txt", ex.Message); }
+                }
+            }
+            return ms.ToArray();
+        }
+    }
+
+    static void ZipMetin(System.IO.Compression.ZipArchive zip, string ad, string icerik)
+    {
+        var e = zip.CreateEntry(ad);
+        using (var w = new StreamWriter(e.Open(), new UTF8Encoding(true))) w.Write(icerik ?? "");
+    }
+
+    static void ZipDosya(System.IO.Compression.ZipArchive zip, string yol, string ad)
+    {
+        try
+        {
+            if (!File.Exists(yol)) return;
+            var e = zip.CreateEntry(ad);
+            using (var k = new FileStream(yol, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+            using (var h = e.Open()) k.CopyTo(h);
+        }
+        catch (Exception ex) { try { ZipMetin(zip, ad + " (OKUNAMADI).txt", ex.Message); } catch { } }
+    }
+
+    static string KomutCiktisi(string exe, string args)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo(exe, args) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true,
+                                                        StandardOutputEncoding = Ortak.KonsolKodlamasi(), StandardErrorEncoding = Ortak.KonsolKodlamasi() };
+            using (var p = Process.Start(psi))
+            {
+                var o = p.StandardOutput.ReadToEndAsync(); var e = p.StandardError.ReadToEndAsync();
+                if (!p.WaitForExit(15000)) { try { p.Kill(); } catch { } return "(zaman asimi)"; }
+                return (o.Result + e.Result).Trim();
+            }
+        }
+        catch (Exception ex) { return "(calistirilamadi: " + ex.Message + ")"; }
+    }
+
+    internal static string SunucuTaniRaporu()
+    {
+        var r = new StringBuilder();
+        Action<string, Action> Bolum = (baslik, is_) =>
+        {
+            r.AppendLine().AppendLine("==== " + baslik + " ====");
+            try { is_(); } catch (Exception ex) { r.AppendLine("  (BU BOLUM ALINAMADI: " + ex.Message + ")"); }
+        };
+        r.AppendLine("PRINT360 SUNUCU TANI RAPORU");
+        r.AppendLine("Uretildi: " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " | sunucu " + Environment.MachineName
+                     + " | panel hesabi " + Environment.UserDomainName + "\\" + Environment.UserName
+                     + " (oturum " + Process.GetCurrentProcess().SessionId + ")");
+        Bolum("1. SURUMLER VE KURULUM (/api/surum)", () => r.AppendLine("  " + SurumRaporu()));
+        Bolum("2. CALISAN BILESENLER", () =>
+        {
+            foreach (var ad in new[] { "Print360.Dashboard", "Print360.ServerAgent", "Print360.Panel" })
+                foreach (var pr in Process.GetProcessesByName(ad))
+                {
+                    string bas = ""; try { bas = pr.StartTime.ToString("yyyy-MM-dd HH:mm:ss"); } catch { }
+                    r.AppendLine("  " + ad + " | surec " + pr.Id + " | oturum " + pr.SessionId + " | baslangic " + bas);
+                }
+            r.AppendLine("  Veritabani: " + Db.MotorAdi + (Db.Err != null ? " | son hata: " + Db.Err : ""));
+            r.AppendLine("  Hata ayiklama modu: " + (Ortak.HataAyiklamaAcik() ? "ACIK (bitis " + Ortak.HataAyiklamaBitisi().ToString("yyyy-MM-dd HH:mm") + ")" : "kapali"));
+        });
+        Bolum("3. KULLANICI OTURUMLARI VE AJAN KAPSAMI", () =>
+        {
+            var ajanOturum = new HashSet<string>(Process.GetProcessesByName("Print360.ServerAgent").Select(x => x.SessionId.ToString()));
+            foreach (var o in OturumListesi())
+            {
+                if (o[1].Length == 0) continue;
+                r.AppendLine("  oturum " + o[0] + " | " + o[1] + " | istemci: " + (o[2].Length > 0 ? o[2] : "(bos)") + " | " + o[3]
+                             + " | ajan: " + (ajanOturum.Contains(o[0]) ? "VAR" : "YOK  <-- bu kullanicinin ciktilari yakalanmaz"));
+            }
+        });
+        Bolum("4. ZAMANLANMIS GOREVLER", () =>
+        {
+            foreach (var g in new[] { "Print360 Panel Sunucusu", "Print360 Yazdirma Ajani" })
+                r.AppendLine("  --- " + g).AppendLine(Girintile(KomutCiktisi("schtasks.exe", "/Query /TN \"" + g + "\" /V /FO LIST")));
+        });
+        Bolum("5. AG KAYITLARI (sertifika, port erisimi, guvenlik duvari)", () =>
+        {
+            r.AppendLine("  Portlar: HTTP " + Port + " / HTTPS " + PortSsl);
+            r.AppendLine(Girintile(KomutCiktisi("netsh.exe", "http show sslcert ipport=0.0.0.0:" + PortSsl)));
+            foreach (var u in new[] { "http://+:" + Port + "/", "https://+:" + PortSsl + "/" })
+                r.AppendLine(Girintile(KomutCiktisi("netsh.exe", "http show urlacl url=" + u)));
+            foreach (var pr in new[] { Port, PortSsl })
+                r.AppendLine(Girintile(KomutCiktisi("netsh.exe", "advfirewall firewall show rule name=\"Print360 " + pr + "\"")));
+        });
+        Bolum("6. SANAL YAZICILAR", () =>
+        {
+            foreach (var y in Yazicilar())
+                if (y.Length > 0 && y[0].StartsWith("Print360", StringComparison.OrdinalIgnoreCase)) r.AppendLine("  " + string.Join(" | ", y));
+        });
+        Bolum("7. ISTEMCILER (son kalp atisi)", () =>
+        {
+            foreach (var kv in LoadHb().OrderBy(x => x.Key))
+                r.AppendLine("  " + string.Join(" | ", kv.Value));
+        });
+        Bolum("8. KUYRUK VE SPOOL (yalnizca adlar)", () =>
+        {
+            if (Directory.Exists(Kuyruk.Kok))
+                foreach (var d in Directory.GetDirectories(Kuyruk.Kok))
+                    foreach (var f in new DirectoryInfo(d).GetFiles("*.gz"))
+                        r.AppendLine("  kuyruk | " + Path.GetFileName(d) + " | " + f.Name + " | " + f.CreationTime.ToString("yyyy-MM-dd HH:mm")
+                                     + " | " + (Kuyruk.DurumMetni(Path.GetFileName(d), f.Name.Substring(0, f.Name.Length - 3)) ?? ""));
+            foreach (var a in Kuyruk.Ayrilanlar())
+                r.AppendLine("  " + a.Tur + " | " + a.Makine + " | " + a.Dosya + " | " + a.Tarih.ToString("yyyy-MM-dd HH:mm"));
+            if (Directory.Exists(@"C:\Print360\spool"))
+                foreach (var f in new DirectoryInfo(@"C:\Print360\spool").GetFiles())
+                    r.AppendLine("  spool | " + f.Name + " | " + f.LastWriteTime.ToString("yyyy-MM-dd HH:mm") + " | " + f.Length / 1024 + " KB");
+        });
+        Bolum("9. KLASORLER VE DISK", () =>
+        {
+            var s = Ortak.KlasorDenetle(new[] { @"C:\Print360\queue", @"C:\Print360\spool", @"C:\Print360\logs", @"C:\Print360\stats", @"C:\Print360\update" });
+            if (s.Count == 0) r.AppendLine("  Tum klasorler yazilabilir, disk alani yeterli.");
+            foreach (var x in s) r.AppendLine("  " + x);
+        });
+        Bolum("10. SON UYARILAR (panel)", () =>
+        {
+            foreach (var u in Db.UyarilariOku(60)) r.AppendLine("  " + string.Join(" | ", u));
+        });
+        return r.ToString();
+    }
+
+    static string Girintile(string m)
+    {
+        return string.Join("\r\n", (m ?? "").Split('\n').Select(l => "     " + l.TrimEnd('\r')).ToArray());
+    }
 
     static string CsvOut(HttpListenerContext ctx, string dosyaAdi, StringBuilder icerik)
     {

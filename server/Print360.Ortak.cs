@@ -167,6 +167,85 @@ static class Ortak
     }
 
     // ------------------------------------------------------------------
+    // HATA AYIKLAMA MODU (makine geneli tek anahtar)
+    // Acikken istemci, sunucu ajanlari ve panel HER adimi ayrintili yazar:
+    // HTTP istekleri ve sureleri, yazici kararlari, motor cagrilari, dosya
+    // durumlari. Anahtar bir dosyadir (icerik = bitis zamani): tepsiden ya da
+    // panelden acilir, 24 saat sonra KENDILIGINDEN kapanir - unutulup gunlugu
+    // sisirmesin. Ayar dosyasi degil dosya olmasinin sebebi: yonetici
+    // yetkisi gerektirmeden ve ajanlari yeniden baslatmadan acilabilmesi.
+    // ------------------------------------------------------------------
+    public static string HataAyiklamaDosyasi = @"C:\Print360\hata-ayiklama.txt";
+    public static Func<DateTime> HaSimdi = delegate { return DateTime.Now; };
+    static DateTime _haBitis = DateTime.MinValue, _haOkuma = DateTime.MinValue;
+    static string _haOkunanDosya;
+    static readonly object _haKilit = new object();
+
+    public static DateTime HataAyiklamaBitisi()
+    {
+        lock (_haKilit)
+        {
+            DateTime t = HaSimdi();
+            if (_haOkunanDosya == HataAyiklamaDosyasi && (t - _haOkuma).TotalSeconds < 10) return _haBitis;
+            _haOkuma = t; _haOkunanDosya = HataAyiklamaDosyasi;
+            _haBitis = DateTime.MinValue;
+            try
+            {
+                if (File.Exists(HataAyiklamaDosyasi))
+                {
+                    DateTime b;
+                    string ic = File.ReadAllText(HataAyiklamaDosyasi).Trim();
+                    if (DateTime.TryParseExact(ic, "yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture,
+                                               System.Globalization.DateTimeStyles.None, out b)) _haBitis = b;
+                }
+            }
+            catch { }
+            return _haBitis;
+        }
+    }
+
+    public static bool HataAyiklamaAcik() { return HataAyiklamaBitisi() > HaSimdi(); }
+
+    // Acar (sure kadar) ya da kapatir. Basariliysa null, degilse hata mesaji.
+    public static string HataAyiklamaAyarla(bool ac, TimeSpan sure)
+    {
+        try
+        {
+            if (ac)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(HataAyiklamaDosyasi));
+                File.WriteAllText(HataAyiklamaDosyasi, HaSimdi().Add(sure).ToString("yyyy-MM-dd HH:mm:ss"));
+            }
+            else if (File.Exists(HataAyiklamaDosyasi)) File.Delete(HataAyiklamaDosyasi);
+            lock (_haKilit) _haOkuma = DateTime.MinValue;   // hemen gecerli olsun
+            return null;
+        }
+        catch (Exception ex) { return ex.Message; }
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+    static extern int GetOEMCP();
+    public static Encoding KonsolKodlamasi()
+    {
+        try { return Encoding.GetEncoding(GetOEMCP()); } catch { return Encoding.Default; }
+    }
+
+    // Gizli bilgiyi maskele: "ClientKey=abc" -> "ClientKey=*** (3 karakter)"
+    public static string GizliMaskele(string satir)
+    {
+        if (satir == null) return null;
+        int e = satir.IndexOf('=');
+        if (e <= 0) return satir;
+        string ad = satir.Substring(0, e).Trim().ToLowerInvariant();
+        if (ad == "clientkey" || ad == "password" || ad == "sifre" || ad == "pwd" || ad.Contains("password") || ad.Contains("sifre") || ad == "key")
+        {
+            string deger = satir.Substring(e + 1).Trim();
+            return satir.Substring(0, e + 1) + (deger.Length == 0 ? "(bos)" : "*** (" + deger.Length + " karakter)");
+        }
+        return satir;
+    }
+
+    // ------------------------------------------------------------------
     // KLASOR DENETIMI (baslangicta). Klasor yoksa olusturulur; yazma izni,
     // disk doluluğu ayri ayri sinanir. Sorun yoksa bos liste doner.
     // Eskiden izin sorunu ilk iste, belirsiz bir "Erisim engellendi" ile
@@ -208,6 +287,21 @@ static class Ortak
     // ------------------------------------------------------------------
     public static string BaglantiHatasiAcikla(WebExceptionStatus durum, int httpKodu, string ham, string makine)
     {
+        return BaglantiHatasiAcikla(durum, httpKodu, ham, makine, null);
+    }
+
+    // govde: sunucunun yanit govdesi (biliniyorsa). Print360 sifre reddinde
+    // "YETKISIZ" doner; 403 baska bir govdeyle geldiyse onu Print360 degil,
+    // aradaki bir VEKIL SUNUCU ya da guvenlik duvari vermistir. Eskiden her 403
+    // "istemci sifresi reddedildi" sayiliyordu - yanlis yere yonlendiriyordu.
+    public static string BaglantiHatasiAcikla(WebExceptionStatus durum, int httpKodu, string ham, string makine, string govde)
+    {
+        if (httpKodu == 407)
+            return "VEKIL SUNUCU KIMLIK DOGRULAMASI ISTIYOR (407): bu makinenin Windows vekil (proxy) ayari Print360 "
+                 + "sunucusuna giden baglantiyi kendi uzerinden geciriyor. Sunucu adresini vekil istisnalarina ekleyin. | " + ham;
+        if (httpKodu == 403 && govde != null && govde.IndexOf("YETKISIZ", StringComparison.Ordinal) < 0)
+            return "ERISIM ENGELLENDI (403) AMA YANIT PRINT360'TAN GELMIYOR: arada bir vekil sunucu (proxy) ya da "
+                 + "guvenlik duvari baglantiyi engelliyor. Sunucu adresini vekil istisnalarina ekleyin. | " + ham;
         if (httpKodu == 403)
             return "ISTEMCI SIFRESI REDDEDILDI (403): bu makine sunucuda BASKA bir sifreyle kayitli. "
                  + "Print360.ini icindeki ClientKey'i sunucudakiyle ayni yapin ya da sunucu panelinden '"
@@ -225,8 +319,10 @@ static class Ortak
             case WebExceptionStatus.Timeout:
                 return "ZAMAN ASIMI: sunucu yanit vermedi - ag cok yavas ya da sunucu asiri mesgul | " + ham;
             case WebExceptionStatus.TrustFailure:
+                return "SERTIFIKA REDDEDILDI: sunucu sertifikasi degismis ya da Print360.ini'deki CertHash eslesmiyor | " + ham;
             case WebExceptionStatus.SecureChannelFailure:
-                return "GUVENLI BAGLANTI KURULAMADI: sunucu sertifikasi degismis ya da Print360.ini'deki CertHash eslesmiyor | " + ham;
+                return "GUVENLI BAGLANTI KURULAMADI: TLS surumu uyusmuyor olabilir (eski Windows'ta TLS 1.2 kapali) "
+                     + "ya da sunucu sertifikasi degismis / CertHash eslesmiyor | " + ham;
             case WebExceptionStatus.ReceiveFailure:
             case WebExceptionStatus.ConnectionClosed:
             case WebExceptionStatus.KeepAliveFailure:
@@ -244,8 +340,66 @@ static class Ortak
         if (wex == null) return ex.Message;
         var r = wex.Response as HttpWebResponse;
         int kod = 0;
-        try { if (r != null) kod = (int)r.StatusCode; } catch { }
-        return BaglantiHatasiAcikla(wex.Status, kod, wex.Message, makine);
+        string govde = null;
+        try
+        {
+            if (r != null)
+            {
+                kod = (int)r.StatusCode;
+                using (var st = r.GetResponseStream())
+                {
+                    var b = new byte[2048];
+                    int n = st.Read(b, 0, b.Length);
+                    govde = Encoding.UTF8.GetString(b, 0, Math.Max(0, n));
+                }
+            }
+        }
+        catch { }
+        return BaglantiHatasiAcikla(wex.Status, kod, wex.Message, makine, govde);
+    }
+
+    // ------------------------------------------------------------------
+    // VEKIL SUNUCU (PROXY) KARARI. .NET varsayilan olarak Windows'un vekil
+    // ayarini kullanir. Bazi makinelerde bu ayar Print360 sunucusuna giden
+    // baglantiyi da vekile yonlendirir ve vekil bunu engeller; ayni makine
+    // RDP ile sunucuya DOGRUDAN baglanabildigi halde cikti alamaz. Tersi de
+    // olabilir: sunucuya yalnizca vekil uzerinden ulasilir.
+    // Kural: varsayilan (sistem ayari) ile baslanir; ulasilamazsa VE bu adres
+    // icin bir vekil tanimliysa diger yol denenir. Calisan yol korunur.
+    // ------------------------------------------------------------------
+    public static volatile bool DogrudanBaglan;     // false: Windows vekil ayari (varsayilan)
+    public static Func<Uri, Uri> VekilBul = delegate(Uri hedef)
+    {
+        try
+        {
+            var sp = WebRequest.GetSystemWebProxy();
+            if (sp.IsBypassed(hedef)) return null;
+            Uri v = sp.GetProxy(hedef);
+            return (v == null || v == hedef || v.Equals(hedef)) ? null : v;
+        }
+        catch { return null; }
+    };
+
+    // Istege uygulanacak vekil: null = dogrudan; varsayilanda dokunulmaz.
+    public static void VekilUygula(HttpWebRequest istek)
+    {
+        if (DogrudanBaglan) istek.Proxy = null;
+    }
+
+    // Ulasilamama hatasindan sonra cagrilir. Yol degistiyse gunluge yazilacak
+    // aciklamayi, degismediyse null doner.
+    public static string VekilDegerlendir(Uri hedef, WebExceptionStatus durum, int httpKodu)
+    {
+        bool ulasilamadi = durum == WebExceptionStatus.ConnectFailure || durum == WebExceptionStatus.Timeout
+                        || durum == WebExceptionStatus.NameResolutionFailure || durum == WebExceptionStatus.ProxyNameResolutionFailure
+                        || httpKodu == 407 || (httpKodu == 403 && !DogrudanBaglan);
+        if (!ulasilamadi || hedef == null) return null;
+        Uri vekil = VekilBul(hedef);
+        if (vekil == null) return null;            // vekil yok: denenecek baska yol yok
+        DogrudanBaglan = !DogrudanBaglan;
+        return DogrudanBaglan
+            ? "BAGLANTI YOLU DEGISTI: Windows vekil sunucusu (" + vekil + ") uzerinden ulasilamadi; sunucuya DOGRUDAN baglanilacak"
+            : "BAGLANTI YOLU DEGISTI: dogrudan ulasilamadi; Windows vekil sunucusu (" + vekil + ") uzerinden denenecek";
     }
 
     // ------------------------------------------------------------------
@@ -289,6 +443,62 @@ static class Ortak
             return true;
         }
         catch (Exception ex) { neden = "dosya okunamadi: " + ex.Message; return false; }
+    }
+}
+
+// ------------------------------------------------------------------
+// SUNUCU SAGLIGI. Istemci birden fazla sunucuyu SIRAYLA yoklar (kullanici
+// birkac RDP sunucusuna bagli). Print360 olmayan ve guvenlik duvari paketleri
+// sessizce dusuren bir sunucu her turda baglanti zaman asimina kadar
+// (20-60 sn) bekletiyor, GERCEK sunucudan gelen cikti dakikalarca
+// gecikiyordu. Ulasilamayan sunucu artan surelerle (30 sn, 1, 2, 4, 8, en
+// fazla 10 dk) atlanir; ulasilinca hemen normale doner. Yalnizca ULASILAMAMA
+// hatalari sayilir (403/500 gibi HTTP yanitlari sunucunun orada oldugunu gosterir).
+// ------------------------------------------------------------------
+class SunucuSagligi
+{
+    class Durum { public int Hata; public DateTime Sonraki; public string Sebep; }
+    readonly Dictionary<string, Durum> d = new Dictionary<string, Durum>(StringComparer.OrdinalIgnoreCase);
+    public Func<DateTime> Simdi = delegate { return DateTime.Now; };
+    public static readonly TimeSpan EnFazla = TimeSpan.FromMinutes(10);
+
+    public bool Denenebilir(string url)
+    {
+        lock (d) { Durum x; return !d.TryGetValue(url, out x) || Simdi() >= x.Sonraki; }
+    }
+
+    // Ulasildi. Onceden ulasilamiyorduysa gunluge yazilacak satiri doner.
+    public string Basarili(string url)
+    {
+        lock (d)
+        {
+            Durum x;
+            if (!d.TryGetValue(url, out x)) return null;
+            d.Remove(url);
+            return "SUNUCU YENIDEN ERISILEBILIR: " + url + " (" + x.Hata + " basarisiz denemeden sonra)";
+        }
+    }
+
+    // Ulasilamadi. Ilk kez ya da bekleme suresi degistiginde gunluge yazilacak satiri doner.
+    public string Basarisiz(string url, string sebep)
+    {
+        lock (d)
+        {
+            Durum x;
+            if (!d.TryGetValue(url, out x)) { x = new Durum(); d[url] = x; }
+            x.Hata++;
+            double sn = Math.Min(30 * Math.Pow(2, x.Hata - 1), EnFazla.TotalSeconds);
+            x.Sonraki = Simdi().AddSeconds(sn);
+            x.Sebep = sebep;
+            return "SUNUCU ERISILEMIYOR: " + url + " | " + sebep + " | " + (sn < 60 ? (int)sn + " sn" : (int)(sn / 60) + " dk")
+                 + " sonra yeniden denenecek (diger sunucular bu arada bekletilmez)";
+        }
+    }
+
+    public static bool UlasilamamaMi(WebExceptionStatus durum)
+    {
+        return durum == WebExceptionStatus.ConnectFailure || durum == WebExceptionStatus.Timeout
+            || durum == WebExceptionStatus.NameResolutionFailure || durum == WebExceptionStatus.ProxyNameResolutionFailure;
     }
 }
 

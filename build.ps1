@@ -87,6 +87,7 @@ if ($LASTEXITCODE -ne 0) { throw "ServerAgent derlemesi basarisiz." }
 Ok "Print360.ServerAgent.exe"
 
 & $csc /nologo /target:winexe /r:System.DirectoryServices.dll /r:System.Data.dll /r:"$sqliteRef" `
+    /r:System.IO.Compression.dll `
     /out:"$binS\Print360.Dashboard.exe" "$root\server\Print360.Dashboard.cs" $db $ortak $lic $verCs $asmCs
 if ($LASTEXITCODE -ne 0) { throw "Dashboard derlemesi basarisiz." }
 Ok "Print360.Dashboard.exe"
@@ -101,7 +102,8 @@ if ($LASTEXITCODE -ne 0) { throw "Panel derlemesi basarisiz." }
 Ok "Print360.Panel.exe (saf WPF - harici bilesen yok)"
 
 & $csc /nologo /target:winexe /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Management.dll `
-    /out:"$binC\Print360.ClientAgent.exe" "$root\client\Print360.ClientAgent.cs" $ortak $verCs $asmCs
+    /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll `
+    /out:"$binC\Print360.ClientAgent.exe" "$root\client\Print360.ClientAgent.cs" "$root\client\Print360.Tani.cs" $ortak $verCs $asmCs
 if ($LASTEXITCODE -ne 0) { throw "ClientAgent derlemesi basarisiz." }
 Ok "Print360.ClientAgent.exe (v$fullVer)"
 

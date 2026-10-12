@@ -194,6 +194,7 @@ static class Kurulum
 
         // --- 0) ESKI SURUMU KOKTEN SIL (eski binary kalmasin) ---
         EskiSurumuTemizle(true);
+        SistemKalintilariTemizle(true, httpPort, httpsPort);
 
         // --- 1) Klasorler + izinler ---
         foreach (var d in new[] { BASE, "spool", "logs", "stats", @"stats\clients", "archive", "queue", "update" })
@@ -219,9 +220,13 @@ static class Kurulum
         Yaz("[3/8] Bilesenler yerlestirildi.");
 
         // --- 4) db.ini ---
-        string sqlSrv = Al(p, "sqlserver", Environment.MachineName);
-        string sqlUsr = Al(p, "sqluser", "sa");
         string sqlPwd = Al(p, "sqlpwd");   // varsayilan sifre YOK - kullanici girer
+        // SQL secilmediyse ve parola verilmediyse MSSQL bilgisi YAZILMAZ: eskiden
+        // "Server=<makine>, User=sa, Password=(bos)" yaziliyor, panel yerel SQL
+        // Server'a bos parolayla 'sa' girisi deniyordu (bkz. Db.ConnStr).
+        bool sqlVar = sqlKur || sqlPwd.Length > 0;
+        string sqlSrv = sqlVar ? Al(p, "sqlserver", Environment.MachineName) : "";
+        string sqlUsr = sqlVar ? Al(p, "sqluser", "sa") : "";
         AyarYaz(Path.Combine(BASE, "db.ini"),
             "Server=" + sqlSrv + "\r\nDatabase=Print360\r\nUser=" + sqlUsr + "\r\nPassword=" + sqlPwd +
             "\r\nHttpPort=" + httpPort + "\r\nHttpsPort=" + httpsPort +
@@ -271,6 +276,7 @@ static class Kurulum
         // Onceki kurulumdan kalan Print360 yazicilarini KALDIR: kullanici yazdirma
         // ekraninda birden fazla Print360 yazicisi gorup kafasi karismasin.
         ZamanSinirli("Eski Print360 yazicilarini kaldirma", 30, () => YazicilariSil());
+        ZamanSinirli("Eski yazici portlarini kaldirma", 30, () => EskiPortlariSil());
 
         // TEK YAZICI: "Print360 - <kullanici>". Davranis kurulumda secilen moda
         // gore PORT ile belirlenir (ajan uc spool dosyasini da izler):
@@ -311,6 +317,7 @@ static class Kurulum
 
         // --- 8) Ag: urlacl + guvenlik duvari + HTTPS sertifikasi ---
         AgHazirla(httpPort, httpsPort);
+        KurulumKaydiYaz("sunucu", "httpport=" + httpPort, "httpsport=" + httpsPort);
         Yaz("[7/8] Ag ve HTTPS hazir (HTTP " + httpPort + " / HTTPS " + httpsPort + ").");
 
         // --- 9) Otomatik baslatma + kisayol + ajanlari baslat ---
@@ -319,9 +326,16 @@ static class Kurulum
                 Path.Combine(BASE, "Print360.Panel.exe"), "Print360 yonetim paneli");
         PaneliBaslat(panelGoreviKuruldu);
         Baslat(Path.Combine(BASE, "Print360.ServerAgent.exe"));
-        System.Threading.Thread.Sleep(1500);
+        // GUNCELLEME TUM OTURUMLARDAKI AJANLARI KAPATIR. Eskiden yalnizca kurulumu
+        // yapanin oturumunda yeniden baslatiliyordu: diger kullanicilarin ciktilari
+        // oturumlarini kapatip acana kadar spool'da bekliyordu ("bazi kullanicilarda
+        // calismiyor"). Gorev kullanici grubuna kayitli oldugundan istege bagli
+        // calistirma, oturum acmis kullanicilarin oturumlarinda ajani baslatir.
+        Calistir("schtasks.exe", "/Run /TN \"Print360 Yazdirma Ajani\"", 20);
+        System.Threading.Thread.Sleep(4000);
         if (Process.GetProcessesByName("Print360.ServerAgent").Length == 0)
             Uyari("Yazdirma ajani baslatilamadi. Elle: " + Path.Combine(BASE, "Print360.ServerAgent.exe"));
+        AjanKapsamiRaporu();
         Yaz("[8/8] Otomatik baslatma kuruldu, ajanlar calisiyor.");
     }
 
@@ -334,6 +348,8 @@ static class Kurulum
 
         // --- 0) ESKI SURUMU KOKTEN SIL (eski binary kalmasin) ---
         EskiSurumuTemizle(false);
+        SistemKalintilariTemizle(false, null, null);
+        KurulumKaydiYaz("istemci");
 
         foreach (var d in new[] { BASE, "jobs", "done", "failed", "logs", "stats" })
             Directory.CreateDirectory(d == BASE ? BASE : Path.Combine(BASE, d));
@@ -360,12 +376,30 @@ static class Kurulum
             // mimarisine gore YALNIZCA dogru dala yazilir.
             //   x64 DLL -> SOFTWARE\Microsoft\...            (64-bit gorunum)
             //   x86 DLL -> SOFTWARE\WOW6432Node\Microsoft\... (32-bit gorunum)
+            bool kayitAtla = false;
             bool altmisDort = PeX64(vcDll);
             string dogruKok = EklentiKoku(altmisDort);
             string yanlisKok = EklentiKoku(!altmisDort);
+            if (!VcKaydiYapilmali(Environment.Is64BitOperatingSystem, altmisDort))
+            {
+                // 32-bit Windows: tek kayit dali vardir ve 32-bit mstsc 64-bit DLL'i
+                // YUKLEYEMEZ. Kaydedersek eklenti yuklenemez (eski surumlerde RDP hic
+                // acilmiyordu). Kaydetme, eski kaydi da kaldir; istemci HTTPS ile calisir.
+                try
+                {
+                    using (var k = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+                               @"SOFTWARE\Microsoft\Terminal Server Client\Default\AddIns", true))
+                        if (k != null) k.DeleteSubKeyTree("Print360", false);
+                }
+                catch { }
+                Uyari("32-BIT WINDOWS: RDP kanal eklentisi 64-bit oldugu icin bu makinede kullanilamaz; kaydedilmedi. "
+                    + "Istemci HTTPS ile calisir - sunucu adresi ve 8443 portu bu makineden erisilebilir olmali.");
+                kayitAtla = true;
+            }
 
             // Onceki surumlerin yanlis dala yazdigi kayit varsa TEMIZLE - aksi
             // halde o makinede RDP acilmamaya devam ederdi.
+            if (!kayitAtla)
             try
             {
                 string ust = yanlisKok.Substring(0, yanlisKok.LastIndexOf(Path.DirectorySeparatorChar));
@@ -379,13 +413,15 @@ static class Kurulum
             catch { }
 
             int kayitOk = 0;
+            if (!kayitAtla)
             try
             {
                 using (var k = Microsoft.Win32.Registry.LocalMachine.CreateSubKey(dogruKok))
                     if (k != null) { k.SetValue("Name", vcDll); kayitOk++; }
             }
             catch (Exception ex) { Yaz("  Kayit yazilamadi (" + dogruKok + "): " + ex.Message); }
-            if (kayitOk > 0)
+            if (kayitAtla) { }
+            else if (kayitOk > 0)
                 Yaz("[3/5] RDP kanal eklentisi kuruldu (sonraki RDP oturumunda etkinlesir).");
             else
                 Uyari("RDP kanal eklentisi KAYDEDILEMEDI (yonetici yetkisi gerekir). " +
@@ -431,8 +467,7 @@ static class Kurulum
         catch (Exception ex) { Uyari("Otomatik baslatma kaydi yazilamadi: " + ex.Message); }
         Kisayol(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory), "Print360 Durum.lnk"),
                 exe, "Print360 istemci durumu (baglanti, yazicilar, gorevler)");
-        Baslat(exe);
-        Yaz("[5/5] Ajan calisiyor, oturum acilisinda otomatik baslayacak.");
+        IstemciAjaniniBaslat(exe);
     }
 
     // ============================================================
@@ -479,15 +514,17 @@ static class Kurulum
             foreach (var pr in Process.GetProcessesByName(a))
                 try { pr.Kill(); pr.WaitForExit(4000); } catch { }
 
+        // ESKI SURUM KALINTILARI: GENEL KURAL (bkz. KalintiTemizle).
+        // Eskiden yalnizca kok klasordeki *.exe/*.dll siliniyordu: her surumun
+        // biraktigi baska turden dosyalar (betik, eski lisans dosyasi, gecici
+        // guncelleme dosyasi, artik kullanilmayan klasorler) birikiyordu. Ustelik
+        // istemci kurulumu, ayni makinede kurulu SUNUCUNUN dosyalarini da siliyordu.
         int silinen = 0;
-        foreach (var f in Directory.GetFiles(BASE))
+        foreach (var satir in KalintiTemizle(BASE, sunucu, DateTime.Now))
         {
-            string ad = Path.GetFileName(f);
-            if (ad.Equals("SumatraPDF.exe", StringComparison.OrdinalIgnoreCase)) continue;  // buyuk indirme, korunur
-            if (!ad.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
-                !ad.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)) continue;
-            try { File.Delete(f); silinen++; }
-            catch (Exception ex) { Uyari("Eski dosya silinemedi (" + ad + "): " + ex.Message + " - calisiyor olabilir."); }
+            if (satir.StartsWith("SILINEMEDI")) Uyari(satir + " - calisiyor olabilir.");
+            else if (satir.StartsWith("GUNCELLENECEK")) silinen++;
+            else { Yaz("  " + satir); silinen++; }
         }
         // SADECE "update" bosaltilir: orada otomatik guncelleme icin indirilen
         // gecici ikililer durur, yeni surumle karismamalidir.
@@ -500,20 +537,440 @@ static class Kurulum
         // olmadan yok ediyordu. Guncelleme veri kaybettirmemelidir.
         silinen += KlasorBosalt(Path.Combine(BASE, "update"));
 
-        int bekleyen = 0;
-        try
-        {
-            string q = Path.Combine(BASE, "queue");
-            if (Directory.Exists(q)) bekleyen = Directory.GetFiles(q, "*.gz", SearchOption.AllDirectories).Length;
-            string sp = Path.Combine(BASE, "spool");
-            if (Directory.Exists(sp)) bekleyen += Directory.GetFiles(sp).Length;
-        }
-        catch { }
-        if (bekleyen > 0)
-            Yaz("  Bekleyen " + bekleyen + " is KORUNDU (kuyruk ve spool silinmedi).");
+        // ONCEKI SURUMDEN KALAN BEKLEYEN ISLER: korunur VE ayrintili raporlanir
+        // (hangi makine, kac is, en eskisi ne zaman, yeni surum onlara ne yapacak).
+        foreach (var satir in BekleyenRaporu(BASE, sunucu, DateTime.Now)) Yaz("  " + satir);
 
         Yaz("[0/" + (sunucu ? "8" : "5") + "] Eski surum temizlendi (" + silinen +
             " dosya silindi; gunlukler, arsiv ve ayarlar korundu).");
+    }
+
+    // ============================================================
+    //   ESKI SURUM KALINTILARI - GENEL KURAL
+    //
+    //   Her yeni surum, bir onceki surumun biraktigi ama artik kullanilmayan
+    //   seyleri (dosya, klasor, Run kaydi, zamanlanmis gorev, guvenlik duvari
+    //   kurali, yazici portu, sertifika, kisayol) temizlemeli. Eskiden kurulum
+    //   yalnizca ADINI BILDIGI eski ogeleri siliyordu; listeye girmeyen her
+    //   yeni kalinti birikiyordu.
+    //
+    //   Artik ters calisir: BU SURUMUN sahip oldugu ogeler listelidir.
+    //   Print360'a ait olup listede OLMAYAN her sey kalintidir:
+    //     - ikili/betik dosyalari silinir (yeniden uretilebilir),
+    //     - bilinmeyen dosya ve klasorler SILINMEZ, eski-surum-kalintilari\<tarih>
+    //       altina tasinir (veri kaybi yok, kok klasor temiz),
+    //     - kullanici verisi ve ayarlara HIC dokunulmaz.
+    //   Diger rolun (ayni makinede kurulu sunucu/istemci) ogeleri korunur.
+    // ============================================================
+    internal const string KALINTI_KLASORU = "eski-surum-kalintilari";
+    internal static readonly string[] SunucuIkilileri = {
+        "Print360.ServerAgent.exe", "Print360.Dashboard.exe", "Print360.Panel.exe", "System.Data.SQLite.dll" };
+    internal static readonly string[] IstemciIkilileri = { "Print360.ClientAgent.exe", "Print360.VC.dll" };
+    // Iki rolun da tuttugu, kurulumda silinmeyen dosyalar
+    internal static readonly string[] OrtakKorunan = { "SumatraPDF.exe", "Print360.ico" };
+    // Kullanici verisi ve ayarlar - ASLA dokunulmaz
+    internal static readonly string[] VeriDosyalari = {
+        "Print360.ini", "db.ini", "mail.ini", "panel.pwd", "cert-thumbprint.txt", "rules.csv",
+        "print360.db", "print360.db-journal", "print360.db-wal", "print360.db-shm",
+        "kimlik.txt", "makine-adi.txt", "SumatraPDF-settings.txt",
+        "kurulum-sunucu.txt", "kurulum-istemci.txt", "hata-ayiklama.txt" };
+    internal static readonly string[] BilinenKlasorler = {
+        "logs", "stats", "archive", "queue", "queue-suresi-dolan", "spool", "update",
+        "jobs", "done", "failed", "vc-outbox", "sumatrapdfcache", "x64", "x86", KALINTI_KLASORU };
+    static readonly string[] IkiliUzantilar = {
+        ".exe", ".dll", ".pdb", ".config", ".new", ".old", ".bak", ".cmd", ".bat", ".ps1", ".vbs",
+        ".xml", ".tmp", ".manifest", ".application" };
+
+    static bool Icinde(string[] liste, string ad)
+    {
+        foreach (var x in liste) if (string.Equals(x, ad, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
+
+    // Kok klasordeki kalintilari temizler; yapilan her isi bir satirla doner.
+    // Satir onekleri: GUNCELLENECEK (bu rolun ikilisi, yenisi kopyalanacak),
+    // SILINDI, KENARA ALINDI, SILINEMEDI.
+    internal static List<string> KalintiTemizle(string kok, bool sunucu, DateTime simdi)
+    {
+        var r = new List<string>();
+        if (!Directory.Exists(kok)) return r;
+        string[] benim = sunucu ? SunucuIkilileri : IstemciIkilileri;
+        string[] diger = sunucu ? IstemciIkilileri : SunucuIkilileri;
+        string kalinti = Path.Combine(Path.Combine(kok, KALINTI_KLASORU), simdi.ToString("yyyyMMdd_HHmmss"));
+
+        foreach (var f in Directory.GetFiles(kok))
+        {
+            string ad = Path.GetFileName(f);
+            if (Icinde(VeriDosyalari, ad) || Icinde(OrtakKorunan, ad) || Icinde(diger, ad)) continue;
+            if (Icinde(benim, ad))
+            {
+                try { File.Delete(f); r.Add("GUNCELLENECEK: " + ad); }
+                catch (Exception ex) { r.Add("SILINEMEDI: " + ad + " (" + ex.Message + ")"); }
+                continue;
+            }
+            if (Icinde(IkiliUzantilar, Path.GetExtension(ad)))
+            {
+                try { File.Delete(f); r.Add("SILINDI (eski surum dosyasi): " + ad); }
+                catch (Exception ex) { r.Add("SILINEMEDI: " + ad + " (" + ex.Message + ")"); }
+                continue;
+            }
+            try
+            {
+                Directory.CreateDirectory(kalinti);
+                File.Move(f, Path.Combine(kalinti, ad));
+                r.Add("KENARA ALINDI (bu surumde kullanilmiyor): " + ad + " -> " + KALINTI_KLASORU + "\\" + Path.GetFileName(kalinti));
+            }
+            catch (Exception ex) { r.Add("SILINEMEDI: " + ad + " tasinamadi (" + ex.Message + ")"); }
+        }
+
+        foreach (var d in Directory.GetDirectories(kok))
+        {
+            string ad = Path.GetFileName(d);
+            if (Icinde(BilinenKlasorler, ad)) continue;
+            try
+            {
+                Directory.CreateDirectory(kalinti);
+                Directory.Move(d, Path.Combine(kalinti, ad));
+                r.Add("KENARA ALINDI (bu surumde kullanilmayan klasor): " + ad + "\\ -> " + KALINTI_KLASORU + "\\" + Path.GetFileName(kalinti));
+            }
+            catch (Exception ex) { r.Add("SILINEMEDI: klasor " + ad + " tasinamadi (" + ex.Message + ")"); }
+        }
+
+        // x64\ ve x86\ yalnizca SQLite cekirdegini tutar
+        foreach (var mim in new[] { "x64", "x86" })
+        {
+            string md = Path.Combine(kok, mim);
+            if (!Directory.Exists(md)) continue;
+            foreach (var f in Directory.GetFiles(md))
+            {
+                string ad = Path.GetFileName(f);
+                if (ad.Equals("SQLite.Interop.dll", StringComparison.OrdinalIgnoreCase)) continue;
+                if (!Icinde(IkiliUzantilar, Path.GetExtension(ad))) continue;
+                try { File.Delete(f); r.Add("SILINDI (eski surum dosyasi): " + mim + "\\" + ad); }
+                catch (Exception ex) { r.Add("SILINEMEDI: " + mim + "\\" + ad + " (" + ex.Message + ")"); }
+            }
+        }
+        return r;
+    }
+
+    // ------------------------------------------------------------
+    // ONCEKI SURUMDEN KALAN BEKLEYEN ISLER (rapor; hicbir sey silinmez).
+    // ------------------------------------------------------------
+    internal static List<string> BekleyenRaporu(string kok, bool sunucu, DateTime simdi)
+    {
+        var r = new List<string>();
+        try
+        {
+            if (sunucu)
+            {
+                string q = Path.Combine(kok, "queue");
+                int toplam = 0, eski = 0, makine = 0, karantina = 0;
+                DateTime enEski = DateTime.MaxValue;
+                var satirlar = new List<string>();
+                if (Directory.Exists(q))
+                    foreach (var d in Directory.GetDirectories(q))
+                    {
+                        var fs = new DirectoryInfo(d).GetFiles("*.gz");
+                        string sorunlu = Path.Combine(d, "_sorunlu");
+                        if (Directory.Exists(sorunlu)) karantina += Directory.GetFiles(sorunlu, "*.gz").Length;
+                        if (fs.Length == 0) continue;
+                        makine++; toplam += fs.Length;
+                        DateTime mEski = DateTime.MaxValue;
+                        foreach (var f in fs)
+                        {
+                            if (f.CreationTime < mEski) mEski = f.CreationTime;
+                            if ((simdi - f.CreationTime).TotalDays >= 7) eski++;
+                        }
+                        if (mEski < enEski) enEski = mEski;
+                        satirlar.Add("    " + Path.GetFileName(d) + ": " + fs.Length + " is, en eskisi " + mEski.ToString("yyyy-MM-dd HH:mm"));
+                    }
+                if (toplam == 0) r.Add("Onceki surumden bekleyen is yok (queue bos).");
+                else
+                {
+                    r.Add("ONCEKI SURUMDEN BEKLEYEN " + toplam + " IS KORUNDU (" + makine + " makine, en eskisi "
+                        + enEski.ToString("yyyy-MM-dd") + "):");
+                    satirlar.Sort();
+                    for (int i = 0; i < satirlar.Count && i < 15; i++) r.Add(satirlar[i]);
+                    if (satirlar.Count > 15) r.Add("    ... ve " + (satirlar.Count - 15) + " makine daha");
+                    r.Add("  Makine baglaninca isler teslim edilir.");
+                    if (eski > 0)
+                        r.Add("  " + eski + " is 7 gunden eski: yeni surum bunlari otomatik teslim etmez, panel > Kuyruk'ta "
+                            + "'Suresi dolan' olarak gosterir (silinmez; 'Yeniden gonder' ile gonderilebilir).");
+                }
+                if (karantina > 0) r.Add("Karantinada " + karantina + " is var (panel > Kuyruk).");
+
+                string sp = Path.Combine(kok, "spool");
+                if (Directory.Exists(sp))
+                {
+                    var fs = new DirectoryInfo(sp).GetFiles("*.pdf");
+                    if (fs.Length > 0)
+                    {
+                        r.Add("SPOOL'DA " + fs.Length + " YAKALANMIS AMA GONDERILMEMIS CIKTI KORUNDU:");
+                        foreach (var f in fs)
+                            r.Add("    " + f.Name + " (" + f.LastWriteTime.ToString("yyyy-MM-dd HH:mm") + ", " + Math.Max(1, f.Length / 1024)
+                                + " KB) - kullanicinin ajani oturum acinca gonderilir");
+                    }
+                }
+            }
+            else
+            {
+                string j = Path.Combine(kok, "jobs");
+                if (Directory.Exists(j))
+                {
+                    int n = 0;
+                    foreach (var f in Directory.GetFiles(j))
+                        if (!f.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase)) n++;
+                    if (n > 0) r.Add("ONCEKI SURUMDEN YAZDIRILMAMIS " + n + " IS KORUNDU: ajan acilinca yazdirilacak (jobs\\).");
+                }
+                string fl = Path.Combine(kok, "failed");
+                if (Directory.Exists(fl))
+                {
+                    int n = Directory.GetFiles(fl).Length;
+                    if (n > 0) r.Add("Daha once basilamamis " + n + " is inceleme icin failed\\ klasorunde duruyor (yeniden denenmez).");
+                }
+            }
+        }
+        catch (Exception ex) { r.Add("Bekleyen is raporu olusturulamadi: " + ex.Message); }
+        return r;
+    }
+
+    // ------------------------------------------------------------
+    // SISTEM KALINTILARI: Run kayitlari, zamanlanmis gorevler, kisayollar;
+    // sunucuda ek olarak guvenlik duvari kurallari, eski portlarin HTTPS
+    // kayitlari ve suresi dolmus Print360 sertifikalari.
+    // ------------------------------------------------------------
+    internal static readonly string[] GecerliRunAdlari = { "Print360ServerAgent", "Print360ClientAgent", "Print360Dashboard" };
+    internal static readonly string[] GecerliGorevler = { "Print360 Yazdirma Ajani", "Print360 Panel Sunucusu" };
+    internal static readonly string[] GecerliKisayollar = { "Print360 Panel.lnk", "Print360 Durum.lnk" };
+
+    internal static bool RunKalintiMi(string ad, string veri)
+    {
+        ad = ad ?? ""; veri = veri ?? "";
+        bool bizim = ad.StartsWith("Print360", StringComparison.OrdinalIgnoreCase)
+                  || veri.IndexOf(@"\Print360\", StringComparison.OrdinalIgnoreCase) >= 0;
+        return bizim && !Icinde(GecerliRunAdlari, ad);
+    }
+
+    // tamYol: "\Gorev" ya da "\Klasor\Gorev"
+    internal static bool GorevKalintiMi(string tamYol)
+    {
+        tamYol = (tamYol ?? "").Trim().Trim('"');
+        if (tamYol.Length == 0) return false;
+        string ad = tamYol.Substring(tamYol.LastIndexOf('\\') + 1);
+        bool bizim = ad.StartsWith("Print360", StringComparison.OrdinalIgnoreCase)
+                  || tamYol.StartsWith(@"\Print360\", StringComparison.OrdinalIgnoreCase);
+        return bizim && !Icinde(GecerliGorevler, ad);
+    }
+
+    internal static bool KuralKalintiMi(string ad, string httpPort, string httpsPort)
+    {
+        if (string.IsNullOrEmpty(ad) || !ad.StartsWith("Print360", StringComparison.OrdinalIgnoreCase)) return false;
+        return !ad.Equals("Print360 " + httpPort, StringComparison.OrdinalIgnoreCase)
+            && !ad.Equals("Print360 " + httpsPort, StringComparison.OrdinalIgnoreCase);
+    }
+
+    static void SistemKalintilariTemizle(bool sunucu, string httpPort, string httpsPort)
+    {
+        int n = 0;
+        // 1) Run kayitlari (64 ve 32 bit gorunum + kurulumu yapan kullanici)
+        var kokler = new List<Microsoft.Win32.RegistryKey>();
+        try { kokler.Add(Microsoft.Win32.RegistryKey.OpenBaseKey(Microsoft.Win32.RegistryHive.LocalMachine, Microsoft.Win32.RegistryView.Registry64)); } catch { }
+        try { kokler.Add(Microsoft.Win32.RegistryKey.OpenBaseKey(Microsoft.Win32.RegistryHive.LocalMachine, Microsoft.Win32.RegistryView.Registry32)); } catch { }
+        try { kokler.Add(Microsoft.Win32.Registry.CurrentUser); } catch { }
+        foreach (var kk in kokler)
+        {
+            try
+            {
+                using (var k = kk.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true))
+                {
+                    if (k == null) continue;
+                    foreach (var ad in k.GetValueNames())
+                    {
+                        string veri = Convert.ToString(k.GetValue(ad));
+                        if (!RunKalintiMi(ad, veri)) continue;
+                        k.DeleteValue(ad, false);
+                        Yaz("  KALINTI SILINDI: otomatik baslatma kaydi '" + ad + "' (" + kk.Name + ") -> " + veri);
+                        n++;
+                    }
+                }
+            }
+            catch (Exception ex) { Yaz("  Run kayitlari taranamadi (" + kk.Name + "): " + ex.Message); }
+        }
+
+        // 2) Zamanlanmis gorevler
+        try
+        {
+            string cikti;
+            if (Calistir("schtasks.exe", "/Query /FO CSV /NH", 45, out cikti) == 0)
+            {
+                var gorulen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var satir in cikti.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    if (!satir.StartsWith("\"")) continue;
+                    int son = satir.IndexOf('"', 1);
+                    if (son < 0) continue;
+                    string yol = satir.Substring(1, son - 1);
+                    if (!GorevKalintiMi(yol) || !gorulen.Add(yol)) continue;
+                    if (Calistir("schtasks.exe", "/Delete /TN \"" + yol + "\" /F", 20) == 0)
+                    { Yaz("  KALINTI SILINDI: zamanlanmis gorev '" + yol + "'"); n++; }
+                }
+            }
+        }
+        catch (Exception ex) { Yaz("  Zamanlanmis gorevler taranamadi: " + ex.Message); }
+
+        // 3) Masaustu kisayollari (ortak masaustu)
+        try
+        {
+            string md = Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
+            foreach (var l in Directory.GetFiles(md, "Print360*.lnk"))
+                if (!Icinde(GecerliKisayollar, Path.GetFileName(l)))
+                { File.Delete(l); Yaz("  KALINTI SILINDI: kisayol " + Path.GetFileName(l)); n++; }
+        }
+        catch { }
+
+        if (sunucu)
+        {
+            // 4) Guvenlik duvari: "Print360 Dashboard", "Print360 Dashboard HTTPS" (eski
+            //    PowerShell kurulumu) ve artik kullanilmayan portlarin kurallari
+            ZamanSinirli("Eski guvenlik duvari kurallari", 30, () =>
+            {
+                try
+                {
+                    Type t = Type.GetTypeFromProgID("HNetCfg.FwPolicy2");
+                    if (t == null) return;
+                    dynamic pol = Activator.CreateInstance(t);
+                    var silinecek = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (dynamic kural in pol.Rules)
+                    {
+                        string ad = kural.Name;
+                        if (KuralKalintiMi(ad, httpPort, httpsPort)) silinecek.Add(ad);
+                    }
+                    foreach (var ad in silinecek)
+                    {
+                        for (int i = 0; i < 10; i++) { try { pol.Rules.Remove(ad); } catch { break; } }
+                        Yaz("  KALINTI SILINDI: guvenlik duvari kurali '" + ad + "'");
+                        n++;
+                    }
+                }
+                catch (Exception ex) { Yaz("  Guvenlik duvari taranamadi: " + ex.Message); }
+            });
+
+            // 5) Port degistiyse eski portun HTTPS kayitlari. Yalnizca BIZIM
+            //    olusturdugumuz kayit silinir: onceki kurulumun kaydi (kurulum-sunucu.txt)
+            //    ya da sertifika baglamasinda Print360 uygulama kimligi.
+            // Kayitli portlar: onceki kurulumun KENDI yazdigi (kesin bizim).
+            var kayitliPortlar = new HashSet<string>();
+            try
+            {
+                string kf = Path.Combine(BASE, "kurulum-sunucu.txt");
+                if (File.Exists(kf))
+                    foreach (var l in File.ReadAllLines(kf))
+                        if (l.StartsWith("httpport=") || l.StartsWith("httpsport=")) kayitliPortlar.Add(l.Substring(l.IndexOf('=') + 1).Trim());
+            }
+            catch { }
+            var eskiPortlar = new HashSet<string>(kayitliPortlar);
+            eskiPortlar.Add("8443"); eskiPortlar.Add("8360");   // eski varsayilanlar (kayit oncesi surumler)
+            foreach (var pr in eskiPortlar)
+            {
+                if (pr == httpPort || pr == httpsPort || pr.Length == 0) continue;
+                string c;
+                Calistir("netsh.exe", "http show sslcert ipport=0.0.0.0:" + pr, 20, out c);
+                bool bizimSsl = c.IndexOf("7A3F2B10-360A-4B3B-9E01", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (bizimSsl && Calistir("netsh.exe", "http delete sslcert ipport=0.0.0.0:" + pr, 20) == 0)
+                { Yaz("  KALINTI SILINDI: eski port " + pr + " HTTPS sertifika baglamasi"); n++; }
+                // Erisim kaydi (urlacl) sahibini gostermez: yalnizca bizim oldugu
+                // KANITLANAN portta silinir (kayitta var ya da sertifika bizim).
+                if (bizimSsl || kayitliPortlar.Contains(pr))
+                    foreach (var sema in new[] { "http", "https" })
+                        if (Calistir("netsh.exe", "http delete urlacl url=" + sema + "://+:" + pr + "/", 20) == 0)
+                        { Yaz("  KALINTI SILINDI: eski port " + pr + " " + sema + " erisim kaydi"); n++; }
+            }
+
+            // 6) Suresi dolmus Print360 sertifikalari
+            try
+            {
+                var my = new System.Security.Cryptography.X509Certificates.X509Store(
+                    System.Security.Cryptography.X509Certificates.StoreName.My,
+                    System.Security.Cryptography.X509Certificates.StoreLocation.LocalMachine);
+                my.Open(System.Security.Cryptography.X509Certificates.OpenFlags.ReadWrite);
+                try
+                {
+                    var sil = new List<System.Security.Cryptography.X509Certificates.X509Certificate2>();
+                    foreach (var c in my.Certificates)
+                        if (c.Subject == "CN=Print360" && c.NotAfter < DateTime.Now) sil.Add(c);
+                    foreach (var c in sil)
+                    { my.Remove(c); Yaz("  KALINTI SILINDI: suresi dolmus sertifika " + c.Thumbprint + " (" + c.NotAfter.ToString("yyyy-MM-dd") + ")"); n++; }
+                }
+                finally { my.Close(); }
+            }
+            catch (Exception ex) { Yaz("  Sertifikalar taranamadi: " + ex.Message); }
+        }
+        Yaz("  Sistem kalintilari: " + (n == 0 ? "yok." : n + " oge temizlendi."));
+    }
+
+    // Yazici silindikten sonra geride kalan dosya portlari (C:\Print360\spool\...).
+    // Her kurulum, her kullanici ve her mod icin port ekleniyor, hic silinmiyordu.
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct PORT_INFO_1 { public string pName; }
+    [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern bool EnumPorts(string pName, uint Level, IntPtr pPorts, uint cbBuf, out uint pcbNeeded, out uint pcReturned);
+
+    static void EskiPortlariSil()
+    {
+        var portlar = new List<string>();
+        try
+        {
+            uint gerek, adet;
+            EnumPorts(null, 1, IntPtr.Zero, 0, out gerek, out adet);
+            if (gerek == 0) return;
+            IntPtr buf = Marshal.AllocHGlobal((int)gerek);
+            try
+            {
+                if (!EnumPorts(null, 1, buf, gerek, out gerek, out adet)) return;
+                int boy = Marshal.SizeOf(typeof(PORT_INFO_1));
+                for (int i = 0; i < adet; i++)
+                {
+                    var pi = (PORT_INFO_1)Marshal.PtrToStructure(new IntPtr(buf.ToInt64() + (long)i * boy), typeof(PORT_INFO_1));
+                    if (pi.pName != null && pi.pName.StartsWith(BASE + "\\", StringComparison.OrdinalIgnoreCase)) portlar.Add(pi.pName);
+                }
+            }
+            finally { Marshal.FreeHGlobal(buf); }
+        }
+        catch (Exception ex) { Yaz("  Yazici portlari taranamadi: " + ex.Message); return; }
+        if (portlar.Count == 0) return;
+
+        IntPtr h;
+        var pd = new PRINTER_DEFAULTS { pDatatype = null, pDevMode = IntPtr.Zero, DesiredAccess = SERVER_ACCESS_ADMINISTER };
+        if (!OpenPrinter(",XcvMonitor Local Port", out h, ref pd)) return;
+        int silinen = 0;
+        try
+        {
+            foreach (var port in portlar)
+            {
+                IntPtr b = Marshal.StringToHGlobalUni(port);
+                try
+                {
+                    uint gerek, durum;
+                    if (XcvData(h, "DeletePort", b, (uint)((port.Length + 1) * 2), IntPtr.Zero, 0, out gerek, out durum) && durum == 0) silinen++;
+                }
+                finally { Marshal.FreeHGlobal(b); }
+            }
+        }
+        finally { ClosePrinter(h); }
+        if (silinen > 0) Yaz("  KALINTI SILINDI: " + silinen + " eski yazici portu (" + BASE + "\\spool\\...)");
+    }
+
+    // Bu kurulumun olusturduklari: sonraki kurulum neyin "bizim" oldugunu bilsin.
+    static void KurulumKaydiYaz(string rol, params string[] satirlar)
+    {
+        try
+        {
+            File.WriteAllText(Path.Combine(BASE, "kurulum-" + rol + ".txt"),
+                "surum=" + System.Reflection.Assembly.GetExecutingAssembly().GetName().Version + "\r\n"
+                + "tarih=" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "\r\n"
+                + string.Join("\r\n", satirlar) + "\r\n", Encoding.ASCII);
+        }
+        catch { }
     }
 
     static int KlasorBosalt(string yol)
@@ -1149,6 +1606,13 @@ static class Kurulum
             : @"SOFTWARE\WOW6432Node\Microsoft\Terminal Server Client\Default\AddIns\Print360";
     }
 
+    // 64-bit eklenti yalnizca 64-bit Windows'ta kaydedilir (32-bit Windows'ta
+    // mstsc 32-bit'tir ve 64-bit DLL'i yukleyemez).
+    internal static bool VcKaydiYapilmali(bool isletim64, bool dll64)
+    {
+        return isletim64 || !dll64;
+    }
+
     internal static bool PeX64(string dosya)
     {
         try
@@ -1242,6 +1706,128 @@ static class Kurulum
                 try { pr.Kill(); pr.WaitForExit(3000); } catch { }
     }
 
+    // ------------------------------------------------------------------
+    // ISTEMCI AJANI KULLANICI OLARAK BASLATILIR.
+    // Kurulum yukseltilmis (ve bazen BASKA bir hesapla - BT yoneticisi)
+    // calisir. Ajani buradan dogrudan baslatmak, onu o hesapla ve yonetici
+    // yetkisiyle calistiriyordu: kullanicinin yazicilari ve varsayilan yazicisi
+    // gorunmuyor, cikti yanlis yere gidiyordu. Masaustu kabugu (explorer)
+    // uzerinden baslatilinca ajan, oturumu acan kullanici olarak ve
+    // yukseltilmeden calisir. Oturumda kabuk yoksa (dagitim araciyla SYSTEM
+    // olarak kurulum) ajan baslatilmaz; kullanici oturum acinca Run kaydiyla baslar.
+    // Ardindan ajanin GERCEKTEN calistigi dogrulanir; calismiyorsa sebebi aranir.
+    // ------------------------------------------------------------------
+    [DllImport("wtsapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    static extern bool WTSQuerySessionInformation(IntPtr hServer, int sessionId, int wtsInfoClass,
+                                                  out IntPtr ppBuffer, out uint pBytesReturned);
+    [DllImport("wtsapi32.dll")]
+    static extern void WTSFreeMemory(IntPtr pMemory);
+
+    static string OturumKullanicisi(int oturum)
+    {
+        try
+        {
+            IntPtr b; uint n;
+            if (!WTSQuerySessionInformation(IntPtr.Zero, oturum, 5 /*WTSUserName*/, out b, out n)) return "";
+            try { return (Marshal.PtrToStringUni(b) ?? "").Trim(); } finally { WTSFreeMemory(b); }
+        }
+        catch { return ""; }
+    }
+
+    // Masaustu (explorer) olan oturumlardan hangisinde ajan YOK? (saf - test edilir)
+    internal static List<int> AjanEksikOturumlar(IEnumerable<int> masaustuOturumlari, IEnumerable<int> ajanOturumlari)
+    {
+        var ajan = new HashSet<int>(ajanOturumlari);
+        var eksik = new List<int>();
+        foreach (var o in new SortedSet<int>(masaustuOturumlari))
+            if (o != 0 && !ajan.Contains(o)) eksik.Add(o);
+        return eksik;
+    }
+
+    static void AjanKapsamiRaporu()
+    {
+        try
+        {
+            var masaustu = new List<int>(); var ajan = new List<int>();
+            foreach (var pr in Process.GetProcessesByName("explorer")) try { masaustu.Add(pr.SessionId); } catch { }
+            foreach (var pr in Process.GetProcessesByName("Print360.ServerAgent")) try { ajan.Add(pr.SessionId); } catch { }
+            var eksik = AjanEksikOturumlar(masaustu, ajan);
+            int toplam = new HashSet<int>(masaustu).Count;
+            if (eksik.Count == 0) { Yaz("  Yazdirma ajani acik olan " + toplam + " kullanici oturumunun hepsinde calisiyor."); return; }
+            var adlar = new List<string>();
+            foreach (var o in eksik) { string k = OturumKullanicisi(o); adlar.Add((k.Length > 0 ? k : "?") + " (oturum " + o + ")"); }
+            Uyari("Yazdirma ajani " + eksik.Count + " oturumda BASLATILAMADI: " + string.Join(", ", adlar.ToArray())
+                + ". Bu kullanicilarin ciktilari oturumlarini kapatip acana kadar bekler.");
+        }
+        catch { }
+    }
+
+    static void IstemciAjaniniBaslat(string exe)
+    {
+        int oturum = Process.GetCurrentProcess().SessionId;
+        bool kabukVar = false;
+        foreach (var pr in Process.GetProcessesByName("explorer"))
+            try { if (pr.SessionId == oturum) kabukVar = true; } catch { }
+        if (!kabukVar || oturum == 0)
+        {
+            Yaz("[5/5] Bu oturumda masaustu yok (dagitim araciyla kurulum); ajan kullanici oturum acinca otomatik baslayacak.");
+            return;
+        }
+        try { Process.Start(new ProcessStartInfo("explorer.exe", "\"" + exe + "\"") { UseShellExecute = false }); }
+        catch (Exception ex) { Yaz("  Kabuk uzerinden baslatilamadi: " + ex.Message); }
+        if (AjanBekle(oturum, 12)) { Yaz("[5/5] Ajan oturumu acan kullanici olarak calisiyor; oturum acilisinda otomatik baslayacak."); return; }
+
+        Yaz("  Ajan kabuk uzerinden baslamadi; dogrudan deneniyor.");
+        Baslat(exe);
+        if (AjanBekle(oturum, 8))
+        {
+            Uyari("Ajan yalnizca kurulum hesabiyla baslatilabildi; bu oturumda cikti yanlis yaziciya gidebilir. "
+                + "Kullanici oturumu kapatip acinca dogru hesapla baslar.");
+            return;
+        }
+        Uyari(AjanBaslamadiSebebi(exe));
+    }
+
+    static bool AjanBekle(int oturum, int saniye)
+    {
+        for (int i = 0; i < saniye * 2; i++)
+        {
+            foreach (var pr in Process.GetProcessesByName("Print360.ClientAgent"))
+                try { if (pr.SessionId == oturum) return true; } catch { }
+            System.Threading.Thread.Sleep(500);
+        }
+        return false;
+    }
+
+    // Ajan neden baslamadi? En sik sebepler: antivirus dosyayi karantinaya aldi,
+    // AppLocker / WDAC C:\Print360 icinden program calistirmayi engelliyor,
+    // .NET Framework eksik/bozuk.
+    static string AjanBaslamadiSebebi(string exe)
+    {
+        if (!File.Exists(exe))
+            return "AJAN BASLAMADI: " + exe + " SILINMIS - antivirus karantinaya almis olabilir. Dosyayi guvenilir listesine "
+                 + "ekleyip kurulumu tekrarlayin.";
+        try
+        {
+            string c;
+            Calistir("wevtutil.exe", "qe \"Microsoft-Windows-AppLocker/EXE and DLL\" /c:30 /rd:true /f:text", 20, out c);
+            if (c.IndexOf("Print360", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "AJAN BASLAMADI: AppLocker " + exe + " dosyasini ENGELLIYOR. BT biriminden C:\\Print360 klasoru icin "
+                     + "izin kurali isteyin; ardindan kurulumu tekrarlayin.";
+            Calistir("wevtutil.exe", "qe \"Microsoft-Windows-CodeIntegrity/Operational\" /c:30 /rd:true /f:text", 20, out c);
+            if (c.IndexOf("Print360", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "AJAN BASLAMADI: Windows uygulama denetimi (WDAC) " + exe + " dosyasini ENGELLIYOR. BT biriminden "
+                     + "izin isteyin.";
+            Calistir("wevtutil.exe", "qe Application /q:\"*[System[Provider[@Name='.NET Runtime' or @Name='Application Error']]]\" /c:10 /rd:true /f:text", 20, out c);
+            if (c.IndexOf("Print360.ClientAgent", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "AJAN BASLAMADI: program acilirken coktu (Uygulama olay gunlugunde .NET/Application Error kaydi var). "
+                     + ".NET Framework 4.5+ kurulu ve saglam mi? Ayrinti: Olay Goruntuleyicisi > Uygulama.";
+        }
+        catch { }
+        return "AJAN BASLAMADI ve sebebi olay gunluklerinde bulunamadi. Antivirus/uygulama denetimi ya da .NET Framework "
+             + "olabilir. Elle deneyin: " + exe;
+    }
+
     static void Baslat(string exe)
     {
         try { if (File.Exists(exe)) Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true }); }
@@ -1269,6 +1855,13 @@ static class Kurulum
     // Hicbir adim kurulumu kilitleyemez: asenkron okuma + zorunlu zaman asimi.
     static int Calistir(string exe, string args, int zamanAsimiSn = 45)
     {
+        string yok;
+        return Calistir(exe, args, zamanAsimiSn, out yok);
+    }
+
+    static int Calistir(string exe, string args, int zamanAsimiSn, out string ciktiMetni)
+    {
+        ciktiMetni = "";
         try
         {
             var psi = new ProcessStartInfo(exe, args)
@@ -1297,6 +1890,7 @@ static class Kurulum
                     Uyari("Adim zaman asimina ugradi ve durduruldu: " + exe + " " + args);
                     return -2;
                 }
+                lock (cikti) ciktiMetni = cikti.ToString();
                 if (pr.ExitCode != 0 && _log != null)
                 {
                     string o; lock (cikti) o = cikti.ToString();

@@ -89,5 +89,18 @@ Dogrulama: nasil test edildi.
 
 ## Hata bildirimi
 
-Sorun yazdırmayla ilgiliyse panelde **Tanı** sayfasının (`/tani`) ekran
-görüntüsünü ve `C:\Print360\logs\` altındaki ilgili günlüğü ekleyin.
+Sorun yazdırmayla ilgiliyse **tanı paketlerini** ekleyin. Paketler belge
+içeriklerini ve parolaları içermez.
+
+1. **Hata ayıklama modunu açın:** istemcide tepsi simgesi > *Hata ayıklama
+   modu*, sunucuda panel > **Tanı** > *Hata ayıklama modunu aç*. Mod her adımı
+   ayrıntılı yazar ve 24 saat sonra kendiliğinden kapanır.
+2. **Sorunu tekrarlayın** (yazdırmayı yeniden deneyin).
+3. **Paketleri oluşturun:**
+   - İstemci: tepsi simgesi > *Tanı paketi oluştur* (masaüstüne zip) ya da
+     `C:\Print360\Print360.ClientAgent.exe --tani`
+   - Sunucu: panel > **Tanı** > *Sunucu tanı paketini indir*
+
+İstemci raporunun başındaki **BULGULAR** bölümü, bulunan sorunları
+(yanlış hesapla çalışan ajan, çevrimdışı yazıcı, yoklanmayan RDP sunucusu,
+kapalı port, eski sunucu sürümü…) kendiliğinden listeler.

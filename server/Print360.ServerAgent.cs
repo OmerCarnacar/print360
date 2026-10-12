@@ -161,11 +161,14 @@ static class ServerAgent
     // ------------------------------------------------------------------
     static readonly TakilmaIzleyici spoolTakilma = new TakilmaIzleyici();
 
+    static void Ayr(string m) { if (Ortak.HataAyiklamaAcik()) Log("[AYRINTI] " + m); }
+
     static void SpoolKontrol(string tur, string sp)
     {
         string sebep;
         if (!SpoolHazir(sp, out sebep))
         {
+            Ayr("Spool henuz hazir degil: " + Path.GetFileName(sp) + " | " + sebep);
             string m = spoolTakilma.HazirDegil(sp, sebep);
             if (m == null) return;
             Log("UYARI: " + m);
@@ -579,6 +582,8 @@ static class ServerAgent
     static void Dispatch(string jobType, string spoolFile)
     {
         IstemciAdiTazele();   // is, o anda GERCEKTEN bagli olan makineye gitsin
+        Ayr("Is yakalandi: " + Path.GetFileName(spoolFile) + " (" + jobType + ") | kullanici " + user + " | RDP istemcisi '" + clientName
+            + "' | oturum " + System.Diagnostics.Process.GetCurrentProcess().SessionId + " | VC " + (Db.VChannelAcik ? "acik" : "kapali"));
         // ORIJINAL BELGE ADI: PrintService olay gunlugunden okunur ve dosya adina
         // '~' ayiricisiyla gomulur. Istemci bu kismi "Belge" olarak gosterir;
         // kullanici tarih-saat yerine gercek belge adini gorur.
@@ -831,6 +836,8 @@ static class ServerAgent
             string qDir = Path.Combine(@"C:\Print360\queue", mak);
             Directory.CreateDirectory(qDir);
             string path = Path.Combine(qDir, name + ".gz");
+            Ayr("Kuyruga yaziliyor: " + path + " | hedef '" + mak + "' cevrimici: " + Kuyruk.Cevrimici(mak)
+                + " (son gorulme " + Kuyruk.SonGorulme(mak).ToString("yyyy-MM-dd HH:mm:ss") + ")");
             // Atomik yazim: istemci yarim dosya cekmesin (.tmp -> rename)
             string tmp = path + ".tmp";
             using (var fs = File.Create(tmp))
@@ -843,7 +850,7 @@ static class ServerAgent
             // SQL varsa kaydet (opsiyonel - basarisiz olsa da is kuyrukta kalir)
             if (!Db.Exec("INSERT INTO JobQueue(Makine,Dosya,Yol,BoyutKB,SikistirilmisKB,Olusturma,Durum) " +
                          "VALUES(@m,@f,@y,@b,@s,GETDATE(),'BEKLIYOR')",
-                    "@m", clientName, "@f", name, "@y", path,
+                    "@m", m0, "@f", name, "@y", path,   // hedef makine (clientName bos olabilir)
                     "@b", (int)((pdf.Length + 1023) / 1024), "@s", (int)((gzLen + 1023) / 1024)))
                 Log("Not: SQL kuyruk kaydi yazilamadi (is dosya kuyrugundan gidecek): " + Db.Err);
 
