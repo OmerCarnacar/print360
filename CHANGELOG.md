@@ -10,6 +10,41 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [2026.10.15.1040]
+
+Son testler: uzman testine hiç sınanmamış uçtan uca yollar eklendi
+(31 → 43 kontrol) ve üç hata düzeltildi.
+
+### Yeni senaryolar (gerçek sunucu + gerçek istemci)
+| Senaryo | Sonuç |
+|---|---|
+| "Basıldı" bildirimi: istemci → sunucu → panel (Türkçe belge ve yazıcı adı) | Panel "Basıldı" gösterir, adlar bozulmaz |
+| Sunucu kapalıyken "basıldı" bildirimi | Bekletilir, sunucu gelince gönderilir |
+| Kalp atışı ve bilgisayar adı değişikliği (HTTP üzerinden) | Eski adla bekleyen işler yeni ada taşınır |
+| Aynı iş iki kez onaylanıyor | İkinci onay da kabul edilir |
+| İki sunucu sırayla hata veriyor | Günlük şişmez |
+| Yanlış şifre + Windows vekil ayarı | Bağlantı yolu boşuna değişmez |
+
+### Düzeltildi
+- **Çift onayda yanlış alarm.** Aynı PC'de iki ajan aynı işi indirdiğinde ya
+  da onay yanıtı kaybolup istemci yeniden onayladığında sunucu HTTP 500
+  dönüyor, istemci "ONAY REDDEDİLDİ (500)" yazıyordu. Sunucu artık son 10
+  dakikada onayladığı işleri hatırlar; tekrar onay sorunsuz kabul edilir.
+- **Günlük şişmesi.** İş hatası tekrar filtresi tüm sunucular için tekti; iki
+  sunucu sırayla hata verince hiçbir tekrarı bastıramıyordu (testte 40
+  yoklama = 40 satır, gerçekte günde on binlerce). Filtre artık sunucu başına;
+  aynı senaryo 2 satır.
+- **Şifre reddi vekil sorunu sanılıyordu.** Print360'ın kendi 403'ü
+  bağlantı yolunu boşuna değiştiriyordu. Sunucu her yanıta `X-Print360`
+  başlığı ekler; istemci bizden gelen yanıtta yolu değiştirmez.
+
+### Test
+12 test dosyası, **199 kontrol**. Uzman testinin arıza vekilindeki bir hata da
+düzeltildi (Host başlığını değiştirirken gövdedeki Türkçe harfleri bozuyordu);
+ürünün "basıldı" yolunda Türkçe karakter sorunu yoktur.
+
+---
+
 ## [2026.10.12.0853]
 
 `2026.10.01.0854`'ten bu yana yapılan dört çalışmanın birleşik sürümü:

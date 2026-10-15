@@ -88,7 +88,19 @@ static partial class ClientAgent
     static int sunucuBagli;              // su an ulasilabilen sunucu sayisi (tepsi ipucunda gosterilir)
     // Is cekme hatalari: ilk hata ANINDA, ayni hata tekrarlanirsa sayilir, hata
     // degisince ya da duzelince ozet yazilir (bkz. TekrarFiltresi).
-    static readonly TekrarFiltresi isHatasi = new TekrarFiltresi();
+    // SUNUCU BASINA ayri filtre: tek filtre, iki sunucu SIRAYLA hata verince
+    // mesajlar her seferinde "degistigi" icin hicbir tekrari bastiramiyordu
+    // (testte 40 basarisiz yoklama = 40 satir; gunde on binlerce satir).
+    static readonly Dictionary<string, TekrarFiltresi> isHatalari = new Dictionary<string, TekrarFiltresi>(StringComparer.OrdinalIgnoreCase);
+    static TekrarFiltresi IsHatasi(string baseUrl)
+    {
+        lock (isHatalari)
+        {
+            TekrarFiltresi f;
+            if (!isHatalari.TryGetValue(baseUrl ?? "", out f)) { f = new TekrarFiltresi(); isHatalari[baseUrl ?? ""] = f; }
+            return f;
+        }
+    }
     // Dosya surekli "hazir degil" sayiliyorsa bir kez bildir (bkz. TakilmaIzleyici).
     static readonly TakilmaIzleyici takilma = new TakilmaIzleyici();
     // MAKINE KIMLIGI: sunucu, AYNI bilgisayar adinin iki farkli kimlikle
@@ -143,6 +155,11 @@ static partial class ClientAgent
             int kod = 0;
             var r = wex.Response as HttpWebResponse;
             try { if (r != null) kod = (int)r.StatusCode; } catch { }
+            // Yanit Print360'in KENDISINDEN geldiyse (X-Print360 basligi) yol sorunu yoktur:
+            // 403 sifre reddidir, vekil degistirmek anlamsiz (eskiden yol bosuna degisiyordu).
+            bool bizden = false;
+            try { bizden = r != null && r.Headers["X-Print360"] != null; } catch { }
+            if (bizden) return;
             string m = Ortak.VekilDegerlendir(new Uri(baseUrl), wex.Status, kod);
             if (m != null) Log(m);
             else if (SunucuSagligi.UlasilamamaMi(wex.Status))
@@ -1616,7 +1633,7 @@ static partial class ClientAgent
                     + (Ortak.DogrudanBaglan ? "dogrudan" : "vekil ayari") + ")"
                     + (resp.StatusCode == HttpStatusCode.NoContent ? " - kuyrukta is yok" : " - is var: " + resp.Headers["X-Job-Id"]));
                 SaglikBasarili(baseUrl);
-                string duzeldi = isHatasi.Duzeldi("sunucudan yeniden is alinabiliyor (" + baseUrl + ")");
+                string duzeldi = IsHatasi(baseUrl).Duzeldi("sunucudan yeniden is alinabiliyor (" + baseUrl + ")");
                 if (duzeldi != null) Log(duzeldi);
                 if (resp.StatusCode == HttpStatusCode.NoContent) return false;
                 ham = resp.ContentLength;
@@ -1671,7 +1688,7 @@ static partial class ClientAgent
                         string neden = !yazmaEvresi ? "AKTARIM YARIDA KESILDI (baglanti koptu ya da veri bozuk geldi)"
                                      : ex is UnauthorizedAccessException ? "DOSYA YAZILAMADI (jobs klasorune yazma izni yok)"
                                      : "DOSYA YAZILAMADI (disk dolu / dosya kilitli)";
-                        foreach (var satir in isHatasi.Hata("IS INDIRILEMEDI [" + baseUrl + "]: " + fname + " | " + neden + " | "
+                        foreach (var satir in IsHatasi(baseUrl).Hata("IS INDIRILEMEDI [" + baseUrl + "]: " + fname + " | " + neden + " | "
                                      + ex.GetType().Name + ": " + ex.Message
                                      + " | onay gonderilmedi: is sunucuda kuyrukta kaldi, yeniden indirilecek"))
                             Log(satir + (satir.StartsWith("IS INDIRILEMEDI") ? " | " + (acilmis / 1024) + " KB acilmisti, gecen "
@@ -1758,7 +1775,7 @@ static partial class ClientAgent
                 // Ilk hata ANINDA yazilir; ayni hata tekrar ederse sayilir; FARKLI bir
                 // hata hemen yazilir (eskiden 2 dk'lik kisitlama araya gireni yutuyordu).
                 // Sure (ms) mesaja girmez: her denemede farkli olur, tekrar sayilamazdi.
-                foreach (var satir in isHatasi.Hata(string.Format("IS ALINAMADI [{0}] asama: {1} | durum: {2} | {3}",
+                foreach (var satir in IsHatasi(baseUrl).Hata(string.Format("IS ALINAMADI [{0}] asama: {1} | durum: {2} | {3}",
                              baseUrl, asama, ex.Status, HataAcikla(ex))))
                     Log(satir + (satir.StartsWith("IS ALINAMADI") ? " | gecen " + kron.ElapsedMilliseconds + " ms" : ""));
                 YoluDegerlendir(baseUrl, ex);

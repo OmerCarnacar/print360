@@ -148,6 +148,10 @@ static class Dashboard
 
     static void IstegiIsle(HttpListenerContext ctx)
     {
+        // Her yanit Print360'tan geldigini belli eder: istemci, 403 gibi bir yanitin
+        // sunucunun kendisinden mi yoksa aradaki bir vekil/guvenlik duvarindan mi
+        // geldigini buna bakarak ayirir (bkz. ClientAgent.YoluDegerlendir).
+        try { ctx.Response.AddHeader("X-Print360", Surum.V); } catch { }
         try
         {
                     // Istemci ajanlarindan gelen "basildi" kayitlari (merkezi sayac)
@@ -891,6 +895,26 @@ static class Dashboard
         catch { return "(okunamadi)"; }
     }
 
+    // Son 10 dakikada onaylanan isler (makine|ad -> zaman)
+    static readonly Dictionary<string, DateTime> sonOnaylar = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+    static void OnaylandiKaydet(string makine, string ad)
+    {
+        lock (sonOnaylar)
+        {
+            sonOnaylar[makine + "|" + ad] = DateTime.Now;
+            if (sonOnaylar.Count > 2000)
+                foreach (var k in sonOnaylar.Where(x => x.Value < DateTime.Now.AddMinutes(-10)).Select(x => x.Key).ToList()) sonOnaylar.Remove(k);
+        }
+    }
+    static bool YakindaOnaylandi(string makine, string ad)
+    {
+        lock (sonOnaylar)
+        {
+            DateTime t;
+            return sonOnaylar.TryGetValue(makine + "|" + ad, out t) && t > DateTime.Now.AddMinutes(-10);
+        }
+    }
+
     static void HandleJobDone(HttpListenerContext ctx)
     {
         try
@@ -932,6 +956,16 @@ static class Dashboard
                     // saymak, ayni isin sonsuza kadar yeniden verilmesini SESSIZCE
                     // gizler (sahada tam olarak bu yasandi). Kuyruk bossa gercekten
                     // yapacak bir sey yoktur; doluysa bu bir HATADIR, oyle bildirilir.
+                    // TEKRAR ONAY: ayni is kisa sure once zaten onaylanip dusuruldu
+                    // (ayni PC'de iki ajan ayni isi indirdi ya da onay yanitini alamayan
+                    // istemci yeniden onayladi). Bu bir hata DEGIL; 500 donmek istemciye
+                    // yanlis "ONAY REDDEDILDI" yazdiriyordu.
+                    if (!vardi && YakindaOnaylandi(machine, ad))
+                    {
+                        Log("Tekrar onay <- " + machine + " | " + ad + " | is zaten kuyruktan dusurulmustu (sorun yok)");
+                        silindi = true;
+                        vardi = true;
+                    }
                     if (!vardi)
                     {
                         string kuyrukta = KuyruktakiAdlar(qDirOnay);
@@ -944,7 +978,7 @@ static class Dashboard
                         }
                     }
                 }
-                if (silindi) { Kuyruk.OnaylandiSay(yol2); Log("Onay alindi <- " + machine + " | " + ad + " | kuyruktan dusuruldu"); }
+                if (silindi) { Kuyruk.OnaylandiSay(yol2); OnaylandiKaydet(machine, ad); Log("Onay alindi <- " + machine + " | " + ad + " | kuyruktan dusuruldu"); }
                 else
                 {
                     Log("ONAY ISLENEMEDI <- " + machine + " | " + ad + " | dosya silinemiyor: " + sonHata);
@@ -1015,7 +1049,7 @@ static class Dashboard
     // BILGISAYAR ADI DEGISTI: ayni kurulum kimligi yeni bir adla geliyor.
     // Eskiden eski adin kuyrugunda bekleyen isler orada unutuluyordu; panelde
     // eski ad "cevrimdisi" gorunuyor, kimse nedenini bilmiyordu.
-    static readonly KimlikDefteri kimlikDefteri = new KimlikDefteri(@"C:\Print360\stats\kimlikler.csv");
+    static KimlikDefteri kimlikDefteri = new KimlikDefteri(@"C:\Print360\stats\kimlikler.csv");   // testler gecici dosyaya yonlendirir
     static readonly HashSet<string> cakismaUyarilan = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     static void AdDegisimiDenetle(string machine, string iid, string ip)
     {

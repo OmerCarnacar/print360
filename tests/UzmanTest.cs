@@ -62,6 +62,12 @@ class UzmanTest
             SunucuKapali();
             GuvenlikDuvariSessiz();
             ZehirliIsKarantina();
+            BasildiBildirimi();
+            BildirimBekletme();
+            KalpAtisiVeAdDegisimi();
+            CiftOnay();
+            IkiSunucuGunlukSismesi();
+            YanlisSifreVeVekil();
             Gunlukler();
         }
         catch (Exception ex) { Kontrol(false, "BEKLENMEYEN ISTISNA", ex.ToString()); }
@@ -355,6 +361,128 @@ class UzmanTest
         JobsTemizle();
     }
 
+    // ---------------------------------------------------------------- son testler
+    static object Cagir(Type t, string ad, params object[] a)
+    {
+        var m = t.GetMethod(ad, OZEL);
+        if (m == null) throw new Exception(t.Name + "." + ad + " yok");
+        try { return m.Invoke(null, a); } catch (TargetInvocationException ex) { throw ex.InnerException; }
+    }
+
+    static Dictionary<string, string[]> Basilanlar()
+    {
+        return (Dictionary<string, string[]>)Cagir(typeof(Dashboard), "LoadPrinted");
+    }
+
+    static int Satir(string metin, string aranan)
+    {
+        int n = 0, i = 0;
+        while ((i = metin.IndexOf(aranan, i, StringComparison.Ordinal)) >= 0) { n++; i += aranan.Length; }
+        return n;
+    }
+
+    static void BasildiBildirimi()
+    {
+        Console.WriteLine("--- 11. 'Basildi' bildirimi uctan uca (istemci -> sunucu -> panel)");
+        Ayarla(typeof(ClientAgent), "printedCsv", Path.Combine(kok, "istemci\\stats\\printed.csv"));
+        string ad = "20261015_090000_001_FS~Şirket İçi Özet.pdf";
+        Cagir(typeof(ClientAgent), "RecordPrinted", ad, makine + " \\ Yazıcı Ğ-1", "OK");
+        string[] kayit;
+        bool var = Basilanlar().TryGetValue(ad, out kayit);
+        Kontrol(var && kayit[3] == makine + " \\ Yazıcı Ğ-1", "panel isi 'Basildi' goruyor; Turkce belge ve yazici adi bozulmadi",
+                var ? string.Join(" | ", kayit) : "panelde yok | istemci: " + IstemciGunlugu().Split('\n').LastOrDefault(x => x.Contains("BILDIRIM"))
+                    + " | sunucu: " + SunucuGunlugu().Split('\n').LastOrDefault(x => x.Contains("printed") || x.Contains("Ingest") || x.Contains("hatasi"))
+                    + " | panelin gordugu: " + string.Join(" ; ", Basilanlar().Keys.ToArray()) + " | Db.Err: " + Db.Err);
+    }
+
+    static void BildirimBekletme()
+    {
+        Console.WriteLine("--- 12. Sunucu kapaliyken 'basildi' bildirimi kaybolmuyor");
+        int bos; var l = new TcpListener(IPAddress.Loopback, 0); l.Start(); bos = ((IPEndPoint)l.LocalEndpoint).Port; l.Stop();
+        IniYaz("testkey", "localhost:" + bos);
+        string ad = "20261015_091000_001_FS~Bekleyen Bildirim.pdf";
+        Cagir(typeof(ClientAgent), "RecordPrinted", ad, makine + " \\ HP", "OK");
+        string bekleyen = Path.Combine(kok, "istemci\\stats\\gonderilemeyen-bildirimler.csv");
+        Kontrol(File.Exists(bekleyen) && File.ReadAllText(bekleyen).Contains(ad) && !Basilanlar().ContainsKey(ad),
+                "sunucu kapali: bildirim kalici dosyada bekliyor (eskiden kayboluyordu)", null);
+        IniYaz("testkey", "localhost:" + vekil.Port);
+        Cagir(typeof(ClientAgent), "BekleyenBildirimleriGonder", Url, "testkey");
+        Kontrol(Basilanlar().ContainsKey(ad) && !File.Exists(bekleyen), "sunucu gelince gonderildi, bekleme dosyasi temizlendi", null);
+        Kontrol(IstemciGunlugu().Contains("BEKLEYEN BILDIRIMLER GONDERILDI"), "gunlukte gonderim kaydi", null);
+    }
+
+    static string Post(string yol)
+    {
+        try { using (var wc = new WebClient()) return wc.UploadString("http://localhost:" + sunucuPort + yol, "POST", ""); }
+        catch (WebException ex) { var r = ex.Response as HttpWebResponse; return r != null ? "HTTP " + (int)r.StatusCode : ex.Status.ToString(); }
+    }
+
+    static void KalpAtisiVeAdDegisimi()
+    {
+        Console.WriteLine("--- 13. Kalp atisi ve bilgisayar ADI DEGISIKLIGI (HTTP uzerinden)");
+        var defter = new KimlikDefteri(Path.Combine(kok, "sunucu\\stats\\kimlikler.csv"));
+        defter.Bekleme = TimeSpan.FromSeconds(2);
+        Ayarla(typeof(Dashboard), "kimlikDefteri", defter);
+        Post("/api/heartbeat?machine=MUHASEBE-ESKI&key=k1&iid=AAAA1111");
+        Kuyruk.OnbellegiTemizle();
+        Kontrol(Kuyruk.Cevrimici("MUHASEBE-ESKI"), "kalp atisindan sonra makine cevrimici", null);
+        KuyrugaKoy("20261015_092000_001_ayse~Eski Adla Bekleyen.pdf", Pdf(5 * 1024, 31), "MUHASEBE-ESKI");
+        KuyrugaKoy("20261015_092001_002_ali~Eski Adla Bekleyen 2.pdf", Pdf(5 * 1024, 32), "MUHASEBE-ESKI");
+        Post("/api/heartbeat?machine=MUHASEBE-YENI&key=k1&iid=AAAA1111");   // ayni kurulum, yeni ad
+        Thread.Sleep(2300);
+        Post("/api/heartbeat?machine=MUHASEBE-YENI&key=k1&iid=AAAA1111");
+        string yeniQ = Path.Combine(sKuyruk, "MUHASEBE-YENI");
+        int tasinan = Directory.Exists(yeniQ) ? Directory.GetFiles(yeniQ, "*.gz").Length : 0;
+        int kalan = Directory.GetFiles(Path.Combine(sKuyruk, "MUHASEBE-ESKI"), "*.gz").Length;
+        Kontrol(tasinan == 2 && kalan == 0, "eski adla bekleyen 2 is yeni ada TASINDI", "yeni " + tasinan + " / eski " + kalan);
+        Kontrol(SunucuGunlugu().Contains("BILGISAYAR ADI DEGISTI: 'MUHASEBE-ESKI' -> 'MUHASEBE-YENI'"), "sunucu gunlugunde ad degisikligi", null);
+    }
+
+    static void CiftOnay()
+    {
+        Console.WriteLine("--- 14. Ayni is iki kez onaylaniyor (iki ajan ayni isi indirdi)");
+        KuyrugaKoy("20261015_093000_001_FS~Cift Onay A.pdf", Pdf(5 * 1024, 41));
+        KuyrugaKoy("20261015_093001_002_FS~Cift Onay B.pdf", Pdf(5 * 1024, 42));
+        string id;
+        using (var wc = new WebClient())
+        {
+            wc.DownloadData("http://localhost:" + sunucuPort + "/api/jobs?machine=" + Uri.EscapeDataString(makine) + "&key=testkey");
+            id = wc.ResponseHeaders["X-Job-Id"];
+        }
+        string yol = "/api/jobs/done?machine=" + Uri.EscapeDataString(makine) + "&key=testkey&id=" + id;
+        string r1 = Post(yol), r2 = Post(yol);
+        Kontrol(r1 == "OK", "ilk onay kabul", r1);
+        Kontrol(r2 == "OK", "IKINCI onay da kabul (is zaten dusuruldu) - istemciye yanlis 'ONAY REDDEDILDI (500)' gitmiyor", r2);
+        Kontrol(KuyrukSayisi() == 1, "diger is yerinde duruyor", KuyrukSayisi().ToString());
+        while (Al()) { }
+        JobsTemizle();
+    }
+
+    static void IkiSunucuGunlukSismesi()
+    {
+        Console.WriteLine("--- 15. Iki sunucu SIRAYLA hata veriyor: gunluk sisiyor mu?");
+        string a = Url, b = "http://localhost:" + sunucuPort;   // ayni sunucu, iki farkli adres
+        int once = Satir(IstemciGunlugu(), "IS ALINAMADI");
+        for (int i = 0; i < 20; i++) { Al(a, "YANLIS"); Al(b, "YANLIS"); }   // 40 basarisiz yoklama (~2 dk'lik gercek yoklama)
+        int eklenen = Satir(IstemciGunlugu(), "IS ALINAMADI") - once;
+        Kontrol(eklenen <= 4, "40 basarisiz yoklamada en fazla 4 satir (sunucu basina ilk hata); eskiden her yoklama yaziliyordu",
+                eklenen + " satir eklendi");
+    }
+
+    static void YanlisSifreVeVekil()
+    {
+        Console.WriteLine("--- 16. Yanlis sifre + Windows vekil ayari tanimli");
+        var eskiBul = Ortak.VekilBul;
+        Ortak.VekilBul = delegate(Uri u) { return new Uri("http://vekil.firma.local:8080/"); };
+        Ortak.DogrudanBaglan = false;
+        int once = Satir(IstemciGunlugu(), "BAGLANTI YOLU DEGISTI");
+        for (int i = 0; i < 6; i++) Al(null, "YANLIS");
+        int degisim = Satir(IstemciGunlugu(), "BAGLANTI YOLU DEGISTI") - once;
+        Kontrol(degisim == 0 && !Ortak.DogrudanBaglan,
+                "Print360'in kendi 403'u (sifre reddi) baglanti yolunu DEGISTIRMIYOR (vekil sorunu degil)", degisim + " degisim");
+        Ortak.VekilBul = eskiBul; Ortak.DogrudanBaglan = false;
+    }
+
     static void Gunlukler()
     {
         Console.WriteLine("--- 10. Hata ayiklama gunlukleri");
@@ -375,6 +503,7 @@ class UzmanTest
 // ------------------------------------------------------------------
 class Vekil
 {
+    static readonly Encoding Latin1 = Encoding.GetEncoding(28591);
     public volatile string Mod = "normal";
     public volatile int KesBayt = 64 * 1024;
     public int Port;
@@ -420,13 +549,16 @@ class Vekil
                 {
                     while ((n = ia.Read(b, 0, b.Length)) > 0)
                     {
-                        string m = Encoding.ASCII.GetString(b, 0, n);
+                        // Latin-1 her bayti tek karaktere birebir esler: Host basligi
+                        // degistirilirken govdedeki UTF-8 baytlari (Turkce harfler) BOZULMAZ.
+                        // (Ilk surumde ASCII kullanilmisti; Turkce govdeler '?' oluyordu -
+                        // urun degil test vekili hatasiydi.)
+                        string m = Latin1.GetString(b, 0, n);
                         if (m.Contains("GET /api/jobs?")) { durum[0] = 1; Interlocked.Exchange(ref gonderilen, 0); }
                         else if (m.StartsWith("GET ") || m.StartsWith("POST ")) durum[0] = 0;
                         if (Mod == "onayi-dusur" && m.Contains("POST /api/jobs/done")) { kapat(); return; }
                         m = m.Replace("Host: localhost:" + Port, "Host: localhost:" + hedef);
-                        var o = Encoding.ASCII.GetBytes(m);
-                        // ikili govde yoksa ASCII donusumu guvenli; istek govdeleri bos/ASCII
+                        var o = Latin1.GetBytes(m);
                         sa.Write(o, 0, o.Length);
                     }
                 }
