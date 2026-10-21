@@ -88,6 +88,10 @@ foreach ($t in $testler) {
         $cikti | Where-Object { $_ -match "KALDI|HATA|Sonuc" } | ForEach-Object { Write-Host "    $_" }
         $basarisiz += $t.Ad
     }
+    # Performans olcumleri ve uyarilari her zaman gorunsun (CI gunlugunde de)
+    if ($t.Ad -eq "PerformansTest") {
+        $cikti | Where-Object { $_ -match '^\s{7}\S|^UYARI|^---' } | ForEach-Object { Write-Host "    $_" }
+    }
     $ozet += "{0,-18} {1}  {2}" -f $t.Ad, ($(if ($kod -eq 0) { "GECTI" } else { "KALDI" })), $sonuc
 }
 
