@@ -44,6 +44,11 @@ $testler = @(
        Ref = @("System.Data.dll", "System.DirectoryServices.dll", "System.IO.Compression.dll", "System.IO.Compression.FileSystem.dll",
                "System.Windows.Forms.dll", "System.Drawing.dll", "System.Management.dll", $sqlite);
        Main = "UzmanTest"; Interop = $true },
+    @{ Ad = "PerformansTest";   Kaynak = @("tests\UzmanTest.cs", "tests\UzmanTest.Performans.cs", "server\Print360.Dashboard.cs", $db, $ortak,
+                                           "server\Print360.License.cs", "server\Print360.Version.cs", "client\Print360.ClientAgent.cs", "client\Print360.Tani.cs");
+       Ref = @("System.Data.dll", "System.DirectoryServices.dll", "System.IO.Compression.dll", "System.IO.Compression.FileSystem.dll",
+               "System.Windows.Forms.dll", "System.Drawing.dll", "System.Management.dll", $sqlite);
+       Main = "PerformansTest"; Interop = $true },
     @{ Ad = "PanelGorevi";      Kaynak = @("tests\PanelGorevi.cs", $setup);
        Ref = @("System.Data.dll", "System.Xml.dll", "System.IO.Compression.dll", "System.IO.Compression.FileSystem.dll", "Microsoft.CSharp.dll");
        Main = "PanelGoreviTest" }

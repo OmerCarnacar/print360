@@ -167,7 +167,9 @@ static class Db
     static System.Data.SQLite.SQLiteConnection SqliteAc()
     {
         var c = new System.Data.SQLite.SQLiteConnection(
-            "Data Source=" + SqliteDosya + ";Version=3;BusyTimeout=5000;");
+            // Pooling: her sorgu yeni dosya baglantisi aciyordu (kalp atisi basina 4-5 kez).
+            // WAL: okuyucular yaziciyi beklemez; es zamanli istemcide kilit beklemesi azalir.
+            "Data Source=" + SqliteDosya + ";Version=3;BusyTimeout=5000;Pooling=True;Max Pool Size=50;Journal Mode=WAL;Synchronous=Normal;");
         c.Open();
         return c;
     }

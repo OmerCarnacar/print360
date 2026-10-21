@@ -411,11 +411,18 @@ static partial class ClientAgent
                 var dosyalar = Directory.GetFiles(jobsDir)
                          .Where(f => !f.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
                          .OrderBy(f => f).ToList();
+                // TOPLU HAZIRLIK DENETIMI: eskiden HER dosya icin ayri 500 ms bekleniyordu
+                // (20 islik bir yigin 10 sn bekliyordu). Boyutlar bir kez olculur, tek
+                // 500 ms beklenir, sonra hepsi birlikte denetlenir.
+                var sebepler = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                var hazirlar = new HashSet<string>(HazirOlanlar(dosyalar, sebepler), StringComparer.OrdinalIgnoreCase);
                 foreach (var f in dosyalar)
                 {
                     string sebep;
-                    if (!HazirMi(f, out sebep))
+                    if (!hazirlar.Contains(f))
                     {
+                        sebepler.TryGetValue(f, out sebep);
+                        if (sebep == null) sebep = "hazir degil";
                         Ayr("Is henuz hazir degil: " + Path.GetFileName(f) + " | " + sebep);
                         string m = takilma.HazirDegil(f, sebep);
                         if (m != null) Log("UYARI: " + m);
@@ -438,6 +445,39 @@ static partial class ClientAgent
             catch (Exception ex) { Log("HATA: " + ex.Message); }
             Thread.Sleep(2000);
         }
+    }
+
+    // Birden fazla dosyayi TEK beklemeyle denetler. Hazir olanlari doner;
+    // hazir olmayanlarin sebebi 'sebepler'e yazilir.
+    static List<string> HazirOlanlar(List<string> dosyalar, Dictionary<string, string> sebepler)
+    {
+        var hazir = new List<string>();
+        if (dosyalar == null || dosyalar.Count == 0) return hazir;
+        var ilk = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        foreach (var f in dosyalar)
+        {
+            try
+            {
+                long b = new FileInfo(f).Length;
+                if (b == 0) { if (sebepler != null) sebepler[f] = "dosya bos (0 bayt) - yazilmaya devam ediyor ya da aktarim kopmus"; continue; }
+                ilk[f] = b;
+            }
+            catch (Exception ex) { if (sebepler != null) sebepler[f] = "dosya okunamadi: " + ex.Message; }
+        }
+        if (ilk.Count == 0) return hazir;
+        Thread.Sleep(500);
+        foreach (var kv in ilk)
+        {
+            try
+            {
+                long b = new FileInfo(kv.Key).Length;
+                if (b != kv.Value) { if (sebepler != null) sebepler[kv.Key] = "boyutu degisiyor (" + kv.Value / 1024 + " -> " + b / 1024 + " KB) - hala yaziliyor"; continue; }
+                using (File.Open(kv.Key, FileMode.Open, FileAccess.Read, FileShare.None)) { }
+                hazir.Add(kv.Key);
+            }
+            catch (Exception ex) { if (sebepler != null) sebepler[kv.Key] = "dosya kilitli ya da erisilemiyor: " + ex.Message; }
+        }
+        return hazir;
     }
 
     // Dosya islenmeye hazir mi? Degilse SEBEBI doner (takilma bildirimi icin).
@@ -603,6 +643,21 @@ static partial class ClientAgent
     // "Basildi" sayiliyordu; yazici kagitsizsa cikti Windows kuyrugunda
     // bekliyor, kullanici nedenini bilmiyordu.
     // ------------------------------------------------------------------
+    // Yazici durumu 30 sn hatirlanir: WMI sorgusu ~0,5 sn surer ve bir yigindaki
+    // her is icin yeniden sorulmasi siradaki isleri geciktiriyordu.
+    static readonly Dictionary<string, object[]> yaziciDurumOnbellek = new Dictionary<string, object[]>(StringComparer.OrdinalIgnoreCase);
+    static string YaziciDurumuOnbellekli(string ad)
+    {
+        lock (yaziciDurumOnbellek)
+        {
+            object[] k;
+            if (yaziciDurumOnbellek.TryGetValue(ad ?? "", out k) && (DateTime.Now - (DateTime)k[1]).TotalSeconds < 30) return (string)k[0];
+        }
+        string d = YaziciAnlikDurum(ad);
+        lock (yaziciDurumOnbellek) yaziciDurumOnbellek[ad ?? ""] = new object[] { d, DateTime.Now };
+        return d;
+    }
+
     static string YaziciAnlikDurum(string ad)
     {
         if (string.IsNullOrEmpty(ad)) return null;
@@ -737,7 +792,7 @@ static partial class ClientAgent
                                   : "SumatraPDF yok; Windows printto motoru denenecek");
         Ayr("Yazici karari: istenen '" + (printer.Length > 0 ? printer : "(ayar yok)") + "' -> secilen '" + hedef
             + "' | kisisel sira: " + string.Join(" > ", KisiselYaziciListesi().ToArray()));
-        string onDurum = YaziciAnlikDurum(hedef);
+        string onDurum = YaziciDurumuOnbellekli(hedef);
         if (onDurum != null)
             Log("UYARI: YAZICI SORUNLU: '" + hedef + "' | " + onDurum
                 + " | is yine de Windows kuyruguna verilecek; sorun giderilince basilir");
@@ -817,14 +872,23 @@ static partial class ClientAgent
         // Is Windows kuyruguna verildi; yazici o anda hata veriyorsa SOYLE.
         // (Cikti fiziksel olarak dogrulanamaz; ama kagit bitti / cevrimdisi gibi
         // durumlar okunabilir. Eskiden "Basildi" denip sessiz kaliniyordu.)
-        Thread.Sleep(1500);
-        string sonra = YaziciAnlikDurum(hedef);
-        if (sonra != null)
+        // ARKA PLANDA: baski is parcacigini 2 sn tutup siradaki isi geciktirmesin.
+        string arkaHedef = hedef, arkaAd = fname;
+        ThreadPool.QueueUserWorkItem(delegate
         {
-            Log("UYARI: CIKTI WINDOWS KUYRUGUNDA BEKLIYOR: " + fname + " -> '" + hedef + "' | " + sonra);
-            Bildir("Cikti bekliyor", "Yazici: " + hedef + "\r\n" + sonra, false);
-            return;   // "Yazdirildi" balonu bu uyariyi ortmesin
-        }
+            try
+            {
+                Thread.Sleep(1500);
+                string sonra = YaziciAnlikDurum(arkaHedef);
+                lock (yaziciDurumOnbellek) yaziciDurumOnbellek[arkaHedef] = new object[] { sonra, DateTime.Now };
+                if (sonra != null)
+                {
+                    Log("UYARI: CIKTI WINDOWS KUYRUGUNDA BEKLIYOR: " + arkaAd + " -> '" + arkaHedef + "' | " + sonra);
+                    Bildir("Cikti bekliyor", "Yazici: " + arkaHedef + "\r\n" + sonra, false);
+                }
+            }
+            catch { }
+        });
         // Kullaniciya BILDIR: is bitti, cikti yaziciya gitti.
         // KISA bildirim: belge adi + yazici (tek satir, 3 sn)
         Bildir("Yazdirildi", GorunenBelgeAdi(fname) + "  ->  " + hedef, true);

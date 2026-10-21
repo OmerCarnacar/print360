@@ -30,7 +30,7 @@ using System.Security.Principal;
 using System.Text;
 using System.Threading;
 
-class UzmanTest
+partial class UzmanTest
 {
     static int gecti, toplam;
     static void Kontrol(bool ok, string ad, string ayrinti = null)

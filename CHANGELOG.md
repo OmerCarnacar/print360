@@ -10,6 +10,51 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [2026.10.21.1125]
+
+Performans ölçümü ve düzeltmeleri. Ölçümler gerçek sunucu + gerçek istemci
+kodu üzerinde yapıldı (`tests/UzmanTest.Performans.cs`, her yapımda ve CI'da çalışır).
+
+### Ölçüm: önce → sonra
+| Ölçüm | Önce | Sonra |
+|---|---|---|
+| 50 makine aynı anda iş çekiyor — iş başına p95 | 524 ms | **57 ms** |
+| 300 istemci aynı anda kalp atışı (ilk tur) | 15,6 sn | **0,99 sn** |
+| 50.000 işlik geçmişle CSV dışa aktarma | >100 sn (zaman aşımı) | **0,55 sn** |
+| 50.000 işlik geçmişle İşler sayfası | 2,1 sn | **0,48 sn** |
+| 50.000 işlik geçmişle Ana sayfa | 1,05 sn | **0,53 sn** |
+| Hata ayıklama modunda 500 boş yoklama | 500 günlük satırı | dakikada 1 özet |
+| İstemci: 20 dosyalık yığının hazırlık denetimi | 10,3 sn | **0,58 sn** |
+| Tek makineye teslim hızı | 28 iş/sn | **36 iş/sn** |
+
+### İyileştirildi
+- **SQLite bağlantı havuzu ve WAL:** her sorgu yeni bir dosya bağlantısı
+  açıyordu; okumalar artık yazmayı bekletmez.
+- **Kalp atışı:** her istek kilit altında tablonun tamamını okuyup dosyayı
+  baştan yazıyordu. Artık kayıt bellekte tutulur, dosya en fazla 5 sn'de bir
+  yazılır, veritabanı işlemleri kilit dışında yapılır.
+- **İstemci doğrulama:** her yoklama veritabanına gidiyordu; sonuç 60 sn
+  hatırlanır (şifre uyuşmazsa önbellek atlanır).
+- **Hata ayıklama günlüğü:** rutin istekler (boş yoklama, başarılı kalp
+  atışı) dakikada bir özetlenir; hatalar, teslimler ve 1 sn'yi aşan istekler
+  tek tek yazılır. 300 istemcide günde ~9 milyon satır olmaz.
+- **İstemci:** hazırlık denetimi tüm yığın için tek beklemeyle yapılır;
+  yazıcı durumu 30 sn hatırlanır; baskı sonrası denetim arka planda yapılır.
+
+### Düzeltildi
+- **Uyarı seli:** şifresi yanlış bir istemci her yoklamada (3 sn'de bir)
+  panele "HATALI İSTEMCİ ŞİFRESİ" uyarısı yazdırıyordu — günde ~29.000 uyarı.
+  Artık makine başına saatte bir.
+
+### Test
+13 test dosyası, **216 kontrol**.
+
+### Not
+Makineler sayfasının ilk açılışı Active Directory sorgusu nedeniyle etki
+alanına göre birkaç saniye sürebilir; sonuç 5 dakika saklanır.
+
+---
+
 ## [2026.10.15.1040]
 
 Son testler: uzman testine hiç sınanmamış uçtan uca yollar eklendi

@@ -142,8 +142,45 @@ static class Dashboard
         catch { }
         IstegiIsle(ctx);
         int kod = 0; try { kod = ctx.Response.StatusCode; } catch { }
+        long ms = kr.ElapsedMilliseconds;
+        // RUTIN istekler (bos yoklama, basarili kalp atisi) tek tek YAZILMAZ: 300
+        // istemcide gunde ~9 milyon satir olurdu ve gunluk dakikalar icinde devredip
+        // asil kayitlari silerdi. Dakikada bir ozetlenir; hatalar, is teslimleri,
+        // onaylar ve yavas istekler (>1 sn) her zaman tek tek yazilir.
+        bool rutin = ms < 1000 && ((kod == 204 && yol.Equals("/api/jobs", StringComparison.OrdinalIgnoreCase))
+                                || (kod == 200 && yol.Equals("/api/heartbeat", StringComparison.OrdinalIgnoreCase)));
+        if (rutin)
+        {
+            RutinSay(yol, makine, ms);
+            return;
+        }
         Log("[AYRINTI] HTTP " + yontem + " " + yol + (makine.Length > 0 ? " | makine " + makine : "") + " | " + ip
-            + " -> " + kod + " (" + kr.ElapsedMilliseconds + " ms)");
+            + " -> " + kod + " (" + ms + " ms)" + (ms >= 1000 ? "  <-- YAVAS" : ""));
+    }
+
+    static readonly object rutinKilit = new object();
+    static int rutinYoklama, rutinKalpAtisi; static long rutinToplamMs, rutinEnUzun;
+    static readonly HashSet<string> rutinMakineler = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    static DateTime rutinBaslangic = DateTime.Now;
+
+    static void RutinSay(string yol, string makine, long ms)
+    {
+        string ozet = null;
+        lock (rutinKilit)
+        {
+            if (yol.Equals("/api/jobs", StringComparison.OrdinalIgnoreCase)) rutinYoklama++; else rutinKalpAtisi++;
+            rutinToplamMs += ms; if (ms > rutinEnUzun) rutinEnUzun = ms;
+            if (makine.Length > 0) rutinMakineler.Add(makine);
+            if ((DateTime.Now - rutinBaslangic).TotalSeconds >= 60)
+            {
+                int n = rutinYoklama + rutinKalpAtisi;
+                ozet = "[AYRINTI] son " + (int)(DateTime.Now - rutinBaslangic).TotalSeconds + " sn: " + rutinYoklama + " bos yoklama, "
+                     + rutinKalpAtisi + " kalp atisi, " + rutinMakineler.Count + " makine | ortalama " + (n > 0 ? rutinToplamMs / n : 0)
+                     + " ms, en uzun " + rutinEnUzun + " ms";
+                rutinYoklama = rutinKalpAtisi = 0; rutinToplamMs = rutinEnUzun = 0; rutinMakineler.Clear(); rutinBaslangic = DateTime.Now;
+            }
+        }
+        if (ozet != null) Log(ozet);
     }
 
     static void IstegiIsle(HttpListenerContext ctx)
@@ -529,6 +566,7 @@ static class Dashboard
                 }
                 ilk = false;
                 BayatKuyrukTara();
+                lock (hbLock) HbDosyayaYaz();
                 if (++uzlastirmaSayaci % 10 == 1) EskiKuyrukKayitlariniUzlastir();   // acilista + 10 dk'da bir
             }
             catch (Exception ex) { Log("AlertMonitor: " + ex.Message); }
@@ -540,10 +578,36 @@ static class Dashboard
     // Ilk temas: makine kayitsizsa gonderdigi sifreyle kaydedilir (TOFU).
     // Kayitli makine: sifre eslesmezse red + Guvenlik uyarisi.
     // Sifresi olmayan eski istemciler yalnizca kayitsiz makinelerde kabul edilir.
+    // ISTEMCI DOGRULAMA ONBELLEGI. Her istemci 3 sn'de bir yoklar; her istek
+    // veritabanina gidiyordu (300 istemcide saniyede ~100 sorgu). Dogrulanan
+    // makine+anahtar ozeti 60 sn hatirlanir. Anahtar UYUSMAZSA onbellek atlanir
+    // ve veritabanina yeniden bakilir (anahtar degisikligi hemen gecerli olsun).
+    static readonly Dictionary<string, DateTime> dogrulanan = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+    static readonly Dictionary<string, DateTime> sifreUyarilari = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+
     static bool ClientAuth(HttpListenerContext ctx, string machine, out bool ilkKayit)
     {
         ilkKayit = false;
         string key = Q(ctx, "key") ?? "";
+        string onbellekAnahtari = machine + "|" + (key.Length > 0 ? Sha256Hex(key) : "");
+        lock (dogrulanan)
+        {
+            DateTime t;
+            if (dogrulanan.TryGetValue(onbellekAnahtari, out t) && (DateTime.Now - t).TotalSeconds < 60) return true;
+        }
+        bool sonuc = ClientAuthVeritabani(ctx, machine, key, out ilkKayit);
+        if (sonuc)
+            lock (dogrulanan)
+            {
+                if (dogrulanan.Count > 5000) dogrulanan.Clear();
+                dogrulanan[onbellekAnahtari] = DateTime.Now;
+            }
+        return sonuc;
+    }
+
+    static bool ClientAuthVeritabani(HttpListenerContext ctx, string machine, string key, out bool ilkKayit)
+    {
+        ilkKayit = false;
         var o = Db.Scalar("SELECT AnahtarHash FROM ClientKeys WHERE Makine=@m", "@m", machine);
         if (o == null && Db.Err != null) return true; // SQL yok -> eski davranis (CSV modu)
         string hash = key.Length > 0 ? Sha256Hex(key) : "";
@@ -556,8 +620,20 @@ static class Dashboard
         }
         if (hash.Length > 0 && Convert.ToString(o).Trim() == hash) return true;
         string ip = ctx.Request.RemoteEndPoint != null ? ctx.Request.RemoteEndPoint.Address.ToString() : "?";
-        Db.Alert("Guvenlik", "HATALI ISTEMCI SIFRESI: " + machine + " (IP: " + ip + ") - istek reddedildi");
-        Log("Guvenlik: hatali istemci sifresi - " + machine + " @ " + ip);
+        // Yanlis sifreli istemci 3 sn'de bir yoklar: her reddi uyari olarak yazmak
+        // panele gunde ~29.000 uyari doldururdu. Makine basina saatte bir yazilir.
+        bool uyar;
+        lock (sifreUyarilari)
+        {
+            DateTime son;
+            uyar = !sifreUyarilari.TryGetValue(machine, out son) || (DateTime.Now - son).TotalHours >= 1;
+            if (uyar) sifreUyarilari[machine] = DateTime.Now;
+        }
+        if (uyar)
+        {
+            Db.Alert("Guvenlik", "HATALI ISTEMCI SIFRESI: " + machine + " (IP: " + ip + ") - istek reddedildi (saatte bir bildirilir)");
+            Log("Guvenlik: hatali istemci sifresi - " + machine + " @ " + ip + " (tekrarlar 1 saat bildirilmeyecek)");
+        }
         try
         {
             byte[] b = Encoding.UTF8.GetBytes("YETKISIZ");
@@ -1096,39 +1172,46 @@ static class Dashboard
             if (ilkKayit) Db.Alert("YeniMakine", "Yeni istemci kaydedildi (sifreli): " + machine + " (IP: " + ip + ")");
             AyniAdliMakineDenetle(machine, Q(ctx, "iid") ?? "", ip);
             AdDegisimiDenetle(machine, Q(ctx, "iid") ?? "", ip);
+            // KALP ATISI YOLU HAFIFLETILDI. Eskiden HER kalp atisi kilit altinda:
+            // tablonun TAMAMINI veritabanindan okuyor, heartbeat.csv'yi bastan yaziyor,
+            // ustune 3-4 sorgu calistiriyordu; 300 istemcilik ilk turda ~15 sn, istek
+            // basina ~1 sn. Artik: kayit bellekte tutulur (kilit yalnizca bellege),
+            // dosya en fazla 5 sn'de bir yazilir, veritabani islemleri kilit disinda.
+            bool yeni;
             lock (hbLock)
             {
-                var hb = LoadHb();
+                if (hbBellek == null) hbBellek = LoadHb();
+                string[] eskiK;
                 DateTime prev;
-                bool yeni = !hb.ContainsKey(machine) ||
-                            !DateTime.TryParseExact(hb[machine][1], "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture,
-                                DateTimeStyles.None, out prev) || prev < DateTime.Now.AddMinutes(-3);
-                hb[machine] = new[] { machine, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), printer, ip };
-                var sb = new StringBuilder();
-                foreach (var v in hb.Values)
-                    sb.Append(string.Join(",", v.Select(x => "\"" + x.Replace("\"", "\"\"") + "\""))).Append("\r\n");
-                Directory.CreateDirectory(Path.GetDirectoryName(hbFile));
-                File.WriteAllText(hbFile, sb.ToString());
-                // SQL: hic gorulmemis makine mi? (yeni makine uyarisi icin)
-                bool dbYeni = false;
+                yeni = !hbBellek.TryGetValue(machine, out eskiK) ||
+                       !DateTime.TryParseExact(eskiK[1], "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture,
+                           DateTimeStyles.None, out prev) || prev < DateTime.Now.AddMinutes(-3);
+                hbBellek[machine] = new[] { machine, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), printer, ip };
+                hbKirli = true;
+                if ((DateTime.Now - hbSonYazma).TotalSeconds >= 5) HbDosyayaYaz();
+            }
+            // Hic gorulmemis makine mi? (yeni makine uyarisi icin) - yalnizca cevrimici
+            // olma aninda sorulur, her kalp atisinda degil.
+            bool dbYeni = false;
+            if (yeni)
+            {
                 var say = Db.Scalar("SELECT COUNT(*) FROM Heartbeat WHERE Makine=@m", "@m", machine);
                 if (say != null) dbYeni = Convert.ToInt32(say) == 0;
-                // bos gelen alanlar mevcut degeri ezmesin
-                Db.Exec("IF EXISTS(SELECT 1 FROM Heartbeat WHERE Makine=@m) " +
-                        "UPDATE Heartbeat SET SonGorulme=GETDATE(), IP=@i, " +
-                        "Yazici=CASE WHEN @y='' THEN Yazici ELSE @y END, " +
-                        "KullaniciAdi=CASE WHEN @u='' THEN KullaniciAdi ELSE @u END, " +
-                        "OS=CASE WHEN @o='' THEN OS ELSE @o END WHERE Makine=@m " +
-                        "ELSE INSERT INTO Heartbeat(Makine,SonGorulme,Yazici,IP,KullaniciAdi,OS) VALUES(@m,GETDATE(),@y,@i,@u,@o)",
-                    "@m", machine, "@y", printer, "@i", ip, "@u", kUser, "@o", os);
-                if (yeni)
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(connLog));
-                    string olay = "ISTEMCI: " + machine + " cevrimici oldu (IP: " + ip + ", yazici: " + printer + ")";
-                    DosyayaEkle(connLog, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + olay + "\r\n");
-                    Db.Exec("INSERT INTO ConnLog(Tarih,Olay) VALUES(GETDATE(),@o)", "@o", olay);
-                    if (dbYeni) Db.Alert("YeniMakine", "Yeni makine agda: " + machine + " (IP: " + ip + ")");
-                }
+            }
+            // bos gelen alanlar mevcut degeri ezmesin
+            Db.Exec("IF EXISTS(SELECT 1 FROM Heartbeat WHERE Makine=@m) " +
+                    "UPDATE Heartbeat SET SonGorulme=GETDATE(), IP=@i, " +
+                    "Yazici=CASE WHEN @y='' THEN Yazici ELSE @y END, " +
+                    "KullaniciAdi=CASE WHEN @u='' THEN KullaniciAdi ELSE @u END, " +
+                    "OS=CASE WHEN @o='' THEN OS ELSE @o END WHERE Makine=@m " +
+                    "ELSE INSERT INTO Heartbeat(Makine,SonGorulme,Yazici,IP,KullaniciAdi,OS) VALUES(@m,GETDATE(),@y,@i,@u,@o)",
+                "@m", machine, "@y", printer, "@i", ip, "@u", kUser, "@o", os);
+            if (yeni)
+            {
+                string olay = "ISTEMCI: " + machine + " cevrimici oldu (IP: " + ip + ", yazici: " + printer + ")";
+                DosyayaEkle(connLog, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + olay + "\r\n");
+                Db.Exec("INSERT INTO ConnLog(Tarih,Olay) VALUES(GETDATE(),@o)", "@o", olay);
+                if (dbYeni) Db.Alert("YeniMakine", "Yeni makine agda: " + machine + " (IP: " + ip + ")");
             }
             byte[] ok = Encoding.UTF8.GetBytes("OK");
             ctx.Response.ContentType = "text/plain";
@@ -1137,6 +1220,28 @@ static class Dashboard
             ctx.Response.Close();
         }
         catch (Exception ex) { Log("Heartbeat hatasi: " + ex.Message); try { ctx.Response.Close(); } catch { } }
+    }
+
+    // Kalp atisi bellegi (bkz. HandleHeartbeat). Dosya, veritabani yokken
+    // panelin okudugu yedek kaynaktir; en fazla 5 sn geriden gelir.
+    static Dictionary<string, string[]> hbBellek;
+    static bool hbKirli;
+    static DateTime hbSonYazma = DateTime.MinValue;
+
+    // hbLock altinda cagrilir.
+    static void HbDosyayaYaz()
+    {
+        if (!hbKirli || hbBellek == null) return;
+        try
+        {
+            var sb = new StringBuilder();
+            foreach (var v in hbBellek.Values)
+                sb.Append(string.Join(",", v.Select(x => "\"" + (x ?? "").Replace("\"", "\"\"") + "\""))).Append("\r\n");
+            Directory.CreateDirectory(Path.GetDirectoryName(hbFile));
+            File.WriteAllText(hbFile, sb.ToString());
+            hbKirli = false; hbSonYazma = DateTime.Now;
+        }
+        catch (Exception ex) { Log("heartbeat.csv yazilamadi: " + ex.Message); }
     }
 
     static Dictionary<string, string[]> LoadHb()
