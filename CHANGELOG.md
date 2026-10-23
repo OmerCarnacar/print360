@@ -10,7 +10,7 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
-## [Yayınlanmamış]
+## [2026.10.23.0936]
 
 ### Lisans: açık kaynak
 - Print360 artık **açık kaynaktır**: GNU GPL v3 veya sonrası (`GPL-3.0-or-later`).
@@ -24,6 +24,13 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
   paketine `NOTICE.txt` eklendi. Panel, istemci penceresi ve dosya özelliklerindeki
   "para ile satılamaz" ifadeleri güncellendi.
 - 2026.10.21.1125 ve önceki sürümler yayınlandıkları lisansla kalır.
+
+### Düzeltildi
+- **Kurulum kılavuzu (`KURULUM.txt`) güncel değildi:** kaldırılmış deneme
+  modundan ("3 çıktı", lisans anahtarı), zorunlu SQL Server'dan ve internet
+  gereksiniminden söz ediyordu. Güncel durumla yeniden yazıldı: lisans anahtarı
+  yok, veritabanı isteğe bağlı (yoksa SQLite), internet gerekmez; tanı paketi
+  ve hata bildirim adresi eklendi.
 
 ## [2026.10.21.1125]
 
