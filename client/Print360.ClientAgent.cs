@@ -1,7 +1,7 @@
 ﻿// ============================================================
 //  Print360 - RDP Yazdirma ve Yonetim Cozumu
 //  Gelistirici : Omer CARNACAR  <omer.carnacar@outlook.com.tr>
-//  Lisans      : UCRETSIZ SURUM - para ile satilamaz (bkz. LICENSE)
+//  Lisans      : GPL-3.0-or-later, acik kaynak (bkz. LICENSE, NOTICE)
 //  Telif       : (c) 2026 Omer CARNACAR
 // ============================================================
 // Print360 Client Agent
@@ -2629,7 +2629,7 @@ static partial class ClientAgent
             btnKlasor.Click += delegate { try { Process.Start("explorer.exe", jobsDir); } catch { } };
             var lblSurum = new System.Windows.Forms.Label();
             lblSurum.Text = "Print360 v" + Surum.Etiket + "  -  " + Environment.MachineName
-                          + "   |   Ucretsiz surum, para ile satilamaz";
+                          + "   |   Ucretsiz ve acik kaynak (GPL-3.0)";
             lblSurum.ForeColor = System.Drawing.Color.Gray;
             lblSurum.SetBounds(266, 6, 500, 16);
 

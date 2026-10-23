@@ -67,7 +67,7 @@ $asmCs = Join-Path $root "server\Print360.AssemblyInfo.cs"
 using System.Reflection;
 [assembly: AssemblyProduct("Print360 - RDP Yazdirma ve Yonetim Cozumu")]
 [assembly: AssemblyCompany("Omer CARNACAR")]
-[assembly: AssemblyCopyright("(c) 2026 Omer CARNACAR - Ucretsiz surum, para ile satilamaz")]
+[assembly: AssemblyCopyright("(c) 2026 Omer CARNACAR - GPL-3.0-or-later")]
 [assembly: AssemblyTrademark("omer.carnacar@outlook.com.tr")]
 [assembly: AssemblyVersion("$fullVer")]
 [assembly: AssemblyFileVersion("$fullVer")]
@@ -166,9 +166,11 @@ Ok "Tum testler gecti"
 Adim "2/3  Kurulum paketleri uretiliyor (Inno Setup)"
 # Inno Setup, BOM'suz duz metni secili dilin ANSI kod sayfasiyla okur; UTF-8
 # olan LICENSE dosyasi sihirbazda bozuk Turkce karakterle cikar. BOM'lu bir
-# kopya uretip .iss dosyalari bunu gosteriyor.
+# kopya uretip .iss dosyalari bunu gosteriyor. Sihirbazda once Turkce ozet
+# (NOTICE), ardindan GPL-3.0'in tam metni (LICENSE) gorunur.
 [System.IO.File]::WriteAllText(
     "$root\setup\LICENSE-kurulum.txt",
+    [System.IO.File]::ReadAllText("$root\NOTICE", [System.Text.Encoding]::UTF8) + "`r`n`r`n" +
     [System.IO.File]::ReadAllText("$root\LICENSE", [System.Text.Encoding]::UTF8),
     (New-Object System.Text.UTF8Encoding($true)))
 Ok "Lisans metni sihirbaz icin hazirlandi (UTF-8 BOM)"
@@ -181,9 +183,10 @@ Ok "Print360-Client-Setup.exe"
 
 # --- 3) Dagitim paketi + guvenlik kontrolu ---
 Adim "3/3  Dagitim paketi olusturuluyor"
-# Lisans metni pakete dahil (ucretsiz surum kosullari kullaniciya ulassin)
+# Lisans metni pakete dahil (GPL-3.0: lisans metni yazilimla birlikte verilmeli)
 Copy-Item "$root\LICENSE" (Join-Path $dist "LICENSE.txt") -Force
-Ok "LICENSE.txt pakete eklendi"
+Copy-Item "$root\NOTICE" (Join-Path $dist "NOTICE.txt") -Force
+Ok "LICENSE.txt + NOTICE.txt pakete eklendi"
 
 # SURUM.txt paketle birlikte uretilir - eskiden elle yazilmis statik bir dosyaydi
 # ve surum numarasi ("1.1") ile ozellik listesi guncelligini yitirmisti.
@@ -202,17 +205,18 @@ numaralar goruyorsaniz taraflardan biri guncellenmemis demektir.
   Iletisim    : omer.carnacar@outlook.com.tr
   LinkedIn    : https://www.linkedin.com/in/omercarnacar/
 
-  UCRETSIZ SURUM - Bu yazilim bedelsizdir.
+  UCRETSIZ ve ACIK KAYNAK - GNU GPL v3 veya sonrasi (GPL-3.0-or-later).
   Sinirsiz kullanilabilir; lisans anahtari gerekmez, cikti limiti yoktur.
-  PARA ILE SATILAMAZ, kiralanamaz, ucretli bir urunun parcasi olarak
-  sunulamaz. Ayrintilar icin LICENSE.txt dosyasina bakiniz.
+  Kaynak kodu: https://github.com/OmerCarnacar/print360
+  Ayrintilar icin NOTICE.txt (Turkce ozet) ve LICENSE.txt dosyalarina bakiniz.
   Telif Hakki (c) 2026 Omer CARNACAR
 
 Paket icerigi:
   Print360-Server-Setup.exe   RDP sunucusu kurulumu
   Print360-Client-Setup.exe   Kullanici bilgisayari kurulumu
   KURULUM.txt                 Kurulum ve kullanim kilavuzu
-  LICENSE.txt                 Lisans (ucretsiz surum kosullari)
+  LICENSE.txt                 Lisans (GNU GPL v3 tam metni)
+  NOTICE.txt                  Lisans ozeti, marka ve sorumluluk notu
 
 Ozellikler:
   - Surucusuz RDP yazdirma (sunucuya yazici surucusu kurulmaz)
@@ -269,6 +273,6 @@ Write-Host "`n============================================================"
 Write-Host "  TAMAMLANDI" -ForegroundColor Green
 Write-Host "  Dagitim paketi : $zip"
 Write-Host "  Icerik         : Server + Client Setup.exe, KURULUM.txt, SURUM.txt"
-Write-Host "  Lisans         : UCRETSIZ SURUM - para ile satilamaz (bkz. LICENSE)"
+Write-Host "  Lisans         : GPL-3.0-or-later, acik kaynak (bkz. LICENSE, NOTICE)"
 Write-Host "  Gelistirici    : Omer CARNACAR  <omer.carnacar@outlook.com.tr>"
 Write-Host "============================================================"

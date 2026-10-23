@@ -1,7 +1,7 @@
 // ============================================================
 //  Print360 - ISTEMCI TANI PAKETI ve HATA AYIKLAMA MODU
 //  Gelistirici : Omer CARNACAR  <omer.carnacar@outlook.com.tr>
-//  Lisans      : UCRETSIZ SURUM - para ile satilamaz (bkz. LICENSE)
+//  Lisans      : GPL-3.0-or-later, acik kaynak (bkz. LICENSE, NOTICE)
 // ============================================================
 // "Bazi makinelerde calismiyor" sorunu, o makineyi digerlerinden ayiran
 // kosullari bilmeden cozulemez. Tani paketi bu kosullarin TAMAMINI tek bir

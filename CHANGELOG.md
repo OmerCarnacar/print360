@@ -10,6 +10,21 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [Yayınlanmamış]
+
+### Lisans: açık kaynak
+- Print360 artık **açık kaynaktır**: GNU GPL v3 veya sonrası (`GPL-3.0-or-later`).
+  `LICENSE` dosyası GPL-3.0'ın resmî metnidir; Türkçe özet, marka ve sorumluluk
+  notu `NOTICE` dosyasındadır.
+- Yazılım yine **ücretsiz ve sınırsızdır**. Değişen şu: eski lisanstaki satış
+  yasağının yerine GPL'in koşulu geldi. Dağıtılan her sürümün kaynak kodu da
+  GPL-3.0 ile sunulmalıdır; kapalı kaynaklı türev ürün dağıtılamaz.
+- **"Print360" adı ve logosu** lisans kapsamında değildir (GPL-3.0 madde 7(e)).
+- Kurulum sihirbazı önce Türkçe özeti, ardından GPL metnini gösterir; dağıtım
+  paketine `NOTICE.txt` eklendi. Panel, istemci penceresi ve dosya özelliklerindeki
+  "para ile satılamaz" ifadeleri güncellendi.
+- 2026.10.21.1125 ve önceki sürümler yayınlandıkları lisansla kalır.
+
 ## [2026.10.21.1125]
 
 Performans ölçümü ve düzeltmeleri. Ölçümler gerçek sunucu + gerçek istemci

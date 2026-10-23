@@ -2,7 +2,7 @@
 //  Print360 - RDP Yazdirma ve Yonetim Cozumu
 //  Gelistirici : Omer CARNACAR  <omer.carnacar@outlook.com.tr>
 //  LinkedIn    : https://www.linkedin.com/in/omercarnacar/
-//  Lisans      : UCRETSIZ SURUM - para ile satilamaz (bkz. LICENSE)
+//  Lisans      : GPL-3.0-or-later, acik kaynak (bkz. LICENSE, NOTICE)
 //  Telif       : (c) 2026 Omer CARNACAR
 // ============================================================
 // Print360 Panel - WPF masaustu uygulamasi (sunucuda calisir)
@@ -165,7 +165,7 @@ static class Panel360
         // Ucretsiz surum notu + gelistirici (e-postaya tiklaninca posta programi acilir)
         nav.Children.Add(new TextBlock
         {
-            Text = "Ücretsiz sürüm — para ile satılamaz",
+            Text = "Ücretsiz ve açık kaynak (GPL-3.0)",
             Foreground = Hex("#6C84A8"), FontSize = 10, TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(23, 10, 20, 0)
         });

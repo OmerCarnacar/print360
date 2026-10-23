@@ -1,0 +1,76 @@
+Print360 — RDP Yazdırma ve Yönetim Çözümü
+Telif Hakkı (C) 2026 Ömer ÇARNAÇAR
+
+    Geliştirici : Ömer ÇARNAÇAR
+    İletişim    : omer.carnacar@outlook.com.tr
+    LinkedIn    : https://www.linkedin.com/in/omercarnacar/
+    Kaynak kodu : https://github.com/OmerCarnacar/print360
+
+
+LİSANS
+------
+Print360 ÜCRETSİZ ve AÇIK KAYNAKLI bir yazılımdır. GNU Genel Kamu Lisansı
+(GNU General Public License) sürüm 3 veya (tercihinize göre) daha sonraki
+herhangi bir sürümü altında dağıtılır (SPDX: GPL-3.0-or-later).
+Lisansın tam ve bağlayıcı metni LICENSE dosyasındadır.
+
+Kısaca:
+  * Yazılımı her ortamda (kişisel, kurumsal, ticari) ücretsiz kullanabilir,
+    kopyalayabilir, inceleyebilir ve değiştirebilirsiniz.
+  * Yazılımı veya değiştirdiğiniz bir sürümünü DAĞITIRSANIZ, kaynak kodunu da
+    aynı lisansla (GPL-3.0) alıcılara sunmak zorundasınız. Print360'tan
+    türetilmiş kapalı kaynaklı bir ürün dağıtılamaz.
+  * Telif hakkı bildirimleri ve bu dosya korunmalıdır; değiştirilmiş
+    sürümlerde değişiklikler belirtilmelidir.
+
+
+MARKA
+-----
+"Print360" adı ve logosu bu lisans kapsamında DEĞİLDİR (GPL-3.0, madde 7(e)).
+Değiştirilmiş bir sürümü dağıtacaksanız onu farklı bir adla ve logoyla
+dağıtın; Print360'ın resmî sürümüymüş izlenimi vermeyin. Kodun kendisi
+lisansın verdiği tüm haklarla serbesttir.
+
+
+GARANTİ VE SORUMLULUK
+---------------------
+Yazılım "OLDUĞU GİBİ", HİÇBİR GARANTİ VERİLMEKSİZİN sunulur ve geliştirici
+kullanımından doğabilecek hiçbir zarardan sorumlu tutulamaz (ayrıntılar:
+LICENSE, madde 15 ve 16). Destek, bakım veya güncelleme yükümlülüğü yoktur.
+
+Kullanmadan önce: üretim ortamına almadan kendi ortamınızda test edin ve
+sistem yedeği alın. Yazılım yazıcı, kayıt defteri ve zamanlanmış görev
+ayarlarını değiştirir.
+
+Kişisel veriler: Print360 kullanıcı adı, bilgisayar adı, belge adı ve sayfa
+sayısı kaydeder. KVKK/GDPR kapsamında VERİ SORUMLUSU yazılımı kuran kurumdur,
+geliştirici değildir. Yazılım dışarıya hiçbir veri göndermez.
+
+
+ÜÇÜNCÜ TARAF BİLEŞENLER
+-----------------------
+System.Data.SQLite / SQLite — kamu malı (public domain).
+
+
+===================================================================
+ENGLISH
+===================================================================
+
+Print360 — RDP printing and management solution
+Copyright (C) 2026 Ömer ÇARNAÇAR
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option)
+any later version (SPDX: GPL-3.0-or-later). See the LICENSE file.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+more details.
+
+Trademark: the "Print360" name and logo are not licensed under the GPL
+(section 7(e)). Distribute modified versions under a different name.
+
+Personal data: the organisation deploying the software is the data
+controller under GDPR/KVKK; the software sends no data anywhere.

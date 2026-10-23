@@ -1,9 +1,9 @@
 // ============================================================
 //  Print360 - Urun kimligi
 //
-//  UCRETSIZ SURUM: Yazilim bedelsizdir, kullanim SINIRSIZDIR,
-//  lisans anahtari GEREKMEZ, cikti limiti YOKTUR.
-//  PARA ILE SATILAMAZ - ayrintilar icin bkz. LICENSE dosyasi.
+//  UCRETSIZ ve ACIK KAYNAK: kullanim SINIRSIZDIR, lisans anahtari
+//  GEREKMEZ, cikti limiti YOKTUR. Lisans: GNU GPL v3 veya sonrasi
+//  (GPL-3.0-or-later) - ayrintilar icin bkz. LICENSE ve NOTICE.
 //
 //  Gelistirici : Omer CARNACAR
 //  Iletisim    : omer.carnacar@outlook.com.tr
@@ -23,7 +23,7 @@ static class Lisans
 
     public static string DurumMetni()
     {
-        return "UCRETSIZ SURUM - sinirsiz kullanim, cikti limiti yok. "
-             + "Para ile satilamaz. Gelistirici: " + Gelistirici + " (" + Eposta + ")";
+        return "UCRETSIZ ve ACIK KAYNAK (GPL-3.0) - sinirsiz kullanim, cikti limiti yok. "
+             + "Gelistirici: " + Gelistirici + " (" + Eposta + ")";
     }
 }

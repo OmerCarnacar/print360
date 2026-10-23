@@ -2,7 +2,7 @@
 //  Print360 - RDP Yazdirma ve Yonetim Cozumu
 //  Gelistirici : Omer CARNACAR  <omer.carnacar@outlook.com.tr>
 //  LinkedIn    : https://www.linkedin.com/in/omercarnacar/
-//  Lisans      : UCRETSIZ SURUM - para ile satilamaz (bkz. LICENSE)
+//  Lisans      : GPL-3.0-or-later, acik kaynak (bkz. LICENSE, NOTICE)
 //  Telif       : (c) 2026 Omer CARNACAR
 // ============================================================
 //  NATIVE YAPILANDIRICI  (PowerShell GEREKTIRMEZ)

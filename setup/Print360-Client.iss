@@ -34,7 +34,7 @@ UninstallDisplayName=Print360 Client
 DisableWelcomePage=no
 DisableReadyPage=no
 ShowLanguageDialog=no
-AppCopyright=Copyright (c) 2026 Ömer ÇARNAÇAR - Ücretsiz sürüm, para ile satılamaz
+AppCopyright=Copyright (c) 2026 Ömer ÇARNAÇAR - GPL-3.0-or-later (açık kaynak)
 
 [Languages]
 Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"

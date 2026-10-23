@@ -10,7 +10,7 @@ _Sürücü uyumsuzluğu yok · Merkezi raporlama · Kurulumu tek tıkla_
 [![Derleme](https://github.com/OmerCarnacar/print360/actions/workflows/build.yml/badge.svg)](https://github.com/OmerCarnacar/print360/actions/workflows/build.yml)
 [![Son sürüm](https://img.shields.io/github/v/release/OmerCarnacar/print360?label=s%C3%BCr%C3%BCm&color=4f46e5)](https://github.com/OmerCarnacar/print360/releases/latest)
 [![İndirme](https://img.shields.io/github/downloads/OmerCarnacar/print360/total?label=indirme&color=0ea5e9)](https://github.com/OmerCarnacar/print360/releases)
-[![Lisans](https://img.shields.io/badge/lisans-Ücretsiz%20(satılamaz)-059669)](LICENSE)
+[![Lisans](https://img.shields.io/badge/lisans-GPL--3.0-059669)](LICENSE)
 
 [![Platform](https://img.shields.io/badge/platform-Windows%20Server%202016%2B-0078d4)](#gereksinimler)
 [![.NET](https://img.shields.io/badge/.NET%20Framework-4.x-512bd4)](#gereksinimler)
@@ -232,16 +232,14 @@ Adım adım anlatım: [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## Lisans ve sorumluluk reddi
 
-**Lisans türü:** Kaynağı açık, ücretsiz, **tescilli (proprietary)** lisans.
-
-> ⚠️ Bu bir **açık kaynak lisansı değildir.** Kaynak kodu herkese açıktır ve
-> incelenebilir; ancak satış yasağı içerdiği için OSI'nin açık kaynak tanımını
-> karşılamaz. MIT / GPL / Apache **değildir**.
+**Lisans:** Ücretsiz ve **açık kaynak** — [GNU GPL v3](LICENSE) veya sonrası
+(`GPL-3.0-or-later`).
 
 | | |
 |---|---|
-| ✅ Serbest | Kişisel, kurumsal ve ticari ortamlarda **ücretsiz** kullanmak; bedelsiz kopyalayıp dağıtmak; kaynağı inceleyip kendi ihtiyacınıza göre değiştirmek |
-| ❌ Yasak | **Para karşılığı satmak**, kiralamak, abonelikle sunmak, ücretli bir ürünün parçası olarak vermek, geliştirici bilgisini kaldırmak |
+| ✅ Serbest | Kişisel, kurumsal ve ticari ortamlarda **ücretsiz** kullanmak; kopyalayıp dağıtmak; kaynağı inceleyip değiştirmek; değiştirilmiş sürümünü dağıtmak |
+| 📋 Koşul | Dağıttığınız her sürümün **kaynak kodunu da GPL-3.0 ile** sunmak; telif bildirimlerini korumak. Print360'tan türetilmiş **kapalı kaynaklı** bir ürün dağıtılamaz |
+| ™️ Marka | **"Print360" adı ve logosu lisans kapsamında değildir.** Değiştirilmiş sürümleri farklı bir adla dağıtın |
 
 ### Sorumluluk reddi
 
@@ -261,7 +259,7 @@ ayarlarını değiştirir.
 kaydeder. KVKK/GDPR kapsamında **veri sorumlusu yazılımı kuran kurumdur**, geliştirici
 değildir. Yazılım dışarıya hiçbir veri göndermez.
 
-Tam metin: **[LICENSE](LICENSE)**
+Tam metin: **[LICENSE](LICENSE)** · Türkçe özet: **[NOTICE](NOTICE)**
 
 ---
 

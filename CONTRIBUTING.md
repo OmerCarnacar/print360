@@ -27,8 +27,12 @@ Küçük düzeltmeler için doğrudan PR açabilirsiniz. Büyük değişiklikler
 bir **Issue** açıp konuşalım — emeğiniz boşa gitmesin.
 
 **Fork'unuz sizindir.** İsterseniz kendi sürümünüzü geliştirip dağıtabilirsiniz;
-lisans buna izin verir (satmamak ve geliştirici bilgisini korumak kaydıyla —
-bkz. [LICENSE](LICENSE)).
+lisans ([GPL-3.0](LICENSE)) buna izin verir. Koşulları: dağıttığınız sürümün
+kaynak kodunu da GPL-3.0 ile sunmak ve telif bildirimlerini korumak.
+**"Print360" adı ve logosu lisans kapsamında değildir** — çatalınızı farklı bir
+adla dağıtın (bkz. [NOTICE](NOTICE)).
+
+Gönderdiğiniz katkılar projenin lisansıyla (GPL-3.0-or-later) yayınlanır.
 
 ## Geliştirme ortamı
 
