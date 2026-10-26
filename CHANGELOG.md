@@ -10,7 +10,7 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
-## [Yayınlanmamış]
+## [2026.10.26.0922]
 
 ### Düzeltildi
 - **Birden fazla RDP oturumu:** istemci yalnızca İLK oturumun sunucusunu
