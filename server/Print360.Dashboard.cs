@@ -1186,7 +1186,12 @@ static class Dashboard
                 yeni = !hbBellek.TryGetValue(machine, out eskiK) ||
                        !DateTime.TryParseExact(eskiK[1], "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture,
                            DateTimeStyles.None, out prev) || prev < DateTime.Now.AddMinutes(-3);
-                hbBellek[machine] = new[] { machine, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"), printer, ip };
+                // Bos gelen alan mevcut degeri ezmesin (veritabani sorgusundaki kuralin aynisi);
+                // veritabanindan yuklenen kullanici/OS alanlari da korunur.
+                hbBellek[machine] = new[] { machine, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                    printer.Length > 0 || eskiK == null || eskiK.Length < 3 ? printer : eskiK[2], ip,
+                    kUser.Length > 0 || eskiK == null || eskiK.Length < 5 ? kUser : eskiK[4],
+                    os.Length > 0 || eskiK == null || eskiK.Length < 6 ? os : eskiK[5] };
                 hbKirli = true;
                 if ((DateTime.Now - hbSonYazma).TotalSeconds >= 5) HbDosyayaYaz();
             }

@@ -50,6 +50,7 @@ partial class UzmanTest
     static int Main()
     {
         kok = Path.Combine(Path.GetTempPath(), "p360-uzman-" + Guid.NewGuid().ToString("N").Substring(0, 6));
+        string uretimOnce = UretimDamgasi();
         try
         {
             Hazirla();
@@ -68,6 +69,7 @@ partial class UzmanTest
             CiftOnay();
             IkiSunucuGunlukSismesi();
             YanlisSifreVeVekil();
+            RdpOturumDegisimi();
             Gunlukler();
         }
         catch (Exception ex) { Kontrol(false, "BEKLENMEYEN ISTISNA", ex.ToString()); }
@@ -76,12 +78,37 @@ partial class UzmanTest
             try { if (vekil != null) vekil.Durdur(); } catch { }
             try { Directory.Delete(kok, true); } catch { }
         }
+        UretimeDokunulmadi(uretimOnce);
         Console.WriteLine();
         Console.WriteLine("Sonuc: " + gecti + "/" + toplam);
         return gecti == toplam ? 0 : 1;
     }
 
     // ------------------------------------------------------------------ ortam
+    // Test, bu makinedeki GERCEK Print360 verisine dokunmamali. Bilinen veri
+    // dosyalarinin varlik + son yazma zamani, test oncesi ve sonrasi karsilastirilir.
+    static readonly string[] UretimDosyalari = {
+        @"C:\Print360\stats\kimlikler.csv", @"C:\Print360\stats\heartbeat.csv", @"C:\Print360\stats\alerts.csv",
+        @"C:\Print360\stats\jobs.csv", @"C:\Print360\stats\printers.csv", @"C:\Print360\print360.db",
+        @"C:\Print360\logs\dashboard.log", @"C:\Print360\logs\connections.log", @"C:\Print360\logs\mail-last.txt" };
+
+    static string UretimDamgasi()
+    {
+        var sb = new StringBuilder();
+        foreach (var f in UretimDosyalari)
+            sb.Append(f).Append('=').Append(File.Exists(f) ? File.GetLastWriteTimeUtc(f).Ticks.ToString() : "-").Append('|');
+        return sb.ToString();
+    }
+
+    static void UretimeDokunulmadi(string once)
+    {
+        string sonra = UretimDamgasi();
+        var degisen = new List<string>();
+        var a = once.Split('|'); var b = sonra.Split('|');
+        for (int i = 0; i < a.Length && i < b.Length; i++) if (a[i] != b[i]) degisen.Add(b[i].Split('=')[0]);
+        Kontrol(degisen.Count == 0, @"test bu makinedeki gercek C:\Print360 verisine DOKUNMADI", string.Join(", ", degisen));
+    }
+
     static void Ayarla(Type t, string alan, object deger)
     {
         var f = t.GetField(alan, BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static);
@@ -115,6 +142,12 @@ partial class UzmanTest
         Ayarla(D, "connLog", Path.Combine(s, "logs\\connections.log"));
         Ayarla(D, "pwdFile", Path.Combine(s, "panel.pwd"));
         Ayarla(D, "rulesCsv", Path.Combine(s, "rules.csv"));
+        Ayarla(D, "mailIni", Path.Combine(s, "mail.ini"));
+        Ayarla(D, "mailLastFile", Path.Combine(s, "logs\\mail-last.txt"));
+        // Kimlik defteri ILK kalp atisindan once yonlendirilmeli: eskiden yalnizca
+        // senaryo 13'te yonlendiriliyordu ve onceki kalp atislari (performans testinin
+        // 300 makinesi dahil) GERCEK C:\Print360\stats\kimlikler.csv'ye yaziliyordu.
+        Ayarla(D, "kimlikDefteri", new KimlikDefteri(Path.Combine(s, "stats\\kimlikler.csv")));
         Kontrol(Db.EnsureSchema() && Db.MotorAdi.StartsWith("SQLite"),
                 "sunucu veritabani: db.ini yokken MSSQL'e 'sa' ile DENENMEDEN dogrudan SQLite", Db.MotorAdi + " | " + Db.Err);
 
@@ -491,6 +524,22 @@ partial class UzmanTest
                 "sunucu her istegi yazdi (yontem, yol, makine, IP, sonuc, sure)", null);
         Kontrol(i.Contains("[AYRINTI] HTTP GET") && i.Contains("ms"), "istemci her yoklamayi sureyle yazdi", null);
         Kontrol(!s.Contains("testkey") && !i.Contains("key=testkey"), "gunluklerde istemci sifresi GORUNMUYOR", null);
+    }
+
+    static void RdpOturumDegisimi()
+    {
+        Console.WriteLine("--- 17. Birden fazla RDP oturumu: acilan / kapanan / sira degisimi");
+        List<string> ac, kap;
+        var bir = new List<string> { "10.2.0.61" };
+        var iki = new List<string> { "10.2.0.61", "10.2.0.70" };
+        Kontrol(ClientAgent.RdpDegisimi(bir, iki, out ac, out kap) && ac.Count == 1 && ac[0] == "10.2.0.70" && kap.Count == 0,
+                "ikinci sunucuya acilan oturum algilandi (eskiden yalnizca ilk oturum izleniyordu)", string.Join(",", ac));
+        Kontrol(!ClientAgent.RdpDegisimi(iki, new List<string> { "10.2.0.70", "10.2.0.61" }, out ac, out kap),
+                "baglanti sirasi degisince sahte ACILDI yok", null);
+        Kontrol(ClientAgent.RdpDegisimi(iki, new List<string> { "10.2.0.70" }, out ac, out kap) && kap.Count == 1 && kap[0] == "10.2.0.61" && ac.Count == 0,
+                "oturumlardan biri kapaninca o oturum KAPANDI olarak algilandi", string.Join(",", kap));
+        Kontrol(ClientAgent.RdpDegisimi(bir, new List<string>(), out ac, out kap) && kap.Count == 1,
+                "son oturum kapandi", null);
     }
 }
 

@@ -1541,34 +1541,42 @@ static partial class ClientAgent
     // kalp atisi dongusunu uyandirir, boylece 60 sn beklenmez.
     static readonly ManualResetEvent hbTetik = new ManualResetEvent(false);
 
+    // ESKIDEN yalnizca ILK oturumun IP'si izleniyordu: ikinci bir sunucuya acilan
+    // oturum ne gunluge yaziliyor ne donguyu uyandiriyordu; birden fazla oturumdan
+    // biri kapaninca hicbir sey yazilmiyordu; baglanti listesinin sirasi degisince
+    // de sahte "ACILDI" satirlari cikiyordu. Artik oturumlarin KUMESI karsilastirilir.
     static void RdpIzleyici()
     {
-        string onceki = null;
+        var onceki = new List<string>();
         while (true)
         {
             try
             {
-                string s = RdpAktifSunucu();
-                if (s != onceki)
+                var simdi = RdpSunucularBul();
+                List<string> acilan, kapanan;
+                if (RdpDegisimi(onceki, simdi, out acilan, out kapanan))
                 {
-                    if (s != null)
-                    {
-                        sonRdpSunucu = s;
+                    foreach (var s in acilan)
                         Log("RDP oturumu ACILDI: " + s + " - sunucuya hemen baglaniliyor.");
-                        rdpAcik = true;
-                    }
-                    else
-                    {
-                        Log("RDP oturumu KAPANDI.");
-                        rdpAcik = false;
-                    }
-                    onceki = s;
+                    foreach (var s in kapanan)
+                        Log("RDP oturumu KAPANDI: " + s + (simdi.Count > 0 ? " (acik kalan: " + string.Join(", ", simdi) + ")" : "."));
+                    if (acilan.Count > 0) sonRdpSunucu = acilan[acilan.Count - 1];
+                    rdpAcik = simdi.Count > 0;
+                    onceki = simdi;
                     hbTetik.Set();   // kalp atisi dongusu hemen calissin
                 }
             }
             catch { }
             Thread.Sleep(5000);
         }
+    }
+
+    // Iki RDP oturum listesi arasindaki fark (sira onemsiz). Degisim varsa true.
+    internal static bool RdpDegisimi(List<string> onceki, List<string> simdi, out List<string> acilan, out List<string> kapanan)
+    {
+        acilan = simdi.Where(x => !onceki.Contains(x)).ToList();
+        kapanan = onceki.Where(x => !simdi.Contains(x)).ToList();
+        return acilan.Count > 0 || kapanan.Count > 0;
     }
 
     static string BaseUrl(Dictionary<string, string> cfg)

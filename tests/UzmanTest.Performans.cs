@@ -30,6 +30,7 @@ partial class UzmanTest
     internal static int Performans()
     {
         kok = Path.Combine(Path.GetTempPath(), "p360-perf-" + Guid.NewGuid().ToString("N").Substring(0, 6));
+        string uretimOnce = UretimDamgasi();
         try
         {
             Hazirla();
@@ -47,6 +48,7 @@ partial class UzmanTest
             try { if (vekil != null) vekil.Durdur(); } catch { }
             try { Directory.Delete(kok, true); } catch { }
         }
+        UretimeDokunulmadi(uretimOnce);
         Console.WriteLine();
         Console.WriteLine("Sonuc: " + gecti + "/" + toplam);
         return gecti == toplam ? 0 : 1;

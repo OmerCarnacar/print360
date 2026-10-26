@@ -10,6 +10,29 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [Yayınlanmamış]
+
+### Düzeltildi
+- **Birden fazla RDP oturumu:** istemci yalnızca İLK oturumun sunucusunu
+  izliyordu. İkinci bir sunucuya açılan oturum ne günlüğe yazılıyor ne de
+  bağlantı döngüsünü hemen uyandırıyordu (60 sn'ye kadar gecikme). Oturumlardan
+  biri kapanınca hiçbir şey yazılmıyordu. Bağlantı listesinin sırası değişince
+  de sahte "RDP oturumu AÇILDI" satırları çıkıyordu. Artık oturumların tamamı
+  izleniyor; her açılan ve kapanan oturum adıyla yazılıyor ("açık kalan: ..."
+  bilgisiyle).
+- **Veritabanısız modda makine bilgileri:** boş gelen bir kalp atışı, bellekteki
+  yazıcı adını siliyordu. Makineler sayfasındaki kullanıcı ve işletim sistemi
+  sütunları da boş kalıyordu. Boş gelen alan artık mevcut değeri ezmiyor.
+- **Testler gerçek veriye yazıyordu:** uzman ve performans testleri, kimlik
+  defterini yalnızca 13. senaryoda geçici klasöre yönlendiriyordu. Önceki kalp
+  atışları (performans testinin 300 sahte makinesi dahil) testin çalıştığı
+  makinedeki GERÇEK `C:\Print360\stats\kimlikler.csv` dosyasına yazılıyordu.
+  Yönlendirme artık ilk istekten önce yapılıyor. Ayrıca iki test de çalışmadan
+  önce ve sonra gerçek `C:\Print360` veri dosyalarını karşılaştırıyor; bir
+  dosyaya dokunulmuşsa test KALIYOR.
+
+---
+
 ## [2026.10.23.0936]
 
 ### Lisans: açık kaynak
