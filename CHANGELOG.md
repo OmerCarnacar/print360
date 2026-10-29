@@ -10,7 +10,7 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
-## [Yayınlanmamış]
+## [2026.10.29.2107]
 
 ### Düzeltildi
 - **Çıktı iki kez basılabiliyordu:** iş istemciye gönderildikten sonra sunucudaki
