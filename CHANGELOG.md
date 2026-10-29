@@ -10,6 +10,28 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [Yayınlanmamış]
+
+### Düzeltildi
+- **Çıktı iki kez basılabiliyordu:** iş istemciye gönderildikten sonra sunucudaki
+  geçici çıktı dosyası siliniyordu. Silme o an başarısız olursa (örneğin antivirüs
+  dosyayı tarıyorsa) dosya yerinde kalıyordu ve 2 sn sonra AYNI iş yeniden
+  gönderiliyordu. Artık silme birkaç kez deneniyor, olmazsa dosya kenara
+  (`spool\_gonderildi`) alınıyor. O da olmazsa dosyanın bu sürümü "gönderildi"
+  olarak hatırlanıyor ve tekrar gönderilmiyor.
+- **Arka arkaya yazdırılan belgelerin adı karışıyordu:** belge adı ve sayfa
+  sayısı, kullanıcının son 3 dakikadaki EN YENİ yazdırma kaydından alınıyordu.
+  İki belge art arda yazdırılınca (A, sonra B) A'ya B'nin adı ve sayfa sayısı
+  yazılıyordu. Bu da raporu, dosya adını ve **günlük sayfa kotasını** bozuyordu.
+  Artık her işe, dosyanın yazılma anına en yakın ve başka bir işe verilmemiş
+  kayıt eşleştiriliyor.
+
+### Test
+- Sunucu ajanı ilk kez testlerde üretim koduyla derleniyor (`tests/SunucuAjani.cs`).
+- Toplam 14 test dosyası.
+
+---
+
 ## [2026.10.26.0922]
 
 ### Düzeltildi

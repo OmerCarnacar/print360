@@ -642,3 +642,42 @@ class OturumDeposu
 
     public int Sayi { get { lock (kilit) return oturumlar.Count; } }
 }
+
+// ------------------------------------------------------------------
+// BELGE ADI ESLESTIRME (PrintService olay 307 -> spool isi)
+// Eskiden kullanicinin SON 3 dk'daki EN YENI olayi aliniyordu: arka arkaya
+// iki belge yazdirilinca (A, B) A islenirken B'nin olayi da gunlukte oldugu
+// icin A'ya B'nin adi ve SAYFA SAYISI yaziliyordu (rapor, dosya adi ve kota
+// yanlis). Artik: spool dosyasinin yazilma anina EN YAKIN ve daha once baska
+// bir ise VERILMEMIS olay secilir. Her olay tek bir ise verilir.
+// ------------------------------------------------------------------
+class BelgeOlayiSecici
+{
+    readonly object kilit = new object();
+    readonly Queue<long> sira = new Queue<long>();
+    readonly HashSet<long> kullanilan = new HashSet<long>();
+    public TimeSpan Pencere = TimeSpan.FromSeconds(90);
+
+    // adaylar: (olay kayit no, olay zamani). Secilen olayin indeksi; yoksa -1.
+    // Secilen olay "kullanildi" olarak isaretlenir.
+    public int Sec(IList<KeyValuePair<long, DateTime>> adaylar, DateTime yazma)
+    {
+        lock (kilit)
+        {
+            int en = -1; double enFark = double.MaxValue;
+            for (int i = 0; i < adaylar.Count; i++)
+            {
+                if (kullanilan.Contains(adaylar[i].Key)) continue;
+                double fark = Math.Abs((adaylar[i].Value - yazma).TotalSeconds);
+                if (fark > Pencere.TotalSeconds || fark >= enFark) continue;
+                en = i; enFark = fark;
+            }
+            if (en >= 0)
+            {
+                kullanilan.Add(adaylar[en].Key); sira.Enqueue(adaylar[en].Key);
+                while (sira.Count > 500) kullanilan.Remove(sira.Dequeue());
+            }
+            return en;
+        }
+    }
+}

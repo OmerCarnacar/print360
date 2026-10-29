@@ -10,7 +10,9 @@
 //   - dosya surekli kilitli / buyuyor          -> esik asilinca BIR KEZ bildirilir
 //   - bilgisayar adi degisti                   -> bekleyen isler yeni ada tasinir
 //   - ayni kimlik iki makinede                 -> isler TASINMAZ, cakisma bildirilir
+//   - arka arkaya iki belge yazdirildi         -> her is KENDI belge adini/sayfasini alir
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Security.AccessControl;
@@ -43,6 +45,7 @@ class OlayGunlugu
             Takilma();
             AdDegisimi();
             HataAyiklama();
+            BelgeOlayiEslestirme();
         }
         finally { try { Directory.Delete(kok, true); } catch { } }
         Console.WriteLine();
@@ -298,6 +301,28 @@ class OlayGunlugu
         r = d2.Gorus("iid-K", "SUBE-A", t0.AddSeconds(60), out eski);
         Kontrol(r == "cakisma" && eski == "SUBE-B", "eski ad yeniden geldi -> CAKISMA (isler tasinmaz)", r + " / " + eski);
         Kontrol(d2.Gorus("iid-K", "SUBE-A", t0.AddSeconds(90), out eski) == "ayni", "kayitli ad degismedi", null);
+    }
+
+    static void BelgeOlayiEslestirme()
+    {
+        // Kullanici 10:00:00'da "A Fatura", 10:00:04'te "B Rapor" yazdirdi. A'nin spool
+        // dosyasi islenirken iki olay da gunlukte (en yeni once gelir).
+        var t = new DateTime(2026, 10, 29, 10, 0, 0);
+        var olaylar = new List<KeyValuePair<long, DateTime>> {
+            new KeyValuePair<long, DateTime>(502, t.AddSeconds(4)),    // B Rapor
+            new KeyValuePair<long, DateTime>(501, t.AddSeconds(0)) };  // A Fatura
+        var s = new BelgeOlayiSecici();
+        int a = s.Sec(olaylar, t.AddMilliseconds(300));
+        Kontrol(a == 1, "A isine A'nin olayi verildi (eskiden en yeni olay = B'nin adi aliniyordu)", a.ToString());
+        int b = s.Sec(olaylar, t.AddSeconds(4).AddMilliseconds(200));
+        Kontrol(b == 0, "B isine B'nin olayi verildi", b.ToString());
+        Kontrol(s.Sec(olaylar, t.AddSeconds(4)) == -1, "bir olay ikinci bir ise VERILMEZ", null);
+        Kontrol(new BelgeOlayiSecici().Sec(olaylar, t.AddMinutes(10)) == -1,
+                "yazilma anindan cok uzak olay eslestirilmez (baska is)", null);
+        // B'nin olayi henuz dusmemis olsa bile A'nin adi B'ye gecmez
+        var s2 = new BelgeOlayiSecici();
+        s2.Sec(olaylar.GetRange(1, 1), t);
+        Kontrol(s2.Sec(olaylar.GetRange(1, 1), t.AddSeconds(4)) == -1, "kullanilmis olay sonraki ise kopyalanmaz", null);
     }
 }
 

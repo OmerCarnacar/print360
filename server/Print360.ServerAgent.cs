@@ -14,6 +14,7 @@
 // - Istemcinin "basildi" kayitlarini (stats\printed.csv) periyodik olarak
 //   sunucuya geri ceker -> C:\Print360\stats\clients\<makine>.csv
 using System;
+using System.Collections.Generic;
 using System.Diagnostics.Eventing.Reader;
 using System.IO;
 using System.IO.Compression;
@@ -165,6 +166,13 @@ static class ServerAgent
 
     static void SpoolKontrol(string tur, string sp)
     {
+        // Gonderilmis ama silinememis spool dosyasi: AYNI surumu yeniden gondermek
+        // ciktiyi IKI KEZ bastirirdi. Yalnizca silmeyi yeniden dene.
+        if (gonderilmisSpool != null && gonderilmisSpool == SpoolImzasi(sp))
+        {
+            if (SpoolSil(sp)) gonderilmisSpool = null;
+            return;
+        }
         string sebep;
         if (!SpoolHazir(sp, out sebep))
         {
@@ -192,6 +200,43 @@ static class ServerAgent
         string c = spoolTakilma.Hazir(sp);
         if (c != null) Log(c);
         Dispatch(tur, sp);
+    }
+
+    // IS GONDERILDIKTEN SONRA spool dosyasini kaldirir. Eskiden duz File.Delete'ti:
+    // antivirus o an dosyayi tariyorsa istisna atiyor, dosya yerinde kaliyor ve
+    // 2 sn sonra AYNI is yeniden gonderiliyordu (cikti iki kez basiliyordu).
+    // Once birkac kez silmeyi dener, olmazsa kenara tasir; o da olmazsa false
+    // doner ve cagiran dosyanin bu surumunu "gonderildi" olarak hatirlar.
+    static string gonderilmisSpool;
+
+    static string SpoolImzasi(string yol)
+    {
+        try { var fi = new FileInfo(yol); return fi.Exists ? yol + "|" + fi.Length + "|" + fi.LastWriteTimeUtc.Ticks : null; }
+        catch { return null; }
+    }
+
+    static bool SpoolSil(string yol)
+    {
+        string sonHata = null;
+        for (int i = 0; i < 5; i++)
+        {
+            try { if (File.Exists(yol)) File.Delete(yol); return true; }
+            catch (Exception ex) { sonHata = ex.Message; Thread.Sleep(300); }
+        }
+        try
+        {
+            string dir = Path.Combine(spoolDir, "_gonderildi");
+            Directory.CreateDirectory(dir);
+            File.Move(yol, Path.Combine(dir, DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + "_" + Path.GetFileName(yol)));
+            Log("Gonderilen spool dosyasi silinemedi (" + sonHata + "), kenara tasindi: " + dir);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log("UYARI: gonderilen spool dosyasi silinemedi ve tasinamadi (" + ex.Message + "). Is TEKRAR GONDERILMEYECEK; "
+              + "dosya serbest kalinca silinecek: " + yol);
+            return false;
+        }
     }
 
     static bool SpoolHazir(string path, out string sebep)
@@ -588,12 +633,13 @@ static class ServerAgent
         // '~' ayiricisiyla gomulur. Istemci bu kismi "Belge" olarak gosterir;
         // kullanici tarih-saat yerine gercek belge adini gorur.
         long spoolBoyut = 0;
-        try { spoolBoyut = new FileInfo(spoolFile).Length; } catch { }
+        DateTime spoolYazma = DateTime.Now;
+        try { var fi = new FileInfo(spoolFile); spoolBoyut = fi.Length; spoolYazma = fi.LastWriteTime; } catch { }
         Adim(1, "SPOOL", Path.GetFileName(spoolFile) + " (" + (spoolBoyut / 1024) + " KB)",
              "kullanici sanal yaziciya yazdirdi, cikti dosyaya dustu");
 
         string ilkDoc, ilkSayfa;
-        LookupDocInfo(out ilkDoc, out ilkSayfa);
+        LookupDocInfo(spoolYazma, out ilkDoc, out ilkSayfa);
         string docSafe = BelgeAdiTemizle(ilkDoc);
         Adim(2, "BELGE ADI", (docSafe.Length > 0 ? docSafe : "(okunamadi)")
              + (string.IsNullOrEmpty(ilkSayfa) ? "" : " | " + ilkSayfa + " sayfa"),
@@ -616,8 +662,7 @@ static class ServerAgent
         if (engelSebep == null && uKota > 0)
         {
             try { pdfOn = File.ReadAllBytes(spoolFile); } catch { }
-            string dummy, sayfaS; LookupDocInfo(out dummy, out sayfaS);
-            int sayfa; int.TryParse(sayfaS, out sayfa);
+            int sayfa; int.TryParse(ilkSayfa, out sayfa);
             if (sayfa == 0 && pdfOn != null) sayfa = CountPages(pdfOn);
             if (TodayPages() + sayfa > uKota) engelSebep = "Gunluk kota (" + uKota + " sayfa) asildi";
         }
@@ -625,7 +670,7 @@ static class ServerAgent
         {
             byte[] pdfE = pdfOn;
             if (pdfE == null) { try { pdfE = File.ReadAllBytes(spoolFile); } catch { } }
-            string docE, pagesE; LookupDocInfo(out docE, out pagesE);
+            string docE = ilkDoc, pagesE = ilkSayfa;
             if (pagesE.Length == 0 && pdfE != null) pagesE = CountPages(pdfE).ToString();
             File.Delete(spoolFile);
             if (pdfE != null) ArchiveJob(pdfE, name); // engellenen is de denetim icin arsivlenir
@@ -718,7 +763,7 @@ static class ServerAgent
             File.Move(tmp, Path.Combine(jobsDir, name));
             kanal = "tsclient";
         }
-        File.Delete(spoolFile);
+        if (!SpoolSil(spoolFile)) gonderilmisSpool = SpoolImzasi(spoolFile);
         Adim(5, "SPOOL SIL", Path.GetFileName(spoolFile),
              "is teslim edildi, gecici cikti dosyasi kaldirildi");
         if (pdf != null) ArchiveJob(pdf, name);   // gonderim basarili -> tek kez arsivle
@@ -728,7 +773,7 @@ static class ServerAgent
         // Belge adi is basinda zaten okundu; bos geldiyse (olay gunlugu gecikmis
         // olabilir) burada bir kez daha denenir.
         string doc = ilkDoc, pages = ilkSayfa;
-        if (doc.Length == 0 || pages.Length == 0) LookupDocInfo(out doc, out pages);
+        if (doc.Length == 0) LookupDocInfo(spoolYazma, out doc, out pages);
         string paper = pdf != null ? DetectPaper(pdf) : "";
         string kb = pdf != null ? ((pdf.Length + 1023) / 1024).ToString() : "";
         if (pages.Length == 0 && pdf != null) pages = CountPages(pdf).ToString();
@@ -760,6 +805,12 @@ static class ServerAgent
     {
         try
         {
+            // Silinemeyip kenara alinan (zaten GONDERILMIS) spool kopyalari: 1 gun yeter
+            string gonderildi = Path.Combine(spoolDir, "_gonderildi");
+            if (Directory.Exists(gonderildi))
+                foreach (var f in Directory.GetFiles(gonderildi))
+                    if (File.GetLastWriteTime(f) < DateTime.Now.AddDays(-1))
+                        try { File.Delete(f); } catch { }
             string root = @"C:\Print360\archive";
             if (!Directory.Exists(root)) return;
             foreach (var d in Directory.GetDirectories(root))
@@ -878,32 +929,45 @@ static class ServerAgent
 
     // PrintService olay gunlugunden (Event 307) belge adi ve sayfa sayisi.
     // Parametreler: %1 is no, %2 belge, %3 kullanici, %4 makine, %5 yazici, %8 sayfa
-    static void LookupDocInfo(out string doc, out string pages)
+    // Olay, spool dosyasinin yazilma anina gore secilir (bkz. Ortak BelgeOlayiSecici):
+    // arka arkaya yazdirilan belgeler birbirinin adini/sayfa sayisini almaz.
+    static readonly BelgeOlayiSecici belgeOlaylari = new BelgeOlayiSecici();
+
+    static void LookupDocInfo(DateTime spoolYazma, out string doc, out string pages)
     {
         doc = ""; pages = "";
         try
         {
             var q = new EventLogQuery("Microsoft-Windows-PrintService/Operational",
                         PathType.LogName, "*[System[(EventID=307)]]") { ReverseDirection = true };
+            var adaylar = new List<KeyValuePair<long, DateTime>>();
+            var bilgi = new List<string[]>();
             using (var reader = new EventLogReader(q))
             {
                 for (int i = 0; i < 50; i++)
                 {
                     var ev = reader.ReadEvent();
                     if (ev == null) break;
-                    if (ev.TimeCreated.HasValue && ev.TimeCreated.Value < DateTime.Now.AddMinutes(-3)) break;
-                    var p = ev.Properties;
-                    string yz = p.Count >= 8 ? Convert.ToString(p[4].Value) : "";
-                    if (p.Count >= 8 &&
-                        yz.StartsWith("Print360", StringComparison.OrdinalIgnoreCase) &&
-                        yz.EndsWith("- " + user, StringComparison.OrdinalIgnoreCase))
+                    using (ev)
                     {
-                        doc = Convert.ToString(p[1].Value);
-                        pages = Convert.ToString(p[7].Value);
-                        return;
+                        if (ev.TimeCreated.HasValue && ev.TimeCreated.Value < DateTime.Now.AddMinutes(-3)) break;
+                        var p = ev.Properties;
+                        string yz = p.Count >= 8 ? Convert.ToString(p[4].Value) : "";
+                        if (p.Count >= 8 && ev.TimeCreated.HasValue && ev.RecordId.HasValue &&
+                            yz.StartsWith("Print360", StringComparison.OrdinalIgnoreCase) &&
+                            yz.EndsWith("- " + user, StringComparison.OrdinalIgnoreCase))
+                        {
+                            adaylar.Add(new KeyValuePair<long, DateTime>(ev.RecordId.Value, ev.TimeCreated.Value));
+                            bilgi.Add(new[] { Convert.ToString(p[1].Value), Convert.ToString(p[7].Value) });
+                        }
                     }
                 }
             }
+            int sec = belgeOlaylari.Sec(adaylar, spoolYazma);
+            if (sec >= 0) { doc = bilgi[sec][0]; pages = bilgi[sec][1]; }
+            else if (adaylar.Count > 0)
+                Ayr("Belge adi: " + adaylar.Count + " aday olay var ama hicbiri bu ise (yazilma " + spoolYazma.ToString("HH:mm:ss")
+                    + ") uymuyor ya da baska ise verildi");
         }
         catch (Exception ex) { Log("Belge adi okunamadi (olay gunlugu): " + ex.Message); }
     }
