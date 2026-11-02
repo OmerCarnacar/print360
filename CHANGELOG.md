@@ -10,7 +10,7 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
-## [Yayınlanmamış]
+## [2026.11.02.1318]
 
 ### Düzeltildi
 - **Belge adı işin türünü değiştiriyordu:** iş türü dosya adının tamamında
