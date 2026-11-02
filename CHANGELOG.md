@@ -10,7 +10,7 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
-## [Yayınlanmamış]
+## [2026.11.02.1721]
 
 ### Eklendi
 - **Sunucu aramada port taraması:** sunucu kurulumda farklı bir port seçmiş olabilir.
