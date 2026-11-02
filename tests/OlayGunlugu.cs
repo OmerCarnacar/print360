@@ -356,6 +356,20 @@ class OlayGunlugu
                 "bilinen adres hatadaysa ayardaki port yine denenir (sunucu port degistirmis olabilir)", null);
         Kontrol(SunucuSagligi.BaglantiKapandiMi(WebExceptionStatus.ReceiveFailure) && !SunucuSagligi.BaglantiKapandiMi(WebExceptionStatus.ConnectFailure),
                 "port acik ama baglanti kesiliyor durumu ayirt edilir", null);
+        // Sahadan: mstsc adresi 100.102.89.1:54822, 54822 Print360 port ayarina girmis
+        var rp = new HashSet<int> { 3389, 54822 };
+        Kontrol(RdpAlgilama.MruPortu("100.102.89.1:54822") == 54822 && RdpAlgilama.MruPortu("SRV01") == 0 && RdpAlgilama.MruPortu("fe80::1") == 0,
+                "RDP gecmisinden port okunur", null);
+        Kontrol(RdpAlgilama.GecerliPort("54822", rp) == "" && RdpAlgilama.GecerliPort("3389", rp) == "" && RdpAlgilama.GecerliPort(" 9443 ", rp) == "9443",
+                "RDP portu Print360 portu sayilmaz, gercek port korunur", null);
+        Kontrol(RdpAlgilama.SunucuGecerli("100.102.89.1:54822", rp) == "100.102.89.1" && RdpAlgilama.SunucuGecerli("srv:9443", rp) == "srv:9443",
+                "sunucu adresindeki RDP portu atilir, panel portu korunur", null);
+        var notlar = new List<string>();
+        var onar = RdpAlgilama.AyarOnar(new[] { "; yorum", "Server=100.102.89.1:54822", "Port=54822", "Printer=Xerox" }, rp, notlar);
+        Kontrol(onar != null && onar[1] == "Server=100.102.89.1" && onar[2] == "Port=" && onar[3] == "Printer=Xerox" && onar[0] == "; yorum" && notlar.Count == 2,
+                "ayar dosyasi onarilir, diger satirlara dokunulmaz", onar == null ? "null" : string.Join(" | ", onar.ToArray()));
+        Kontrol(RdpAlgilama.AyarOnar(new[] { "Server=srv:9443", "Port=9443", "Server2=x" }, rp, new List<string>()) == null, "dogru ayarlar degistirilmez", null);
+        Kontrol(RdpAlgilama.AyarOnar(new[] { "Server=", "Port=" }, rp, new List<string>()) == null, "bos ayarlar degistirilmez", null);
         var hp = RdpAlgilama.HizliPortlar("9443");
         Kontrol(hp[0] == 9443 && hp.Contains(8443) && hp.Contains(8360) && hp.FindAll(x => x == 9443).Count == 1,
                 "ayardaki port once denenir, varsayilanlar da taranir, tekrar yok", null);

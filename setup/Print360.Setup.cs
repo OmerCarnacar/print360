@@ -436,7 +436,9 @@ static class Kurulum
         sb.AppendLine("Printer=" + Al(p, "printer"));
         sb.AppendLine("Server=" + Al(p, "server"));
         sb.AppendLine("ClientKey=" + Al(p, "clientkey"));
-        sb.AppendLine("Port=" + Al(p, "port"));
+        // Port artik sihirbazda sorulmuyor (istemci kendisi bulur). 3389 RDP'dir, panel olamaz.
+        string istemciPort = Al(p, "port");
+        sb.AppendLine("Port=" + (istemciPort.Trim() == "3389" ? "" : istemciPort));
         sb.AppendLine("CertHash=" + Al(p, "certhash"));
         sb.AppendLine("UseHttps=1");
         sb.AppendLine("YedekMotor=1");

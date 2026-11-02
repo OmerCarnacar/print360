@@ -121,10 +121,9 @@ begin
     'Print360 Ayarları', 'Sunucu ve yazıcı bilgileri',
     'RDP sunucusunun adını/IP''sini girin (merkezi sayaç için önerilir, boş geçilebilir). ' +
     'Hedef yazıcı boş bırakılırsa Windows varsayılan yazıcısı kullanılır.');
-  SunucuPage.Add('Sunucu adı veya IP:', False);
+  SunucuPage.Add('Sunucu adı veya IP (boş = otomatik bulunur; RDP portu yazmayın):', False);
   SunucuPage.Add('Hedef yazıcı adı (boş = varsayılan):', False);
   SunucuPage.Add('İstemci şifresi (makine sunucuya bu şifreyle kaydolur):', True);
-  SunucuPage.Add('Sunucu panel portu (boş = 8443; sunucuda özel port ayarlandıysa yazın):', False);
   SunucuPage.Add('Sunucu sertifika parmak izi (bulut/internet için önerilir; boş geçilebilir):', False);
 
   { Baglanti modu sorusu YOK: ajan "auto" calisir - RDP sanal kanali varsa
@@ -155,8 +154,7 @@ begin
     + ' --server "'   + SunucuPage.Values[0] + '"'
     + ' --printer "'  + SunucuPage.Values[1] + '"'
     + ' --clientkey "'+ SunucuPage.Values[2] + '"'
-    + ' --port "'     + SunucuPage.Values[3] + '"'
-    + ' --certhash "' + SunucuPage.Values[4] + '"'
+    + ' --certhash "' + SunucuPage.Values[3] + '"'
     + ' --marker "'   + Isaret + '"';
 end;
 

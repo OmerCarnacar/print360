@@ -1412,6 +1412,51 @@ static partial class ClientAgent
         return RdpAlgilama.Sec(kayitlar, new int[0]);
     }
 
+    // Bu makinenin kullandigi RDP portlari: 3389, acik mstsc baglantilari ve mstsc gecmisi
+    // (kayit defteri: RDP kapaliyken de bilinsin). 30 sn hatirlanir, hep buyur.
+    static readonly HashSet<int> rdpPortDefteri = new HashSet<int> { 3389 };
+    static DateTime rdpPortZamani = DateTime.MinValue;
+
+    internal static HashSet<int> RdpPortlari()
+    {
+        lock (rdpPortDefteri)
+        {
+            if ((DateTime.Now - rdpPortZamani).TotalSeconds < 30) return new HashSet<int>(rdpPortDefteri);
+            rdpPortZamani = DateTime.Now;
+            try
+            {
+                using (var k = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Terminal Server Client\Default"))
+                    if (k != null)
+                        foreach (var ad in k.GetValueNames())
+                        {
+                            int p = RdpAlgilama.MruPortu(Convert.ToString(k.GetValue(ad)));
+                            if (p > 0) rdpPortDefteri.Add(p);
+                        }
+                var pidler = RdpSurecleri();
+                if (pidler.Count > 0)
+                    foreach (var c in TcpTablosu())
+                        if (pidler.Contains(c.Pid)) rdpPortDefteri.Add(c.Port);
+            }
+            catch { }
+            return new HashSet<int>(rdpPortDefteri);
+        }
+    }
+
+    // Print360.ini'ye yanlislikla girmis RDP portunu kalici olarak temizler.
+    static void AyarlariOnar()
+    {
+        try
+        {
+            if (!File.Exists(iniFile)) return;
+            var notlar = new List<string>();
+            var yeni = RdpAlgilama.AyarOnar(File.ReadAllLines(iniFile, Encoding.UTF8), RdpPortlari(), notlar);
+            if (yeni == null) return;
+            File.WriteAllLines(iniFile, yeni.ToArray(), Encoding.UTF8);
+            foreach (var n in notlar) Log("AYAR DUZELTILDI: " + n + " (Print360 portu ayri bir porttur; istemci kendisi bulur).");
+        }
+        catch (Exception ex) { Ayr("Ayar dosyasi onarilamadi: " + ex.Message); }
+    }
+
     static List<int> RdpSurecleri()
     {
         var l = new List<int>();
@@ -1480,6 +1525,7 @@ static partial class ClientAgent
 
     static void SunucuAramaTuru()
     {
+        AyarlariOnar();
         var cfg = ReadIni();
         string mod = cfg.ContainsKey("SunucuArama") ? cfg["SunucuArama"].Trim().ToLowerInvariant() : "";
         if (mod == "0") return;
@@ -1522,8 +1568,8 @@ static partial class ClientAgent
         }
         if (hizli.Count == 0) return;
 
-        string cp = cfg.ContainsKey("Port") ? cfg["Port"].Trim() : "";
-        var portlar = RdpAlgilama.HizliPortlar(cp);
+        var rdpPort = RdpPortlari();
+        var portlar = RdpAlgilama.HizliPortlar(RdpAlgilama.GecerliPort(cfg.ContainsKey("Port") ? cfg["Port"] : "", rdpPort));
         var bulunan = new List<string>();
         var kuyruk = new Queue<string>(hizli);
         var isler = new List<Thread>();
@@ -1673,7 +1719,7 @@ static partial class ClientAgent
 
         foreach (var port in acik)
         {
-            if (RdpAlgilama.WebDisiPort(port)) continue;
+            if (RdpAlgilama.WebDisiPort(port) || RdpPortlari().Contains(port)) continue;   // RDP'ye HTTPS sorulmaz
             foreach (var sema in new[] { "https", "http" })
             {
                 string u = sema + "://" + host + ":" + port;
@@ -1788,7 +1834,8 @@ static partial class ClientAgent
         var sonuc = new List<string>();
         string server = cfg.ContainsKey("Server") ? cfg["Server"].Trim() : "";
         bool https = !cfg.ContainsKey("UseHttps") || cfg["UseHttps"].Trim() != "0";
-        string port = cfg.ContainsKey("Port") ? cfg["Port"].Trim() : "";
+        var rdpPort = RdpPortlari();
+        string port = RdpAlgilama.GecerliPort(cfg.ContainsKey("Port") ? cfg["Port"] : "", rdpPort);
 
         Func<string, string> yap = delegate (string konak)
         {
@@ -1807,7 +1854,7 @@ static partial class ClientAgent
         {
             foreach (var s in server.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
             {
-                string u = yap(s.Trim());
+                string u = yap(RdpAlgilama.SunucuGecerli(s, rdpPort));
                 bool v_ = false;
                 foreach (var x in sonuc) if (string.Equals(x, u, StringComparison.OrdinalIgnoreCase)) { v_ = true; break; }
                 if (!v_) sonuc.Add(u);
@@ -1912,7 +1959,8 @@ static partial class ClientAgent
 
     static string BaseUrl(Dictionary<string, string> cfg)
     {
-        string server = cfg.ContainsKey("Server") ? cfg["Server"].Trim() : "";
+        var rdpPort = RdpPortlari();
+        string server = RdpAlgilama.SunucuGecerli(cfg.ContainsKey("Server") ? cfg["Server"].Split(',', ';')[0] : "", rdpPort);
         // Server bos veya "auto" ise: aktif RDP baglantisindan sunucuyu otomatik bul
         if (server.Length == 0 || server.Equals("auto", StringComparison.OrdinalIgnoreCase))
         {
@@ -1924,7 +1972,7 @@ static partial class ClientAgent
         // ya da varsayilani (HTTPS 8443 / HTTP 8360) kullan.
         if (!server.Contains(":"))
         {
-            string port = cfg.ContainsKey("Port") ? cfg["Port"].Trim() : "";
+            string port = RdpAlgilama.GecerliPort(cfg.ContainsKey("Port") ? cfg["Port"] : "", rdpPort);
             if (port.Length == 0) port = https ? "8443" : "8360";
             server += ":" + port;
         }

@@ -13,6 +13,12 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 ## [Yayınlanmamış]
 
 ### Düzeltildi
+- **RDP portu Print360 portu sanılıyordu (kök neden):** kurulumdaki "Sunucu panel portu"
+  alanına RDP portu yazılabiliyordu; istemci RDP servisine 3 sn'de bir HTTPS isteği
+  atıyordu. Alan sihirbazdan kaldırıldı, çünkü istemci portu kendisi buluyor. İstemci
+  RDP portlarını (3389, açık bağlantılar, mstsc geçmişi) tanıyor; `Port=` ya da
+  `Server=host:port` içindeki RDP portunu yok sayıp `Print360.ini`'den temizliyor,
+  taramada RDP portlarına HTTPS sormuyor.
 - **Sunucu bulunduktan sonra yanlış port denenmeye devam ediyordu** (Tailscale'de sahada
   görüldü): `Port=` ayarı farklıysa tarama doğru portu bulsa da eski port 3 sn'de bir
   deneniyor, günlüğe hata yazılıyor, durum penceresinde "1 sunucuda Print360 yok"

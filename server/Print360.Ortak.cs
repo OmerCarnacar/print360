@@ -718,6 +718,57 @@ static class RdpAlgilama
         return l;
     }
 
+    // RDP PORTU PRINT360 PORTU DEGILDIR. Sahada RDP adresi 100.102.89.1:54822 idi; 54822
+    // istemcinin Port ayarina girmis, istemci RDP servisine 3 sn'de bir HTTPS istegi atmisti.
+    // Mstsc gecmisindeki "sunucu:port" satirindan RDP portu okunur (yoksa 0).
+    public static int MruPortu(string kayit)
+    {
+        if (string.IsNullOrEmpty(kayit)) return 0;
+        int i = kayit.LastIndexOf(':'), p;
+        return i > 0 && kayit.IndexOf(':') == i && int.TryParse(kayit.Substring(i + 1), out p) && p > 0 && p < 65536 ? p : 0;
+    }
+
+    // Ayardaki Print360 portu: RDP portuysa yok sayilir.
+    public static string GecerliPort(string ayar, ICollection<int> rdpPortlari)
+    {
+        int p;
+        string a = (ayar ?? "").Trim();
+        return int.TryParse(a, out p) && rdpPortlari.Contains(p) ? "" : a;
+    }
+
+    // "sunucu:port" RDP portuysa port atilir; yalnizca sunucu adi kalir.
+    public static string SunucuGecerli(string ayar, ICollection<int> rdpPortlari)
+    {
+        string a = (ayar ?? "").Trim();
+        int p = MruPortu(a);
+        return p > 0 && rdpPortlari.Contains(p) ? a.Substring(0, a.LastIndexOf(':')) : a;
+    }
+
+    // Print360.ini satirlarindaki RDP portlarini temizler. Degisiklik yoksa null doner.
+    public static List<string> AyarOnar(IList<string> satirlar, ICollection<int> rdpPortlari, List<string> notlar)
+    {
+        var l = new List<string>(satirlar);
+        bool degisti = false;
+        for (int i = 0; i < l.Count; i++)
+        {
+            string s = l[i];
+            if (s.StartsWith("Port=", StringComparison.OrdinalIgnoreCase))
+            {
+                string eski = s.Substring(5), yeni = GecerliPort(eski, rdpPortlari);
+                if (yeni != eski.Trim()) { l[i] = "Port=" + yeni; degisti = true; notlar.Add("Port=" + eski.Trim() + " bir RDP portu; silindi"); }
+            }
+            else if (s.StartsWith("Server=", StringComparison.OrdinalIgnoreCase))
+            {
+                string eski = s.Substring(7).Trim();
+                var parca = new List<string>();
+                foreach (var x in eski.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)) parca.Add(SunucuGecerli(x, rdpPortlari));
+                string yeni = string.Join(",", parca.ToArray());
+                if (yeni != eski && yeni.Replace(",", ";") != eski.Replace(",", ";")) { l[i] = "Server=" + yeni; degisti = true; notlar.Add("Server=" + eski + " icindeki RDP portu silindi"); }
+            }
+        }
+        return degisti ? l : null;
+    }
+
     // Ayni makinenin CALISTIGI bilinen adresi varken baska porttaki adresi eler.
     // Sahada: Port=54822 ayari yuzunden tarama 8443'u bulduktan sonra da 54822 her 3 sn'de
     // denenip hata veriyor, guncelleme ve bildirimler de o yanlis adrese gidiyordu.
