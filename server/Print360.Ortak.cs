@@ -644,6 +644,82 @@ class OturumDeposu
 }
 
 // ------------------------------------------------------------------
+// IS DOSYASI ADI:  <tarih>_<kullanici>[__TUR][~belge adi].pdf
+// Is turu YALNIZCA '~' oncesinden okunur. Eskiden tum ad taraniyordu: belge adi
+// "Rapor__SECTION_1" olunca yazici secim penceresi aciliyor, "Fatura__PDF" olunca
+// cikti basilmak yerine PDF olarak aciliyordu.
+// ------------------------------------------------------------------
+static class IsAdi
+{
+    static string Bas(string ad) { int t = ad.IndexOf('~'); return t >= 0 ? ad.Substring(0, t) : ad; }
+
+    // "PDF" | "SEC" | "SECTO" | ""
+    public static string Tur(string ad)
+    {
+        string b = Bas(ad);
+        if (b.IndexOf("__SECTO__", StringComparison.OrdinalIgnoreCase) >= 0) return "SECTO";
+        if (b.IndexOf("__SEC", StringComparison.OrdinalIgnoreCase) >= 0) return "SEC";
+        if (b.IndexOf("__PDF", StringComparison.OrdinalIgnoreCase) >= 0) return "PDF";
+        return "";
+    }
+
+    // __SECTO__ ardindaki hex (yoksa "")
+    public static string SectoHex(string ad)
+    {
+        string b = Bas(ad);
+        int i = b.IndexOf("__SECTO__", StringComparison.OrdinalIgnoreCase);
+        if (i < 0) return "";
+        string h = b.Substring(i + 9);
+        int n = h.IndexOf('.');
+        return n >= 0 ? h.Substring(0, n) : h;
+    }
+
+    // Tur ekini yalnizca belge adindan ONCEKI kisimda degistirir
+    public static string TurDegistir(string ad, string eski, string yeni)
+    {
+        string b = Bas(ad);
+        return b.Replace(eski, yeni) + ad.Substring(b.Length);
+    }
+
+    // Ad azami uzunluga sigmiyorsa once BELGE ADI kisaltilir (yalnizca gorunum icindir).
+    // O da yetmezse gomulu yazici birakilir (__SEC): istemci yaziciyi kendisi sorar.
+    // Eskiden uzun yazici + uzun belge adi Windows yol sinirini asiyor, is kuyruga
+    // YAZILAMIYOR, secim penceresi 2 sn'de bir yeniden aciliyordu.
+    public static string Sigdir(string ad, int azami, out string not)
+    {
+        not = null;
+        if (ad.Length <= azami) return ad;
+        const string uz = ".pdf";
+        string govde = ad.EndsWith(uz, StringComparison.OrdinalIgnoreCase) ? ad.Substring(0, ad.Length - uz.Length) : ad;
+        string kuyruk = ad.Substring(govde.Length);
+        string b = Bas(govde), belge = govde.Length > b.Length ? govde.Substring(b.Length + 1) : "";
+        int yer = azami - b.Length - kuyruk.Length - 1;   // 1: '~'
+        if (yer >= 8 && belge.Length > 0)
+        {
+            not = "dosya adi uzun: belge adi kisaltildi";
+            return b + "~" + belge.Substring(0, Math.Min(yer, belge.Length)).TrimEnd(' ', '.') + kuyruk;
+        }
+        if (b.Length + kuyruk.Length <= azami)
+        {
+            not = "dosya adi uzun: belge adi cikarildi";
+            return b + kuyruk;
+        }
+        int i = b.IndexOf("__SECTO__", StringComparison.OrdinalIgnoreCase);
+        if (i >= 0)
+        {
+            not = "yazici adi dosya adina sigmiyor: yazici istemcide sorulacak";
+            b = b.Substring(0, i) + "__SEC";
+            yer = azami - b.Length - kuyruk.Length - 1;
+            return yer >= 8 && belge.Length > 0
+                 ? b + "~" + belge.Substring(0, Math.Min(yer, belge.Length)).TrimEnd(' ', '.') + kuyruk
+                 : b + kuyruk;
+        }
+        not = "dosya adi uzun";
+        return b + kuyruk;
+    }
+}
+
+// ------------------------------------------------------------------
 // BELGE ADI ESLESTIRME (PrintService olay 307 -> spool isi)
 // Eskiden kullanicinin SON 3 dk'daki EN YENI olayi aliniyordu: arka arkaya
 // iki belge yazdirilinca (A, B) A islenirken B'nin olayi da gunlukte oldugu

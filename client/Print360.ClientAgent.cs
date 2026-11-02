@@ -735,7 +735,8 @@ static partial class ClientAgent
         string fname = Path.GetFileName(file);
 
         // Is turu: __PDF -> goruntule/kaydet, __SEC -> yazici sec
-        if (fname.IndexOf("__PDF", StringComparison.OrdinalIgnoreCase) >= 0)
+        string isTuru = IsAdi.Tur(fname);   // yalnizca '~' oncesi: belge adi ture karismasin
+        if (isTuru == "PDF")
         {
             PdfGoruntule(file);
             return;
@@ -744,17 +745,12 @@ static partial class ClientAgent
         string printer = cfg.ContainsKey("Printer") ? cfg["Printer"].Trim() : "";
 
         // Yazici SUNUCUDA secildi: dosya adina gomulu (__SECTO__<hex>) -> dogrudan ona bas
-        int stIdx = fname.IndexOf("__SECTO__", StringComparison.OrdinalIgnoreCase);
-        if (stIdx >= 0)
+        if (isTuru == "SECTO")
         {
-            string hex = fname.Substring(stIdx + 9);
-            // Ad, '~' ile baslayan orijinal belge adini da icerebilir -> once orada kes
-            int kes = hex.IndexOfAny(new[] { '~', '.' });
-            if (kes >= 0) hex = hex.Substring(0, kes);
-            string sunucudaSecilen = HexCoz(hex);
+            string sunucudaSecilen = HexCoz(IsAdi.SectoHex(fname));
             if (sunucudaSecilen.Length > 0) { printer = sunucudaSecilen; Log("Yazici sunucuda secildi: " + printer); }
         }
-        else if (fname.IndexOf("__SEC", StringComparison.OrdinalIgnoreCase) >= 0)
+        else if (isTuru == "SEC")
         {
             Log("Yazici secim penceresi aciliyor: " + fname);
             string secilen = YaziciSec();
@@ -1202,7 +1198,7 @@ static partial class ClientAgent
         {
             string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "Print360 Belgeler");
             Directory.CreateDirectory(dir);
-            string dst = Path.Combine(dir, fname.Replace("__PDF", ""));
+            string dst = Path.Combine(dir, IsAdi.TurDegistir(fname, "__PDF", ""));
             File.Copy(file, dst, true);
             string dc = Path.Combine(doneDir, fname);
             if (File.Exists(dc)) File.Delete(dc);

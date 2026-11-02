@@ -387,6 +387,9 @@ static class ServerAgent
     //   yazici adi  -> sunucuda secildi (ise gomulecek)
     //   ""          -> liste yok/hazir degil -> client kendi secsin (yedek akis)
     //   null        -> kullanici iptal etti
+    static string sonSecimImzasi, sonSecim;
+    const int SecimSuresiMs = 180000;
+
     static string SunucudaClientYaziciSec(string lokalPc)
     {
         // Bu client'in yazicilarini SQL'den al (heartbeat/YAZICI ile guncellenmis)
@@ -411,6 +414,7 @@ static class ServerAgent
         if (yazicilar.Count == 0) { Log("SEC: '" + lokalPc + "' icin yazici listesi henuz yok - client tarafina devredildi."); return ""; }
 
         string secilen = null;
+        bool suresiDoldu = false;
         var t = new Thread(() =>
         {
             try
@@ -439,6 +443,11 @@ static class ServerAgent
                     f.Controls.Add(lbl); f.Controls.Add(cb); f.Controls.Add(ok); f.Controls.Add(ipt);
                     f.AcceptButton = ok; f.CancelButton = ipt;
                     f.Shown += (s, e) => { f.Activate(); cb.Focus(); };
+                    // Suresi dolunca pencere kapanir (eskiden ekranda acik kaliyordu)
+                    var sure = new System.Windows.Forms.Timer { Interval = SecimSuresiMs };
+                    sure.Tick += (s, e) => { sure.Stop(); suresiDoldu = true; f.DialogResult = System.Windows.Forms.DialogResult.Abort; };
+                    f.FormClosed += (s, e) => sure.Dispose();
+                    sure.Start();
                     if (f.ShowDialog() == System.Windows.Forms.DialogResult.OK)
                     {
                         // Etiketteki "   (Durum)" son ekini at, gercek yazici adini al
@@ -453,8 +462,11 @@ static class ServerAgent
         t.SetApartmentState(ApartmentState.STA);
         t.IsBackground = true;
         t.Start();
-        if (!t.Join(180000)) { Log("SEC: 3 dk secim yapilmadi, iptal."); return null; }
-        return secilen;   // null = iptal, aksi halde secilen yazici
+        t.Join(SecimSuresiMs + 5000);
+        // Secim yapilmadi diye belge KAYBOLMASIN: karar istemciye birakilir (kendi
+        // yazici secim penceresini acar). Eskiden is iptal edilip siliniyordu.
+        if (suresiDoldu || t.IsAlive) { Log("SEC: 3 dk secim yapilmadi; yazici istemcide sorulacak."); return ""; }
+        return secilen;   // null = kullanici iptal etti, aksi halde secilen yazici
     }
 
     // Kullanicinin RDP oturumunda varsayilan yazici = "Print360 Yazici Sec - <kullanici>".
@@ -692,7 +704,15 @@ static class ServerAgent
         // Secilen yazici ise gomulur (__SECTO__<hex>); client dogrudan ona basar.
         if (jobType == "SEC")
         {
-            string sec = SunucudaClientYaziciSec(clientName);
+            // Is kuyruga yazilamayip bekletilirse pencere 2 sn'de bir yeniden acilmasin:
+            // ayni spool dosyasi icin yapilan secim hatirlanir.
+            string imza = SpoolImzasi(spoolFile), sec;
+            if (imza != null && imza == sonSecimImzasi) sec = sonSecim;
+            else
+            {
+                sec = SunucudaClientYaziciSec(clientName);
+                sonSecimImzasi = imza; sonSecim = sec;
+            }
             if (sec == null)   // kullanici iptal etti
             {
                 try { File.Delete(spoolFile); } catch { }
@@ -703,10 +723,15 @@ static class ServerAgent
             }
             if (sec.Length > 0)   // sunucuda secildi -> ise gom; bos ise client kendi secer (yedek)
             {
-                name = name.Replace("__SEC", "__SECTO__" + HexKodla(sec));
+                name = IsAdi.TurDegistir(name, "__SEC", "__SECTO__" + HexKodla(sec));
                 Log("SEC: sunucuda yazici secildi -> '" + sec + "' (lokal PC: " + clientName + ")");
             }
         }
+
+        // En uzun yol: C:\Print360\queue-suresi-dolan\<makine>\<ad>.gz.<gecici ek>
+        string sigdirmaNotu;
+        name = IsAdi.Sigdir(name, 255 - 18 - 31 - Math.Max(clientName.Length, 20) - 1, out sigdirmaNotu);
+        if (sigdirmaNotu != null) Log(sigdirmaNotu + ": " + name);
 
         byte[] pdf = pdfOn;
         if (pdf == null) { try { pdf = File.ReadAllBytes(spoolFile); } catch { } }

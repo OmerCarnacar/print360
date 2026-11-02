@@ -10,6 +10,25 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [Yayınlanmamış]
+
+### Düzeltildi
+- **Belge adı işin türünü değiştiriyordu:** iş türü dosya adının tamamında
+  aranıyordu. `Rapor__SECTION_1.docx` yazdırılınca yazıcı seçim penceresi
+  açılıyor, `Fatura__PDF.xlsx` yazdırılınca çıktı basılmak yerine PDF olarak
+  açılıyordu. Tür artık yalnızca belge adından önceki kısımdan okunuyor.
+- **Uzun yazıcı adı işi takılı bırakıyordu:** sunucuda seçilen yazıcı dosya adına
+  gömülüyor. Uzun yazıcı adı + uzun belge adı Windows yol sınırını aşınca iş
+  kuyruğa yazılamıyor, seçim penceresi 2 sn'de bir yeniden açılıyordu. Artık önce
+  belge adı kısaltılıyor; yazıcı adı yine sığmıyorsa yazıcı istemcide soruluyor.
+  Bekleyen bir iş için seçim de hatırlanıyor, pencere tekrar açılmıyor.
+- **Süresi dolan seçim penceresi belgeyi siliyordu:** 3 dakika seçim yapılmayınca
+  iş iptal ediliyor ve pencere ekranda açık kalıyordu. Artık pencere kapanıyor,
+  belge kaybolmuyor, yazıcı istemcide soruluyor. Kullanıcının "İptal" düğmesi
+  eskisi gibi işi iptal eder.
+
+---
+
 ## [2026.10.29.2107]
 
 ### Düzeltildi

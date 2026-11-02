@@ -11,6 +11,8 @@
 //   - bilgisayar adi degisti                   -> bekleyen isler yeni ada tasinir
 //   - ayni kimlik iki makinede                 -> isler TASINMAZ, cakisma bildirilir
 //   - arka arkaya iki belge yazdirildi         -> her is KENDI belge adini/sayfasini alir
+//   - belge adinda "__SEC" / "__PDF" geciyor    -> is turu belge adindan OKUNMAZ
+//   - uzun yazici + uzun belge adi              -> dosya adi yol sinirina sigdirilir
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -46,6 +48,7 @@ class OlayGunlugu
             AdDegisimi();
             HataAyiklama();
             BelgeOlayiEslestirme();
+            IsAdiCozumleme();
         }
         finally { try { Directory.Delete(kok, true); } catch { } }
         Console.WriteLine();
@@ -301,6 +304,39 @@ class OlayGunlugu
         r = d2.Gorus("iid-K", "SUBE-A", t0.AddSeconds(60), out eski);
         Kontrol(r == "cakisma" && eski == "SUBE-B", "eski ad yeniden geldi -> CAKISMA (isler tasinmaz)", r + " / " + eski);
         Kontrol(d2.Gorus("iid-K", "SUBE-A", t0.AddSeconds(90), out eski) == "ayni", "kayitli ad degismedi", null);
+    }
+
+    static void IsAdiCozumleme()
+    {
+        // Is turu belge adindan okunmaz
+        Kontrol(IsAdi.Tur("20261102_100000_001_ayse~Rapor__SECTION_1.pdf") == "",
+                "belge adinda __SEC: secim penceresi ACILMAZ, dogrudan basilir", null);
+        Kontrol(IsAdi.Tur("20261102_100000_001_ayse~Fatura__PDF.pdf") == "",
+                "belge adinda __PDF: PDF olarak acilmaz, basilir", null);
+        Kontrol(IsAdi.Tur("20261102_100000_001_ayse__SEC~Rapor.pdf") == "SEC", "gercek SEC isi taninir", null);
+        Kontrol(IsAdi.Tur("20261102_100000_001_ayse__PDF~Rapor.pdf") == "PDF", "gercek PDF isi taninir", null);
+        Kontrol(IsAdi.Tur("20261102_100000_001_ayse__PDF.pdf") == "PDF", "belge adi yokken de tur taninir", null);
+        string st = IsAdi.TurDegistir("20261102_100000_001_ayse__SEC~a__SEC b.pdf", "__SEC", "__SECTO__4142");
+        Kontrol(st == "20261102_100000_001_ayse__SECTO__4142~a__SEC b.pdf", "yazici gomulurken belge adina dokunulmaz", st);
+        Kontrol(IsAdi.Tur(st) == "SECTO" && IsAdi.SectoHex(st) == "4142", "gomulu yazici geri okunur", IsAdi.SectoHex(st));
+        Kontrol(IsAdi.SectoHex("20261102_100000_001_ayse__SECTO__4142.pdf") == "4142", "belge adi yokken de yazici okunur", null);
+        Kontrol(IsAdi.TurDegistir("x_ayse__PDF~a__PDF.pdf", "__PDF", "") == "x_ayse~a__PDF.pdf", "PDF eki yalnizca turden silinir", null);
+
+        // Yol siniri
+        string not;
+        string kisa = "20261102_100000_001_ayse__SECTO__4142~Rapor.pdf";
+        Kontrol(IsAdi.Sigdir(kisa, 185, out not) == kisa && not == null, "sigan ada dokunulmaz", not);
+        string hex = new string('a', 130), belge = new string('b', 60);
+        string uzun = "20261102_100000_001_ayse__SECTO__" + hex + "~" + belge + ".pdf";
+        string s1 = IsAdi.Sigdir(uzun, 185, out not);
+        Kontrol(s1.Length <= 185 && IsAdi.SectoHex(s1) == hex && s1.EndsWith(".pdf"),
+                "once belge adi kisaltilir, secilen yazici KORUNUR", s1.Length + " | " + s1);
+        string dev = "20261102_100000_001_ayse__SECTO__" + new string('a', 300) + "~" + belge + ".pdf";
+        string s2 = IsAdi.Sigdir(dev, 185, out not);
+        Kontrol(s2.Length <= 185 && IsAdi.Tur(s2) == "SEC" && s2.EndsWith(".pdf"),
+                "yazici adi hic sigmiyorsa is kaybolmaz: yazici istemcide sorulur", s2.Length + " | " + s2);
+        string s3 = IsAdi.Sigdir("20261102_100000_001_ayse~" + new string('b', 400) + ".pdf", 185, out not);
+        Kontrol(s3.Length <= 185 && s3.Contains("~bbb"), "tursuz isin belge adi kisaltilir", s3.Length.ToString());
     }
 
     static void BelgeOlayiEslestirme()
