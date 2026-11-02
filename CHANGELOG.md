@@ -10,7 +10,7 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
-## [Yayınlanmamış]
+## [2026.11.02.2301]
 
 ### Düzeltildi
 - **RDP portu Print360 portu sanılıyordu (kök neden):** kurulumdaki "Sunucu panel portu"
