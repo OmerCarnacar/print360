@@ -467,6 +467,8 @@ class SunucuSagligi
     // kadar yoklanmiyor, istemci sunucuyu "gormuyordu".
     public void Sifirla() { lock (d) d.Clear(); }
 
+    public bool HataVar(string url) { lock (d) return d.ContainsKey(url); }
+
     public bool Denenebilir(string url)
     {
         lock (d) { Durum x; return !d.TryGetValue(url, out x) || Simdi() >= x.Sonraki; }
@@ -703,6 +705,25 @@ static class RdpAlgilama
             if (a != ip) l.Add(a);
         }
         return l;
+    }
+
+    // Hizli taramanin portlari: ayardaki port, Print360 varsayilanlari, yaygin web portlari.
+    public static List<int> HizliPortlar(string ayarPortu)
+    {
+        var l = new List<int>();
+        int p;
+        if (int.TryParse(ayarPortu, out p) && p > 0 && p < 65536) l.Add(p);
+        foreach (var x in new[] { 8443, 8360, 9443, 9360, 443, 80, 8444, 8361, 10443, 18443, 4443, 5443, 7443, 8843,
+                                  8080, 8081, 8000, 8888, 9000, 9080, 9090, 5000, 18360 })
+            if (!l.Contains(x)) l.Add(x);
+        return l;
+    }
+
+    // Web sunucusu olmayan iyi bilinen portlar: acik olsalar da sorulmaz.
+    public static bool WebDisiPort(int p)
+    {
+        return p == 21 || p == 22 || p == 23 || p == 25 || p == 53 || p == 88 || p == 110 || p == 135 || p == 139 || p == 143
+            || p == 389 || p == 445 || p == 464 || p == 636 || p == 1433 || p == 3306 || p == 3389 || p == 5432;
     }
 
     // Yanit gercekten Print360'tan mi? (eski sunucularda X-Print360 basligi yok: surum metni)

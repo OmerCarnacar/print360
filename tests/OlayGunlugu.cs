@@ -314,6 +314,7 @@ class OlayGunlugu
         const string u = "https://10.2.0.5:8443";
         for (int i = 0; i < 6; i++) s.Basarisiz(u, "ConnectFailure");
         Kontrol(!s.Denenebilir(u), "VPN kapali: sunucu bekleme suresinde", null);
+        Kontrol(s.HataVar(u), "son denemesi basarisiz sunucu isaretlenir (kisa port denemesine girer)", null);
         s.Sifirla();
         Kontrol(s.Denenebilir(u), "ag degisince bekleme suresi sifirlanir (eskiden 10 dk beklerdi)", null);
 
@@ -344,6 +345,11 @@ class OlayGunlugu
         Kontrol(RdpAlgilama.AltAgAdaylari("10.8.0.5", "255.255.255.0").Count == 253 && !RdpAlgilama.AltAgAdaylari("10.8.0.5", "255.255.255.0").Contains("10.8.0.5"),
                 "VPN agi taranir, kendi adresi haric", null);
         Kontrol(RdpAlgilama.AltAgAdaylari("100.64.0.1", "255.255.255.255").Count == 0, "noktadan noktaya VPN'de tarama yok", null);
+        var hp = RdpAlgilama.HizliPortlar("9443");
+        Kontrol(hp[0] == 9443 && hp.Contains(8443) && hp.Contains(8360) && hp.FindAll(x => x == 9443).Count == 1,
+                "ayardaki port once denenir, varsayilanlar da taranir, tekrar yok", null);
+        Kontrol(RdpAlgilama.HizliPortlar("gecersiz")[0] == 8443, "gecersiz port ayari taramayi bozmaz", null);
+        Kontrol(RdpAlgilama.WebDisiPort(3389) && RdpAlgilama.WebDisiPort(445) && !RdpAlgilama.WebDisiPort(9443), "RDP/SMB gibi portlara HTTP sorulmaz", null);
         Kontrol(RdpAlgilama.Print360Yaniti("2026.11.02.1318", ""), "yeni sunucu basligindan taninir", null);
         Kontrol(RdpAlgilama.Print360Yaniti(null, "2026.9.1.1254"), "eski sunucu surum metninden taninir", null);
         Kontrol(!RdpAlgilama.Print360Yaniti(null, "<html>baska bir site</html>"), "baska servis sunucu sanilmaz", null);

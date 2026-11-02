@@ -10,6 +10,24 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [Yayınlanmamış]
+
+### Eklendi
+- **Sunucu aramada port taraması:** sunucu kurulumda farklı bir port seçmiş olabilir.
+  İstemci önce ayardaki portu, Print360 varsayılanlarını ve yaygın web portlarını
+  (23 port) dener; bulamazsa ve hiçbir sunucuya bağlı değilse tüm portları tarar
+  (makine başına yaklaşık 2,5 dk, 6 saatte bir). Taranan makineler: RDP ile bağlı
+  olunanlar, `Server=` ayarındakiler, Tailscale makineleri; VPN ağına yalnızca hızlı
+  tarama yapılır. Yanıt gerçekten Print360'tan gelmedikçe port kabul edilmez, HTTPS
+  HTTP'ye tercih edilir. Bulunan adres `stats\bulunan-sunucular.txt` dosyasında saklanır.
+- `Print360.ini`: `SunucuArama=hizli` tam taramayı, `SunucuArama=0` tüm aramayı kapatır.
+
+### Düzeltildi
+- Son denemede ulaşılamayan bilinen sunucu da önce kısa port denemesinden geçiyor;
+  yoklama döngüsü uzun zaman aşımı beklemiyor.
+
+---
+
 ## [2026.11.02.1710]
 
 ### Eklendi

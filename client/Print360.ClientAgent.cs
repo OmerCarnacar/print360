@@ -1451,53 +1451,49 @@ static partial class ClientAgent
     }
 
     // ------------------------------------------------------------------
-    // SUNUCU ARAMA. Hicbir sunucuya bagli degilken VPN'deki makineler taranir: sunucu
-    // ayari gerekmez, RDP'nin nasil kuruldugu da onemli degildir. Yalnizca VPN
-    // (Tailscale makineleri + VPN bagdastiricisinin agi) taranir, ofis/ev agi taranmaz.
-    // Print360.ini'de SunucuArama=0 kapatir.
+    // SUNUCU ARAMA. Sunucu kurulumda farkli bir port secmis olabilir (or. 9443) ve
+    // hangi VPN'in kullanildigi bilinmez. Bu yuzden adres VE port aranir:
+    //   HIZLI : yaygin Print360/web portlari (2 dk'da bir, bagli degilken)
+    //   TAM   : 1-65535 (bagli degilken, hizli tarama bulamadiysa, makine basina 6 saatte bir)
+    // Taranan makineler: RDP ile bagli olunanlar, Server= ayarindakiler, Tailscale
+    // makineleri ve VPN agi (tam tarama VPN agina YAPILMAZ). Ofis/ev agi taranmaz.
+    // Print360.ini: SunucuArama=0 kapatir, SunucuArama=hizli tam taramayi kapatir.
     // ------------------------------------------------------------------
     static readonly ManualResetEvent aramaTetik = new ManualResetEvent(false);
+    static readonly Dictionary<string, DateTime> sonHizliTarama = new Dictionary<string, DateTime>();
+    static readonly Dictionary<string, DateTime> sonTamTarama = new Dictionary<string, DateTime>();
+    const int TamTaramaMakineSiniri = 16;
+    static readonly string bulunanDosya = Path.Combine(baseDir, @"stats\bulunan-sunucular.txt");
 
     static void SunucuAramaDongusu()
     {
         Thread.Sleep(20000);   // once normal yollar denensin
-        string sonOzet = null;
+        BulunanlariYukle();
         while (true)
         {
-            try
-            {
-                var cfg = ReadIni();
-                bool kapali = cfg.ContainsKey("SunucuArama") && cfg["SunucuArama"].Trim() == "0";
-                if (!kapali && sunucuBagli == 0)
-                {
-                    var adaylar = AramaAdaylari();
-                    string ozet = adaylar.Count + " aday";
-                    if (adaylar.Count > 0)
-                    {
-                        var bulunan = SunuculariTara(adaylar, cfg);
-                        if (ozet != sonOzet) Log("SUNUCU ARAMA: VPN'de " + adaylar.Count + " makine tarandi, " + bulunan.Count + " Print360 sunucusu bulundu.");
-                        foreach (var u in bulunan)
-                        {
-                            bool biliniyor;
-                            lock (sonCalisanSunucular) biliniyor = sonCalisanSunucular.Exists(x => string.Equals(x, u, StringComparison.OrdinalIgnoreCase));
-                            if (!biliniyor) Log("SUNUCU BULUNDU: " + u + " (VPN taramasi; ayar gerekmedi)");
-                            SunucuHatirla(u);
-                            saglik.Basarili(u);
-                        }
-                        if (bulunan.Count > 0) hbTetik.Set();
-                    }
-                    sonOzet = ozet;
-                }
-            }
+            try { SunucuAramaTuru(); }
             catch (Exception ex) { Log("Sunucu arama: " + ex.Message); }
             aramaTetik.Reset(); aramaTetik.WaitOne(120000);   // 2 dk'da bir ya da ag degisince
         }
     }
 
-    static List<string> AramaAdaylari()
+    static void SunucuAramaTuru()
     {
-        var l = new List<string>();
+        var cfg = ReadIni();
+        string mod = cfg.ContainsKey("SunucuArama") ? cfg["SunucuArama"].Trim().ToLowerInvariant() : "";
+        if (mod == "0") return;
+        bool bagli = sunucuBagli > 0;
+
+        // RDP ile baglanilan + Server= ile verilen makineler
+        var dogrudan = new List<string>(RdpSunucularBul());
+        if (cfg.ContainsKey("Server"))
+            foreach (var x in cfg["Server"].Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string h = x.Trim().Split(':')[0];
+                if (h.Length > 0 && !h.Equals("auto", StringComparison.OrdinalIgnoreCase) && !dogrudan.Contains(h)) dogrudan.Add(h);
+            }
         var kendi = new List<string>();
+        var vpnAgi = new List<string>();
         foreach (var n in NetworkInterface.GetAllNetworkInterfaces())
         {
             if (n.OperationalStatus != OperationalStatus.Up) continue;
@@ -1508,13 +1504,108 @@ static partial class ClientAgent
                 string ip = a.Address.ToString();
                 kendi.Add(ip);
                 if (vpn && a.IPv4Mask != null)
-                    foreach (var x in RdpAlgilama.AltAgAdaylari(ip, a.IPv4Mask.ToString()))
-                        if (!l.Contains(x)) l.Add(x);
+                    foreach (var y in RdpAlgilama.AltAgAdaylari(ip, a.IPv4Mask.ToString()))
+                        if (!vpnAgi.Contains(y)) vpnAgi.Add(y);
             }
         }
-        foreach (var x in RdpAlgilama.TailscaleEslesleri(TailscaleDurumu(), kendi))
-            if (!l.Contains(x)) l.Insert(0, x);   // once Tailscale makineleri
-        return l;
+        var tailscale = RdpAlgilama.TailscaleEslesleri(TailscaleDurumu(), kendi);
+
+        // Bagliyken yalnizca adresi henuz bilinmeyen RDP sunuculari, makine basina 30 dk'da bir
+        var hizli = new List<string>();
+        foreach (var h in dogrudan)
+            if (!bagli || (!BilinenMakine(h) && SureDoldu(sonHizliTarama, h, TimeSpan.FromMinutes(30)))) hizli.Add(h);
+        if (!bagli)
+        {
+            foreach (var h in tailscale) if (!hizli.Contains(h)) hizli.Add(h);
+            foreach (var h in vpnAgi) if (!hizli.Contains(h)) hizli.Add(h);
+        }
+        if (hizli.Count == 0) return;
+
+        string cp = cfg.ContainsKey("Port") ? cfg["Port"].Trim() : "";
+        var portlar = RdpAlgilama.HizliPortlar(cp);
+        var bulunan = new List<string>();
+        var kuyruk = new Queue<string>(hizli);
+        var isler = new List<Thread>();
+        for (int i = 0; i < Math.Min(32, hizli.Count); i++)
+        {
+            var t = new Thread(delegate ()
+            {
+                while (true)
+                {
+                    string h;
+                    lock (kuyruk) { if (kuyruk.Count == 0) return; h = kuyruk.Dequeue(); }
+                    string u = HostTara(h, portlar);
+                    if (u != null) lock (bulunan) bulunan.Add(u);
+                }
+            }) { IsBackground = true };
+            t.Start(); isler.Add(t);
+        }
+        foreach (var t in isler) t.Join();
+        foreach (var u in bulunan) BulunanEkle(u);
+
+        // Hizli tarama bulamadi: tum portlar (VPN agina degil, sinirli sayida makineye)
+        if (bulunan.Count == 0 && !bagli && mod != "hizli")
+        {
+            var tam = new List<string>(dogrudan);
+            foreach (var h in tailscale) if (!tam.Contains(h)) tam.Add(h);
+            int sayi = 0;
+            foreach (var h in tam)
+            {
+                if (++sayi > TamTaramaMakineSiniri) break;
+                if (!SureDoldu(sonTamTarama, h, TimeSpan.FromHours(6))) continue;
+                if (sunucuBagli > 0) break;   // bu arada baglandik
+                Log("SUNUCU ARAMA: " + h + " uzerinde tum portlar taraniyor (birkac dakika surebilir; kapatmak icin Print360.ini: SunucuArama=hizli)");
+                string u = HostTara(h, Enumerable.Range(1, 65535));
+                Log("SUNUCU ARAMA: " + h + " tam tarama bitti: " + (u ?? "Print360 bulunamadi"));
+                if (u != null) { BulunanEkle(u); break; }
+            }
+        }
+    }
+
+    static bool SureDoldu(Dictionary<string, DateTime> defter, string h, TimeSpan sure)
+    {
+        DateTime t;
+        if (defter.TryGetValue(h, out t) && DateTime.Now - t < sure) return false;
+        defter[h] = DateTime.Now;
+        return true;
+    }
+
+    static bool BilinenMakine(string h)
+    {
+        lock (sonCalisanSunucular)
+            return sonCalisanSunucular.Exists(x => { try { return new Uri(x).Host.Equals(h, StringComparison.OrdinalIgnoreCase); } catch { return false; } });
+    }
+
+    // Bulunan adres dosyaya yazilir: yeniden baslayinca portlar bastan taranmasin.
+    static void BulunanEkle(string u)
+    {
+        bool biliniyor;
+        lock (sonCalisanSunucular) biliniyor = sonCalisanSunucular.Exists(x => string.Equals(x, u, StringComparison.OrdinalIgnoreCase));
+        if (!biliniyor) Log("SUNUCU BULUNDU: " + u + " (tarama; ayar gerekmedi)");
+        SunucuHatirla(u);
+        saglik.Basarili(u);
+        try
+        {
+            var satirlar = File.Exists(bulunanDosya) ? File.ReadAllLines(bulunanDosya).ToList() : new List<string>();
+            if (!satirlar.Contains(u))
+            {
+                satirlar.Add(u);
+                File.WriteAllLines(bulunanDosya, satirlar.Skip(Math.Max(0, satirlar.Count - 20)).ToArray());
+            }
+        }
+        catch (Exception ex) { Ayr("Bulunan sunucu kaydedilemedi: " + ex.Message); }
+        hbTetik.Set();
+    }
+
+    static void BulunanlariYukle()
+    {
+        try
+        {
+            if (!File.Exists(bulunanDosya)) return;
+            foreach (var l in File.ReadAllLines(bulunanDosya))
+                if (l.Trim().Length > 0) SunucuHatirla(l.Trim());
+        }
+        catch { }
     }
 
     static string TailscaleDurumu()
@@ -1538,54 +1629,73 @@ static partial class ClientAgent
         catch (Exception ex) { Ayr("Tailscale durumu okunamadi: " + ex.Message); return ""; }
     }
 
-    // Once port (hizli, paralel), sonra acik olanlarda Print360 dogrulamasi.
-    static List<string> SunuculariTara(List<string> adaylar, Dictionary<string, string> cfg)
+    // Makinenin verilen portlarini tarar, acik olanlarda Print360 arar. HTTPS bulununca
+    // durur; yalnizca HTTP bulunursa aramayi bitirip onu doner. Bulunamazsa null.
+    internal static string HostTara(string host, IEnumerable<int> portlar)
     {
-        bool https = !cfg.ContainsKey("UseHttps") || cfg["UseHttps"].Trim() != "0";
-        string ps = cfg.ContainsKey("Port") ? cfg["Port"].Trim() : "";
-        int port;
-        if (!int.TryParse(ps, out port)) port = https ? 8443 : 8360;
-        var acik = new List<string>();
-        var kuyruk = new Queue<string>(adaylar);
-        var isler = new List<Thread>();
-        for (int i = 0; i < Math.Min(32, adaylar.Count); i++)
+        const int GRUP = 256, BEKLE_MS = 600;
+        IPAddress ip;
+        try
         {
-            var t = new Thread(delegate ()
-            {
-                while (true)
-                {
-                    string ip;
-                    lock (kuyruk) { if (kuyruk.Count == 0) return; ip = kuyruk.Dequeue(); }
-                    try
-                    {
-                        using (var c = new System.Net.Sockets.TcpClient())
-                        {
-                            var a = c.BeginConnect(ip, port, null, null);
-                            if (a.AsyncWaitHandle.WaitOne(1500) && c.Connected) { c.EndConnect(a); lock (acik) acik.Add(ip); }
-                        }
-                    }
-                    catch { }
-                }
-            }) { IsBackground = true };
-            t.Start(); isler.Add(t);
+            var adresler = Dns.GetHostAddresses(host);
+            ip = adresler.FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork) ?? adresler.FirstOrDefault();
         }
-        foreach (var t in isler) t.Join();
+        catch { return null; }
+        if (ip == null) return null;
+        string yedek = null;
+        var grup = new List<int>(GRUP);
+        foreach (var port in portlar)
+        {
+            grup.Add(port);
+            if (grup.Count == GRUP) { string u = GrupTara(host, ip, grup, BEKLE_MS, ref yedek); grup.Clear(); if (u != null) return u; }
+        }
+        if (grup.Count > 0) { string u = GrupTara(host, ip, grup, BEKLE_MS, ref yedek); if (u != null) return u; }
+        return yedek;
+    }
 
-        var sonuc = new List<string>();
-        foreach (var ip in acik)
+    static string GrupTara(string host, IPAddress ip, List<int> grup, int beklemeMs, ref string yedek)
+    {
+        var soketler = new List<KeyValuePair<int, System.Net.Sockets.Socket>>(grup.Count);
+        var acik = new List<int>();
+        try
         {
-            string u = (https ? "https://" : "http://") + ip + ":" + port;
-            try
+            foreach (var port in grup)
             {
-                var r = (HttpWebRequest)WebRequest.Create(u + "/api/clientversion");
-                r.Timeout = 5000; r.ReadWriteTimeout = 5000; Ortak.VekilUygula(r);
-                using (var y = (HttpWebResponse)r.GetResponse())
-                using (var sr = new StreamReader(y.GetResponseStream()))
-                    if (RdpAlgilama.Print360Yaniti(y.Headers["X-Print360"], sr.ReadToEnd())) sonuc.Add(u);
+                var s = new System.Net.Sockets.Socket(ip.AddressFamily, System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
+                soketler.Add(new KeyValuePair<int, System.Net.Sockets.Socket>(port, s));
+                try { s.BeginConnect(ip, port, delegate (IAsyncResult r) { try { ((System.Net.Sockets.Socket)r.AsyncState).EndConnect(r); } catch { } }, s); } catch { }
             }
-            catch (Exception ex) { Ayr("Tarama: " + u + " Print360 degil: " + ex.Message); }
+            Thread.Sleep(beklemeMs);
+            foreach (var kv in soketler) { try { if (kv.Value.Connected) acik.Add(kv.Key); } catch { } }
         }
-        return sonuc;
+        finally { foreach (var kv in soketler) { try { kv.Value.Close(); } catch { } } }
+
+        foreach (var port in acik)
+        {
+            if (RdpAlgilama.WebDisiPort(port)) continue;
+            foreach (var sema in new[] { "https", "http" })
+            {
+                string u = sema + "://" + host + ":" + port;
+                if (!Print360Mi(u)) continue;
+                if (sema == "https") return u;   // sifreli yol bulundu: yeter
+                if (yedek == null) yedek = u;
+                break;
+            }
+        }
+        return null;
+    }
+
+    static bool Print360Mi(string u)
+    {
+        try
+        {
+            var r = (HttpWebRequest)WebRequest.Create(u + "/api/clientversion");
+            r.Timeout = 3000; r.ReadWriteTimeout = 3000; Ortak.VekilUygula(r);
+            using (var y = (HttpWebResponse)r.GetResponse())
+            using (var sr = new StreamReader(y.GetResponseStream()))
+                return RdpAlgilama.Print360Yaniti(y.Headers["X-Print360"], sr.ReadToEnd());
+        }
+        catch (Exception ex) { Ayr("Tarama: " + u + " Print360 degil: " + ex.Message); return false; }
     }
 
     // AG DEGISTI (VPN baglandi/koptu): eski kararlar ve eski yoldaki baglantilar gecersiz.
@@ -1635,7 +1745,9 @@ static partial class ClientAgent
         if (!saglik.Denenebilir(baseUrl)) return false;
         bool biliniyor;
         lock (sonCalisanSunucular) biliniyor = sonCalisanSunucular.Exists(x => string.Equals(x, baseUrl, StringComparison.OrdinalIgnoreCase));
-        if (biliniyor) return true;
+        // Bilinen ama son denemede ulasilamayan sunucu (VPN kapali, kayitli adres eski)
+        // da once kisa port denemesinden gecer; yoklama dongusu uzun zaman asimi beklemez.
+        if (biliniyor && !saglik.HataVar(baseUrl)) return true;
         try
         {
             var u = new Uri(baseUrl);
