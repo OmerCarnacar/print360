@@ -10,7 +10,7 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
-## [Yayınlanmamış]
+## [2026.11.02.1710]
 
 ### Eklendi
 - **VPN'de sunucu arama:** istemci hiçbir sunucuya bağlı değilken VPN'deki
