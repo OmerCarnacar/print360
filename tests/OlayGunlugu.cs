@@ -345,6 +345,17 @@ class OlayGunlugu
         Kontrol(RdpAlgilama.AltAgAdaylari("10.8.0.5", "255.255.255.0").Count == 253 && !RdpAlgilama.AltAgAdaylari("10.8.0.5", "255.255.255.0").Contains("10.8.0.5"),
                 "VPN agi taranir, kendi adresi haric", null);
         Kontrol(RdpAlgilama.AltAgAdaylari("100.64.0.1", "255.255.255.255").Count == 0, "noktadan noktaya VPN'de tarama yok", null);
+        // Sahadan: Port=54822 + tarama 8443'u buldu
+        var bilinenler = new List<string> { "https://100.102.89.1:8443" };
+        Func<string, bool> saglam = x => false, sorunlu = x => true;
+        var ad = RdpAlgilama.YanlisPortlariEle(new List<string> { "https://100.102.89.1:54822", "https://100.102.89.1:8443", "https://10.2.0.5:8443" }, bilinenler, saglam);
+        Kontrol(ad.Count == 2 && ad[0] == "https://100.102.89.1:8443" && ad[1] == "https://10.2.0.5:8443",
+                "calisan port bilinince yanlis port denenmez, baska sunucuya dokunulmaz", string.Join(",", ad.ToArray()));
+        Kontrol(RdpAlgilama.CalisanAdres("https://100.102.89.1:54822", bilinenler, saglam) == "https://100.102.89.1:8443", "guncelleme calisan porta gider", null);
+        Kontrol(RdpAlgilama.YanlisPortlariEle(new List<string> { "https://100.102.89.1:54822" }, bilinenler, sorunlu)[0] == "https://100.102.89.1:54822",
+                "bilinen adres hatadaysa ayardaki port yine denenir (sunucu port degistirmis olabilir)", null);
+        Kontrol(SunucuSagligi.BaglantiKapandiMi(WebExceptionStatus.ReceiveFailure) && !SunucuSagligi.BaglantiKapandiMi(WebExceptionStatus.ConnectFailure),
+                "port acik ama baglanti kesiliyor durumu ayirt edilir", null);
         var hp = RdpAlgilama.HizliPortlar("9443");
         Kontrol(hp[0] == 9443 && hp.Contains(8443) && hp.Contains(8360) && hp.FindAll(x => x == 9443).Count == 1,
                 "ayardaki port once denenir, varsayilanlar da taranir, tekrar yok", null);

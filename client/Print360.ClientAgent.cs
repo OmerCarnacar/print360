@@ -162,7 +162,8 @@ static partial class ClientAgent
             if (bizden) return;
             string m = Ortak.VekilDegerlendir(new Uri(baseUrl), wex.Status, kod);
             if (m != null) Log(m);
-            else if (SunucuSagligi.UlasilamamaMi(wex.Status))
+            else if (SunucuSagligi.UlasilamamaMi(wex.Status)
+                     || (SunucuSagligi.BaglantiKapandiMi(wex.Status) && !BilinenAdres(baseUrl)))
             {
                 // Yol degismediyse (vekil yok ya da iki yol da denendi) sunucu bekleme suresine girer.
                 string b = saglik.Basarisiz(baseUrl, wex.Status.ToString());
@@ -1832,7 +1833,20 @@ static partial class ClientAgent
                 foreach (var x in sonuc) if (string.Equals(x, u, StringComparison.OrdinalIgnoreCase)) { var_ = true; break; }
                 if (!var_) sonuc.Add(u);
             }
-        return sonuc;
+        return CalisanlaraIndirge(sonuc);
+    }
+
+    static bool BilinenAdres(string url)
+    {
+        lock (sonCalisanSunucular)
+            return sonCalisanSunucular.Exists(x => string.Equals(x, url, StringComparison.OrdinalIgnoreCase));
+    }
+
+    static List<string> BilinenAdresler() { lock (sonCalisanSunucular) return new List<string>(sonCalisanSunucular); }
+
+    static List<string> CalisanlaraIndirge(List<string> adresler)
+    {
+        return RdpAlgilama.YanlisPortlariEle(adresler, BilinenAdresler(), saglik.HataVar);
     }
 
     static string RdpSunucusuBul()
@@ -1914,7 +1928,8 @@ static partial class ClientAgent
             if (port.Length == 0) port = https ? "8443" : "8360";
             server += ":" + port;
         }
-        return (https ? "https://" : "http://") + server;
+        // Guncelleme ve yedek bildirimler de calisan porta gitsin
+        return RdpAlgilama.CalisanAdres((https ? "https://" : "http://") + server, BilinenAdresler(), saglik.HataVar);
     }
 
     // HTTPS is kanali: sunucudaki kuyrugu 3 sn'de bir yoklar, GZip'li isi indirip acar,

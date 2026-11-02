@@ -502,6 +502,17 @@ class SunucuSagligi
         }
     }
 
+    // Port acik ama baglanti kesiliyor. Daha once HIC calismamis bir adreste bu, orada
+    // Print360 olmadigi anlamina gelir (bekleme suresine girer). Calismis sunucuda ise
+    // aktarimin yarida kesilmesidir; o adres bekletilmez.
+    public static bool BaglantiKapandiMi(WebExceptionStatus durum)
+    {
+        return durum == WebExceptionStatus.ReceiveFailure || durum == WebExceptionStatus.SendFailure
+            || durum == WebExceptionStatus.ConnectionClosed || durum == WebExceptionStatus.KeepAliveFailure
+            || durum == WebExceptionStatus.SecureChannelFailure || durum == WebExceptionStatus.TrustFailure
+            || durum == WebExceptionStatus.ServerProtocolViolation;
+    }
+
     public static bool UlasilamamaMi(WebExceptionStatus durum)
     {
         return durum == WebExceptionStatus.ConnectFailure || durum == WebExceptionStatus.Timeout
@@ -703,6 +714,34 @@ static class RdpAlgilama
         {
             string a = p[0] + "." + p[1] + "." + p[2] + "." + i;
             if (a != ip) l.Add(a);
+        }
+        return l;
+    }
+
+    // Ayni makinenin CALISTIGI bilinen adresi varken baska porttaki adresi eler.
+    // Sahada: Port=54822 ayari yuzunden tarama 8443'u bulduktan sonra da 54822 her 3 sn'de
+    // denenip hata veriyor, guncelleme ve bildirimler de o yanlis adrese gidiyordu.
+    // Bilinen adres su an hatadaysa (sunucu port degistirmis olabilir) ikisi de denenir.
+    public static string CalisanAdres(string url, IList<string> bilinen, Func<string, bool> sorunlu)
+    {
+        Uri u;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out u)) return url;
+        foreach (var b in bilinen)
+        {
+            Uri k;
+            if (Uri.TryCreate(b, UriKind.Absolute, out k) && k.Host.Equals(u.Host, StringComparison.OrdinalIgnoreCase) && !sorunlu(b))
+                return b;
+        }
+        return url;
+    }
+
+    public static List<string> YanlisPortlariEle(IList<string> adresler, IList<string> bilinen, Func<string, bool> sorunlu)
+    {
+        var l = new List<string>();
+        foreach (var a in adresler)
+        {
+            string c = CalisanAdres(a, bilinen, sorunlu);
+            if (!l.Exists(x => string.Equals(x, c, StringComparison.OrdinalIgnoreCase))) l.Add(c);
         }
         return l;
     }

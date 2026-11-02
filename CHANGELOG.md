@@ -10,6 +10,20 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [Yayınlanmamış]
+
+### Düzeltildi
+- **Sunucu bulunduktan sonra yanlış port denenmeye devam ediyordu** (Tailscale'de sahada
+  görüldü): `Port=` ayarı farklıysa tarama doğru portu bulsa da eski port 3 sn'de bir
+  deneniyor, günlüğe hata yazılıyor, durum penceresinde "1 sunucuda Print360 yok"
+  görünüyordu. Güncelleme kontrolü de yanlış porta gidiyordu. Artık aynı makinenin
+  çalışan adresi biliniyorsa diğer port denenmiyor; bilinen adres hataya düşerse ayardaki
+  port yeniden deneniyor.
+- **Portu açık ama Print360 olmayan adres:** bağlantıyı kesen, daha önce hiç çalışmamış
+  adres artık bekleme süresine alınıyor; 3 sn'de bir yeniden denenmiyor.
+
+---
+
 ## [2026.11.02.1721]
 
 ### Eklendi
