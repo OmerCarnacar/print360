@@ -226,6 +226,8 @@ partial class UzmanTest
             Console.WriteLine("       " + yol.PadRight(20) + " ilk " + ilk.ToString("0").PadLeft(6) + " ms | tekrar " + ikinci.ToString("0").PadLeft(6)
                               + " ms | " + (boyut / 1024) + " KB");
             Hedef(ikinci < 3000, "hedef: " + yol + " 50.000 islik gecmisle 3 sn icinde", ikinci.ToString("0") + " ms");
+            if (yol == "/makineler")
+                Hedef(ilk < 3000, "hedef: Makineler ilk acilista ping/AD taramasini beklemez (eskiden 8+ sn)", ilk.ToString("0") + " ms");
         }
     }
 
@@ -233,8 +235,13 @@ partial class UzmanTest
     {
         Console.WriteLine("--- P5. Hata ayiklama modunda 500 bos yoklama -> gunluk satiri");
         int once = Satir(SunucuGunlugu(), "/api/jobs ");
+        // P4 Makineler sayfasini yeni acti: ping taramasi arka planda surerken ISTEMCI
+        // YOKLAMALARI yavaslamamali (eskiden sunucu saniyede 1 istege dusuyor, 500 yoklama 8 dk surerdi).
+        var yk = Stopwatch.StartNew();
         using (var wc = new WebClient())
             for (int i = 0; i < 500; i++) wc.DownloadData(Dogrudan + "/api/jobs?machine=BOS-PC&key=bos");
+        Console.WriteLine("       500 yoklama " + yk.Elapsed.TotalSeconds.ToString("0.0") + " sn");
+        Hedef(yk.Elapsed.TotalSeconds < 30, "hedef: panel ping taramasi istemci yoklamalarini yavaslatmaz", yk.Elapsed.TotalSeconds.ToString("0.0") + " sn");
         Thread.Sleep(300);
         int eklenen = Satir(SunucuGunlugu(), "/api/jobs ") - once;
         Console.WriteLine("       500 bos yoklama -> " + eklenen + " gunluk satiri");

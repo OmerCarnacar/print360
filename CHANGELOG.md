@@ -10,6 +10,44 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [Yayınlanmamış]
+
+### Eklendi
+- **VPN'de sunucu arama:** istemci hiçbir sunucuya bağlı değilken VPN'deki
+  makineleri tarar ve Print360 sunucusunu ayar gerekmeden bulur. Tailscale'de
+  makine listesi `tailscale status` ile alınır; diğer VPN'lerde VPN
+  bağdaştırıcısının ağı (/24) taranır. Ofis/ev ağı taranmaz. Adres, yanıt gerçekten
+  Print360'tan geliyorsa kabul edilir. `Print360.ini`'de `SunucuArama=0` kapatır.
+
+### Düzeltildi
+- **Panel, çıktı teslimini yavaşlatıyordu:** Makineler sayfası her makine için
+  istemci isteklerini işleyen havuzda ping görevi açıyordu. Çözülemeyen adlarda
+  görevler saniyelerce DNS bekliyor, sunucu saniyede 1 isteğe düşüyordu. Tarama artık
+  ayrı ve sınırlı iş parçacıklarında yapılıyor. Ölçüm: sayfanın ilk açılışı 8,4 sn →
+  1,9 sn; tarama sürerken 500 yoklama 8 dk → 0,3 sn. IP'si bilinen makinede DNS'e
+  gidilmiyor.
+- **VPN açıldıktan sonra sunucu 10 dakikaya kadar görülmüyordu:** ulaşılamayan sunucu
+  bekleme süresine alınıyor, bu süre ağ değişince sıfırlanmıyordu. Artık VPN
+  bağlanınca/kopunca ya da yeni RDP oturumu açılınca sıfırlanıyor, eski bağlantılar
+  kapatılıyor ve sunucular hemen deneniyor.
+- **Farklı porttan giden RDP görülmüyordu:** oturum yalnızca uzak port 3389'dan
+  tanınıyordu ("RDP oturumu yok"). Artık `mstsc`/`msrdc` süreçlerinin bağlantıları da
+  sayılıyor. Yerel tünel (127.0.0.1) sunucu sanılmıyor; adres belirlenemezse durum
+  penceresi `Server=` yazılmasını söylüyor.
+- **VPN uyarıları:** VPN açıkken sunucuya ulaşılamazsa VPN kuralının HTTPS portuna izin
+  vermesi gerektiği belirtiliyor; tanı raporunda açık VPN listeleniyor.
+- **Etki alanında olmayan sunucu:** Active Directory sorgusu boşuna yapılmıyor.
+
+### Kurulum: kalıntı temizliği
+- Program Files altındaki eski program dosyaları her kurulumda siliniyor (önceden yeni
+  sürümde olmayan dosya geride kalıyordu).
+- Başka kimlikle yapılmış eski kurulumların "Programlar" kaydı ve klasörü kaldırılıyor.
+- Tanınmayan dosyaların kenara alındığı `eski-surum-kalintilari` artık birikmiyor:
+  30 gün sonra siliniyor.
+- Ayarlar, veritabanı, geçmiş ve bekleyen işler bilerek korunuyor.
+
+---
+
 ## [2026.11.02.1318]
 
 ### Düzeltildi

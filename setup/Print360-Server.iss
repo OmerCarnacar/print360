@@ -39,6 +39,12 @@ ShowLanguageDialog=no
 [Languages]
 Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
 
+[InstallDelete]
+; Onceki surumlerin program dosyalari: yeni surumde olmayan dosya geride kalmasin.
+Type: filesandordirs; Name: "{app}\bin"
+Type: files; Name: "{app}\*.ps1"
+Type: files; Name: "{app}\*.cmd"
+
 [Files]
 Source: "bin-server\Print360.ServerAgent.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
 Source: "bin-server\Print360.Dashboard.exe";   DestDir: "{app}\bin"; Flags: ignoreversion

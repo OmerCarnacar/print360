@@ -462,6 +462,11 @@ class SunucuSagligi
     public Func<DateTime> Simdi = delegate { return DateTime.Now; };
     public static readonly TimeSpan EnFazla = TimeSpan.FromMinutes(10);
 
+    // AG DEGISTI (VPN baglandi/koptu, yeni RDP oturumu): eski "ulasilamiyor" kararlari
+    // gecersizdir. Eskiden bekleme suresi surerdi: VPN acildiktan sonra sunucu 10 dk'ya
+    // kadar yoklanmiyor, istemci sunucuyu "gormuyordu".
+    public void Sifirla() { lock (d) d.Clear(); }
+
     public bool Denenebilir(string url)
     {
         lock (d) { Durum x; return !d.TryGetValue(url, out x) || Simdi() >= x.Sonraki; }
@@ -641,6 +646,96 @@ class OturumDeposu
     }
 
     public int Sayi { get { lock (kilit) return oturumlar.Count; } }
+}
+
+// ------------------------------------------------------------------
+// RDP OTURUMU ALGILAMA. Eskiden yalnizca uzak port 3389'a bakiliyordu. VPN ya da
+// guvenlik duvari arkasinda RDP cogu kez farkli porttan gider (or. sunucu:3390):
+// istemci "RDP oturumu yok" der, Server= bossa sunucuyu HIC bulamazdi.
+// Artik RDP istemcisi surecinin (mstsc/msrdc) baglantilari da sayilir.
+// ------------------------------------------------------------------
+class TcpKayit { public string Ip; public int Port; public int Pid; }
+
+static class RdpAlgilama
+{
+    public static readonly string[] IstemciSurecleri = { "mstsc", "msrdc", "msrdcw" };
+
+    public static List<string> Sec(IEnumerable<TcpKayit> baglantilar, ICollection<int> rdpSurecleri)
+    {
+        var liste = new List<string>();
+        foreach (var c in baglantilar)
+        {
+            if (c.Port != 3389 && !rdpSurecleri.Contains(c.Pid)) continue;
+            IPAddress a;
+            // Yerel tunel (127.0.0.1) sunucunun adresi degildir
+            if (!IPAddress.TryParse(c.Ip, out a) || IPAddress.IsLoopback(a) || a.Equals(IPAddress.Any)) continue;
+            if (!liste.Contains(c.Ip)) liste.Add(c.Ip);
+        }
+        return liste;
+    }
+
+    // SUNUCU ARAMA adaylari. Tailscale: "tailscale status --json" ciktisindaki makineler
+    // (kendi adreslerimiz haric). Hangi VPN olursa olsun calissin diye JSON kitapligi yok.
+    public static List<string> TailscaleEslesleri(string json, ICollection<string> kendi)
+    {
+        var l = new List<string>();
+        if (string.IsNullOrEmpty(json)) return l;
+        foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
+                     json, "\"TailscaleIPs\"\\s*:\\s*\\[\\s*\"(\\d+\\.\\d+\\.\\d+\\.\\d+)\""))
+        {
+            string ip = m.Groups[1].Value;
+            if (!kendi.Contains(ip) && !l.Contains(ip)) l.Add(ip);
+        }
+        return l;
+    }
+
+    // VPN bagdastiricisinin bulundugu /24 (kendi adresi haric). Noktadan noktaya
+    // (/32) baglantilarda komsu yoktur; o VPN'lerde sunucu RDP'den ya da Server= ile bulunur.
+    public static List<string> AltAgAdaylari(string ip, string maske)
+    {
+        var l = new List<string>();
+        if (maske == "255.255.255.255" || maske == "255.255.255.254") return l;
+        var p = ip.Split('.');
+        if (p.Length != 4) return l;
+        for (int i = 1; i < 255; i++)
+        {
+            string a = p[0] + "." + p[1] + "." + p[2] + "." + i;
+            if (a != ip) l.Add(a);
+        }
+        return l;
+    }
+
+    // Yanit gercekten Print360'tan mi? (eski sunucularda X-Print360 basligi yok: surum metni)
+    public static bool Print360Yaniti(string baslik, string govde)
+    {
+        if (!string.IsNullOrEmpty(baslik)) return true;
+        return govde != null && System.Text.RegularExpressions.Regex.IsMatch(govde.Trim(), @"^\d+(\.\d+){2,3}$");
+    }
+
+    // Acik VPN bagdastiricilari (tani ve kullanici iletileri icin)
+    public static bool VpnMi(string tur, string ad, string aciklama)
+    {
+        if (tur == "Ppp" || tur == "Tunnel") return true;
+        string m = (ad + " " + aciklama).ToLowerInvariant();
+        foreach (var k in new[] { "vpn", "wintun", "tap-windows", "wireguard", "fortinet", "fortissl", "anyconnect", "pangp", "globalprotect", "sonicwall", "tailscale", "zerotier" })
+            if (m.Contains(k)) return true;
+        return false;
+    }
+
+    public static List<string> AcikVpnler()
+    {
+        var l = new List<string>();
+        try
+        {
+            foreach (var n in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+                if (n.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up
+                    && n.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback
+                    && VpnMi(n.NetworkInterfaceType.ToString(), n.Name, n.Description))
+                    l.Add(n.Description);
+        }
+        catch { }
+        return l;
+    }
 }
 
 // ------------------------------------------------------------------

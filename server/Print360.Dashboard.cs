@@ -1278,28 +1278,69 @@ static class Dashboard
         return online ? "&#9679; &Ccedil;evrimi&ccedil;i" : "&Ccedil;evrimd&#305;&#351;&#305; (" + r[1] + ")";
     }
 
-    // Ping taramasi (5 dk onbellek) - domain/ag uyum kontrolu
-    static Dictionary<string, bool> PingAll(IEnumerable<string> names)
+    // Ping taramasi (5 dk onbellek) - domain/ag uyum kontrolu.
+    // ESKIDEN makine basina bir gorev ISTEK HAVUZUNDA aciliyordu. Cozulemeyen adlarda her
+    // ping saniyelerce DNS bekliyor, havuz doluyor ve panel acildiginda sunucu saniyede
+    // 1 istege dusuyordu: istemci yoklamalari ve cikti teslimi de yavasliyordu; sayfa da
+    // 8 sn bekliyordu. Artik tarama AYRI ve sinirli is parcaciklarinda arka planda yapilir,
+    // sayfa en fazla 1 sn bekler. Kalp atisindan IP'si bilinen makinede DNS'e hic gidilmez.
+    const int PingIsParcacigi = 16;
+    static readonly object pingKilit = new object();
+    static Dictionary<string, bool> pingSuren;   // suren taramanin sonuclari (pingKilit altinda)
+    static ManualResetEvent pingBitti;
+
+    static Dictionary<string, bool> PingAll(IEnumerable<string> names, Dictionary<string, string[]> hb)
     {
-        if (pingCache != null && (DateTime.Now - pingTime).TotalMinutes < 5) return pingCache;
-        var d = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-        var tasks = names.Distinct(StringComparer.OrdinalIgnoreCase).Select(n =>
-            System.Threading.Tasks.Task.Run(() =>
+        ManualResetEvent bekle;
+        lock (pingKilit)
+        {
+            if (pingCache != null && (DateTime.Now - pingTime).TotalMinutes < 5) return pingCache;
+            if (pingSuren == null)
             {
-                bool ok = false;
-                try { using (var p = new System.Net.NetworkInformation.Ping())
-                          ok = p.Send(n, 400).Status == System.Net.NetworkInformation.IPStatus.Success; }
-                catch { }
-                lock (d) d[n] = ok;
-            })).ToArray();
-        System.Threading.Tasks.Task.WaitAll(tasks, 8000);
-        // WaitAll ZAMAN ASIMINA ugrayabilir; geciken ping gorevleri d'ye yazmaya
-        // devam eder. d'yi dogrudan yayinlarsak, onu okuyan istek thread'i
-        // "koleksiyon degistirildi" hatasi alir. Bu yuzden KOPYASI yayinlanir.
-        Dictionary<string, bool> yayin;
-        lock (d) yayin = new Dictionary<string, bool>(d, StringComparer.OrdinalIgnoreCase);
-        pingCache = yayin; pingTime = DateTime.Now;
-        return yayin;
+                pingSuren = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                pingBitti = new ManualResetEvent(false);
+                var hedefler = new Queue<KeyValuePair<string, string>>();
+                foreach (var n in names.Distinct(StringComparer.OrdinalIgnoreCase))
+                {
+                    string[] k;
+                    string ip = hb != null && hb.TryGetValue(n, out k) && k.Length > 3 && k[3].Length > 0 ? k[3] : n;
+                    hedefler.Enqueue(new KeyValuePair<string, string>(n, ip));
+                }
+                PingTaramasiBaslat(hedefler, pingBitti);
+            }
+            bekle = pingBitti;
+        }
+        bekle.WaitOne(1000);
+        lock (pingKilit)
+            return pingSuren != null ? new Dictionary<string, bool>(pingSuren, StringComparer.OrdinalIgnoreCase)
+                                     : (pingCache ?? new Dictionary<string, bool>());
+    }
+
+    static void PingTaramasiBaslat(Queue<KeyValuePair<string, string>> hedefler, ManualResetEvent bitti)
+    {
+        int kalan = Math.Min(PingIsParcacigi, hedefler.Count);
+        Action tamam = delegate
+        {
+            lock (pingKilit) { pingCache = pingSuren; pingTime = DateTime.Now; pingSuren = null; }
+            bitti.Set();
+        };
+        if (kalan == 0) { tamam(); return; }
+        int calisan = kalan;
+        for (int i = 0; i < kalan; i++)
+            new Thread(delegate ()
+            {
+                while (true)
+                {
+                    KeyValuePair<string, string> h;
+                    lock (hedefler) { if (hedefler.Count == 0) break; h = hedefler.Dequeue(); }
+                    bool ok = false;
+                    try { using (var p = new System.Net.NetworkInformation.Ping())
+                              ok = p.Send(h.Value, 400).Status == System.Net.NetworkInformation.IPStatus.Success; }
+                    catch { }
+                    lock (pingKilit) if (pingSuren != null) pingSuren[h.Key] = ok;
+                }
+                if (Interlocked.Decrement(ref calisan) == 0) tamam();
+            }) { IsBackground = true }.Start();
     }
 
     // Maliyet tanimlari: kagit turu -> sayfa basina TL ("*" = tanimsiz turler icin)
@@ -1430,12 +1471,33 @@ static class Dashboard
         return d;
     }
 
+    // Bu makine etki alanina bagli mi? Bagli degilse AD sorgusu sonuc vermeden
+    // zaman asimina kadar bekler (7-13 sn) ve Makineler sayfasi 5 dk'da bir donardi.
+    [System.Runtime.InteropServices.DllImport("netapi32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    static extern int NetGetJoinInformation(string sunucu, out IntPtr ad, out int durum);
+    [System.Runtime.InteropServices.DllImport("netapi32.dll")]
+    static extern int NetApiBufferFree(IntPtr tampon);
+    const string AD_YOK = "Bu sunucu bir etki alanina bagli degil.";
+
+    static bool EtkiAlaninda()
+    {
+        try
+        {
+            IntPtr ad; int durum;
+            if (NetGetJoinInformation(null, out ad, out durum) != 0) return true;   // bilinmiyor: eskisi gibi dene
+            NetApiBufferFree(ad);
+            return durum == 3;   // NetSetupDomainName
+        }
+        catch { return true; }
+    }
+
     // Active Directory'deki bilgisayarlar (5 dk onbellek)
     static List<AdPc> LoadAd()
     {
         if (adCache != null && (DateTime.Now - adCacheTime).TotalMinutes < 5) return adCache;
         var list = new List<AdPc>();
         adError = null;
+        if (!EtkiAlaninda()) { adError = AD_YOK; adCache = list; adCacheTime = DateTime.Now; return list; }
         try
         {
             using (var root = new DirectoryEntry())   // varsayilan etki alani
@@ -1479,6 +1541,7 @@ static class Dashboard
     {
         if (adUserCache != null && (DateTime.Now - adUserCacheTime).TotalMinutes < 5) return adUserCache;
         var list = new List<AdUser>();
+        if (!EtkiAlaninda()) { adError = AD_YOK; adUserCache = list; adUserCacheTime = DateTime.Now; return list; }
         try
         {
             using (var root = new DirectoryEntry())
@@ -2773,7 +2836,7 @@ static class Dashboard
         if (ckM != null) foreach (System.Data.DataRow r in ckM.Rows)
         { var m = Convert.ToString(r[0]); if (!names.Contains(m, StringComparer.OrdinalIgnoreCase)) names.Add(m); }
         names = names.Where(n => !string.IsNullOrWhiteSpace(n)).OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList();
-        var ping = PingAll(names);
+        var ping = PingAll(names, hb);
 
         var sb = new StringBuilder();
         if (adError != null)
@@ -2808,7 +2871,7 @@ static class Dashboard
             sb.Append("<tr><td>").Append(H(n)).Append("</td>")
               .Append("<td>").Append(a != null ? "&#10003;" : "&mdash;").Append("</td>")
               .Append("<td>").Append(H(a != null ? a.Os : "")).Append("</td>")
-              .Append("<td>").Append(pi ? "<span class='ok'>&#10003;</span>" : "&mdash;").Append("</td>")
+              .Append("<td>").Append(pi ? "<span class='ok'>&#10003;</span>" : ping.ContainsKey(n) ? "&mdash;" : "&hellip;").Append("</td>")
               .Append("<td>").Append(onl ? "<span class='ok'>" + hbS + "</span>" : (hbS.Length > 0 ? "<span class='mut'>" + hbS + "</span>" : "&mdash;")).Append("</td>")
               .Append("<td>").Append(hb.ContainsKey(n) && hb[n].Length > 4 && hb[n][4].Length > 0
                   ? H(hb[n][4]) + (hb[n].Length > 5 && hb[n][5].Length > 0 ? " <span class='mut'>(" + H(hb[n][5]) + ")</span>" : "") : "").Append("</td>")

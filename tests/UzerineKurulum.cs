@@ -41,6 +41,7 @@ class UzerineKurulumTest
             IstemciAyniMakinede(Path.Combine(kok, "ikisi"));
             BekleyenIsler(Path.Combine(kok, "rapor"));
             SistemOgeleri();
+            KokundenTemizlik(Path.Combine(kok, "temizlik"));
         }
         finally { try { Directory.Delete(kok, true); } catch { } }
         Console.WriteLine();
@@ -108,6 +109,35 @@ class UzerineKurulumTest
         var r2 = Kurulum.KalintiTemizle(k, true, new DateTime(2026, 10, 2, 10, 0, 0));
         Kontrol(r2.Count == 0 && File.Exists(Path.Combine(kalinti, "license.key")),
                 "tekrar kurulumda yeni kalinti yok, kenara alinanlar yerinde", string.Join(" | ", r2.ToArray()));
+    }
+
+    static void KokundenTemizlik(string k)
+    {
+        Directory.CreateDirectory(k);
+        string kk = Path.Combine(k, Kurulum.KALINTI_KLASORU);
+        Yaz(kk, "20260901_100000\\eski.dat");
+        Yaz(kk, "20261020_100000\\yeni.dat");
+        Yaz(k, "print360.db");
+        var r = Kurulum.KalintiTemizle(k, true, new DateTime(2026, 11, 2, 10, 0, 0));
+        Kontrol(!Directory.Exists(Path.Combine(kk, "20260901_100000")), "30 gunu gecen kenara alinmis dosyalar silinir (birikmez)", string.Join(" | ", r.ToArray()));
+        Kontrol(File.Exists(Path.Combine(kk, "20261020_100000", "yeni.dat")), "yeni kenara alinanlar 30 gun geri alinabilir", null);
+        Kontrol(File.Exists(Path.Combine(k, "print360.db")), "veri dosyasi korunur", null);
+        Kurulum.KalintiTemizle(k, true, new DateTime(2027, 1, 1, 10, 0, 0));
+        Kontrol(!Directory.Exists(kk), "hepsi dolunca kalinti klasoru de kalkar", null);
+
+        Kontrol(Kurulum.KaldirmaKaydiKalintiMi("{ESKI-KIMLIK}_is1", "Print360 Client"), "eski kimlikli kurulum kaydi kalintidir", null);
+        Kontrol(!Kurulum.KaldirmaKaydiKalintiMi("{7A3F2B10-360A-4B3B-9E01-PRINT360CLI}_is1", "Print360 Client"), "gecerli istemci kaydi korunur", null);
+        Kontrol(!Kurulum.KaldirmaKaydiKalintiMi("{7A3F2B10-360A-4B3B-9E01-PRINT360SRV}_is1", "Print360 Server"), "gecerli sunucu kaydi korunur", null);
+        Kontrol(!Kurulum.KaldirmaKaydiKalintiMi("{X}", "Baska Program"), "baska programa dokunulmaz", null);
+
+        string eski = Path.Combine(k, "Print360Old"), veri = Path.Combine(k, "Print360"), calisan = Path.Combine(k, "Print360Client");
+        Directory.CreateDirectory(eski); Directory.CreateDirectory(veri); Directory.CreateDirectory(calisan);
+        Directory.CreateDirectory(Path.Combine(k, "Program"));
+        Kontrol(Kurulum.KurulumKlasoruSilinebilirMi(eski, veri, calisan), "eski kurulum klasoru silinir", null);
+        Kontrol(!Kurulum.KurulumKlasoruSilinebilirMi(veri, veri, calisan), "veri klasoru ASLA silinmez", null);
+        Kontrol(!Kurulum.KurulumKlasoruSilinebilirMi(calisan, veri, calisan), "calisan kurulum silinmez", null);
+        Kontrol(!Kurulum.KurulumKlasoruSilinebilirMi(Path.Combine(k, "Program"), veri, calisan), "adinda Print360 olmayan klasor silinmez", null);
+        Kontrol(!Kurulum.KurulumKlasoruSilinebilirMi(k, Path.Combine(k, "Print360"), calisan), "veri klasorunun ust klasoru silinmez", null);
     }
 
     // Ayni makinede sunucu + istemci: istemci kurulumu SUNUCUNUN dosyalarini silmemeli

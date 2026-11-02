@@ -39,6 +39,12 @@ AppCopyright=Copyright (c) 2026 Ömer ÇARNAÇAR - GPL-3.0-or-later (açık kayn
 [Languages]
 Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
 
+[InstallDelete]
+; Onceki surumlerin program dosyalari: yeni surumde olmayan dosya geride kalmasin.
+Type: filesandordirs; Name: "{app}\bin"
+Type: files; Name: "{app}\*.ps1"
+Type: files; Name: "{app}\*.cmd"
+
 [Files]
 Source: "bin-client\Print360.ClientAgent.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
 Source: "bin-client\Print360.VC.dll";          DestDir: "{app}\bin"; Flags: ignoreversion skipifsourcedoesntexist

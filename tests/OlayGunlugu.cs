@@ -49,6 +49,7 @@ class OlayGunlugu
             HataAyiklama();
             BelgeOlayiEslestirme();
             IsAdiCozumleme();
+            VpnSenaryolari();
         }
         finally { try { Directory.Delete(kok, true); } catch { } }
         Console.WriteLine();
@@ -304,6 +305,50 @@ class OlayGunlugu
         r = d2.Gorus("iid-K", "SUBE-A", t0.AddSeconds(60), out eski);
         Kontrol(r == "cakisma" && eski == "SUBE-B", "eski ad yeniden geldi -> CAKISMA (isler tasinmaz)", r + " / " + eski);
         Kontrol(d2.Gorus("iid-K", "SUBE-A", t0.AddSeconds(90), out eski) == "ayni", "kayitli ad degismedi", null);
+    }
+
+    static void VpnSenaryolari()
+    {
+        // VPN kapaliyken sunucu bekleme suresine girdi; VPN acilinca hemen denenmeli
+        var s = new SunucuSagligi();
+        const string u = "https://10.2.0.5:8443";
+        for (int i = 0; i < 6; i++) s.Basarisiz(u, "ConnectFailure");
+        Kontrol(!s.Denenebilir(u), "VPN kapali: sunucu bekleme suresinde", null);
+        s.Sifirla();
+        Kontrol(s.Denenebilir(u), "ag degisince bekleme suresi sifirlanir (eskiden 10 dk beklerdi)", null);
+
+        // RDP farkli porttan: yalnizca mstsc'nin baglantisi sayilir
+        var b = new[] {
+            new TcpKayit { Ip = "10.2.0.61", Port = 3389, Pid = 1 },     // baska program, 3389
+            new TcpKayit { Ip = "10.2.0.90", Port = 3390, Pid = 500 },   // mstsc, farkli port
+            new TcpKayit { Ip = "142.250.1.1", Port = 443, Pid = 2 },    // tarayici: RDP degil
+            new TcpKayit { Ip = "127.0.0.1", Port = 13389, Pid = 500 },  // mstsc, yerel tunel
+            new TcpKayit { Ip = "10.2.0.90", Port = 3390, Pid = 500 } }; // ayni sunucu
+        var l = RdpAlgilama.Sec(b, new[] { 500 });
+        Kontrol(l.Contains("10.2.0.90"), "farkli porttan giden RDP algilandi (eskiden 'RDP oturumu yok')", string.Join(",", l.ToArray()));
+        Kontrol(l.Contains("10.2.0.61"), "3389 baglantisi eskisi gibi algilanir", null);
+        Kontrol(!l.Contains("142.250.1.1"), "RDP olmayan baglanti sunucu sanilmaz", null);
+        Kontrol(!l.Contains("127.0.0.1"), "yerel tunel sunucu sanilmaz", null);
+        Kontrol(l.Count == 2, "ayni sunucu bir kez listelenir", l.Count.ToString());
+
+        Kontrol(RdpAlgilama.VpnMi("Ethernet", "Ethernet 4", "Fortinet SSL VPN Virtual Ethernet Adapter"), "FortiClient VPN taninir", null);
+        Kontrol(RdpAlgilama.VpnMi("Tunnel", "Tailscale", "Tailscale Tunnel"), "Tailscale taninir", null);
+
+        // Sunucu arama: Tailscale makineleri (kendi adresimiz haric)
+        string ts = "{\"Self\":{\"HostName\":\"PC\",\"TailscaleIPs\":[\"100.64.0.1\",\"fd7a::1\"]},"
+                  + "\"Peer\":{\"k1\":{\"HostName\":\"SRV\",\"TailscaleIPs\": [ \"100.64.0.2\", \"fd7a::2\"]},"
+                  + "\"k2\":{\"HostName\":\"NAS\",\"TailscaleIPs\":[\"100.64.0.3\"]}}}";
+        var es = RdpAlgilama.TailscaleEslesleri(ts, new[] { "100.64.0.1" });
+        Kontrol(es.Count == 2 && es.Contains("100.64.0.2") && es.Contains("100.64.0.3"), "Tailscale makineleri listelendi, kendi adresimiz haric", string.Join(",", es.ToArray()));
+        Kontrol(RdpAlgilama.TailscaleEslesleri("", new string[0]).Count == 0, "Tailscale yoksa aday yok", null);
+        Kontrol(RdpAlgilama.AltAgAdaylari("10.8.0.5", "255.255.255.0").Count == 253 && !RdpAlgilama.AltAgAdaylari("10.8.0.5", "255.255.255.0").Contains("10.8.0.5"),
+                "VPN agi taranir, kendi adresi haric", null);
+        Kontrol(RdpAlgilama.AltAgAdaylari("100.64.0.1", "255.255.255.255").Count == 0, "noktadan noktaya VPN'de tarama yok", null);
+        Kontrol(RdpAlgilama.Print360Yaniti("2026.11.02.1318", ""), "yeni sunucu basligindan taninir", null);
+        Kontrol(RdpAlgilama.Print360Yaniti(null, "2026.9.1.1254"), "eski sunucu surum metninden taninir", null);
+        Kontrol(!RdpAlgilama.Print360Yaniti(null, "<html>baska bir site</html>"), "baska servis sunucu sanilmaz", null);
+        Kontrol(RdpAlgilama.VpnMi("Ppp", "Sirket", "WAN Miniport"), "Windows VPN taninir", null);
+        Kontrol(!RdpAlgilama.VpnMi("Ethernet", "Ethernet", "Realtek PCIe GbE Family Controller"), "normal ag karti VPN sanilmaz", null);
     }
 
     static void IsAdiCozumleme()

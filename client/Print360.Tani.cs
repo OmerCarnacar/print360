@@ -259,7 +259,10 @@ static partial class ClientAgent
             r.AppendLine("  RDP kanal modu (VC): " + (VcAcik(cfg) ? "ACIK - isler RDP kanalindan" : "kapali - isler HTTPS'ten"));
             var sun = SunucuAdresleri(cfg);
             r.AppendLine("  Denenecek sunucular: " + (sun.Count == 0 ? "(YOK - Server bos ve acik RDP oturumu bulunamadi)" : string.Join(" , ", sun.ToArray())));
-            if (sun.Count == 0) Bulgu("SUNUCU ADRESI YOK: Print360.ini'de Server bos ve acik RDP baglantisi bulunamadi - ajan hicbir sunucuyu yoklamiyor.");
+            if (sun.Count == 0) Bulgu("SUNUCU ADRESI YOK: Print360.ini'de Server bos ve acik RDP baglantisi bulunamadi - ajan hicbir sunucuyu yoklamiyor."
+                + (RdpSurecleri().Count > 0 ? " RDP penceresi acik: tunel/ag gecidi kullaniliyorsa Server= yazilmali." : ""));
+            var acikVpn = RdpAlgilama.AcikVpnler();
+            r.AppendLine("  Acik VPN: " + (acikVpn.Count > 0 ? string.Join(", ", acikVpn.ToArray()) : "yok"));
             r.AppendLine("  Baglanti yolu      : " + (Ortak.DogrudanBaglan ? "DOGRUDAN (vekil atlanarak)" : "Windows vekil ayari"));
         });
 

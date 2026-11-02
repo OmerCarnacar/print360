@@ -70,6 +70,8 @@ partial class UzmanTest
             IkiSunucuGunlukSismesi();
             YanlisSifreVeVekil();
             RdpOturumDegisimi();
+            TcpTablosuOkuma();
+            SunucuTaramasi();
             Gunlukler();
         }
         catch (Exception ex) { Kontrol(false, "BEKLENMEYEN ISTISNA", ex.ToString()); }
@@ -524,6 +526,60 @@ partial class UzmanTest
                 "sunucu her istegi yazdi (yontem, yol, makine, IP, sonuc, sure)", null);
         Kontrol(i.Contains("[AYRINTI] HTTP GET") && i.Contains("ms"), "istemci her yoklamayi sureyle yazdi", null);
         Kontrol(!s.Contains("testkey") && !i.Contains("key=testkey"), "gunluklerde istemci sifresi GORUNMUYOR", null);
+    }
+
+    static void SunucuTaramasi()
+    {
+        Console.WriteLine("--- 19. VPN'de sunucu arama: gercek sunucu bulunur, baska servis sunucu sanilmaz");
+        var yabanci = new HttpListener();
+        var dinle = new TcpListener(IPAddress.Loopback, 0); dinle.Start();
+        int bosPort = ((IPEndPoint)dinle.LocalEndpoint).Port; dinle.Stop();
+        yabanci.Prefixes.Add("http://localhost:" + bosPort + "/");
+        yabanci.Start();
+        var t = new Thread(delegate ()
+        {
+            try
+            {
+                while (yabanci.IsListening)
+                {
+                    var c = yabanci.GetContext();
+                    var b = Encoding.UTF8.GetBytes("<html>baska bir site</html>");
+                    c.Response.OutputStream.Write(b, 0, b.Length); c.Response.Close();
+                }
+            }
+            catch { }
+        }) { IsBackground = true };
+        t.Start();
+        var m = typeof(ClientAgent).GetMethod("SunuculariTara", OZEL);
+        Func<int, List<string>, List<string>> tara = (port, ad) =>
+        {
+            var cfg = new Dictionary<string, string> { { "UseHttps", "0" }, { "Port", port.ToString() } };
+            return (List<string>)m.Invoke(null, new object[] { ad, cfg });
+        };
+        var bulunan = tara(sunucuPort, new List<string> { "localhost", "192.0.2.1" });   // 192.0.2.1: yanit vermez
+        Kontrol(bulunan.Count == 1 && bulunan[0] == "http://localhost:" + sunucuPort, "gercek Print360 sunucusu bulundu", string.Join(",", bulunan.ToArray()));
+        Kontrol(tara(bosPort, new List<string> { "localhost" }).Count == 0, "ayni portta baska servis sunucu sanilmadi", null);
+        yabanci.Close();
+    }
+
+    static void TcpTablosuOkuma()
+    {
+        Console.WriteLine("--- 18. RDP farkli portta: Windows baglanti tablosu surec bilgisiyle okunuyor");
+        var dinle = new TcpListener(IPAddress.Loopback, 0);
+        dinle.Start();
+        int port = ((IPEndPoint)dinle.LocalEndpoint).Port;
+        using (var c = new TcpClient())
+        {
+            c.Connect(IPAddress.Loopback, port);
+            using (var k = dinle.AcceptTcpClient())
+            {
+                int pid = System.Diagnostics.Process.GetCurrentProcess().Id;
+                var t = ClientAgent.TcpTablosu();
+                Kontrol(t.Exists(x => x.Ip == "127.0.0.1" && x.Port == port && x.Pid == pid),
+                        "kendi baglantimiz adres, port ve surecle bulundu", t.Count + " kayit");
+            }
+        }
+        dinle.Stop();
     }
 
     static void RdpOturumDegisimi()

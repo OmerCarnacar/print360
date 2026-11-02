@@ -384,6 +384,9 @@ static partial class ClientAgent
         RdpEklentiSagligi();   // bozuk kayit RDP'yi actirmaz - onar
             VarsayilanYaziciyiKurDefaults();   // istemcide her zaman bir varsayilan bulunsun
             new Thread(RdpIzleyici) { IsBackground = true }.Start();   // RDP acilir acilmaz algila
+            sonVpnDurumu = string.Join(", ", RdpAlgilama.AcikVpnler().ToArray());
+            NetworkChange.NetworkAddressChanged += delegate { AgDegisti(); };   // VPN baglandi/koptu
+            new Thread(SunucuAramaDongusu) { IsBackground = true }.Start();     // VPN'de sunucu ara
             new Thread(HeartbeatLoop) { IsBackground = true }.Start();
             new Thread(JobPollLoop) { IsBackground = true }.Start();
             new Thread(UpdateLoop) { IsBackground = true }.Start();
@@ -1391,21 +1394,223 @@ static partial class ClientAgent
     // gelsin alinmalidir. Tek bir sunucu secmek yanlis sunucuya bakmaya yol acardi.
     static List<string> RdpSunucularBul()
     {
-        var liste = new List<string>();
+        var kayitlar = new List<TcpKayit>();
         try
         {
+            // IPv6 dahil: uzak port 3389 olan her baglanti
             foreach (var c in IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpConnections())
                 if (c.RemoteEndPoint.Port == 3389 && c.State == TcpState.Established)
-                {
-                    string ip = c.RemoteEndPoint.Address.ToString();
-                    bool var_ = false;
-                    foreach (var x in liste) if (x == ip) { var_ = true; break; }
-                    if (!var_) liste.Add(ip);
-                }
+                    kayitlar.Add(new TcpKayit { Ip = c.RemoteEndPoint.Address.ToString(), Port = 3389, Pid = -1 });
+            // Farkli porttan giden RDP (VPN / guvenlik duvari arkasi): mstsc'nin baglantilari
+            var pidler = RdpSurecleri();
+            if (pidler.Count > 0) kayitlar.AddRange(TcpTablosu());
+            return RdpAlgilama.Sec(kayitlar, pidler);
         }
         catch (Exception ex)
         { if (sonOtoLog != ex.Message) { Log("Oto sunucu bulma: " + ex.Message); sonOtoLog = ex.Message; } }
-        return liste;
+        return RdpAlgilama.Sec(kayitlar, new int[0]);
+    }
+
+    static List<int> RdpSurecleri()
+    {
+        var l = new List<int>();
+        foreach (var ad in RdpAlgilama.IstemciSurecleri)
+            foreach (var p in Process.GetProcessesByName(ad))
+                using (p) l.Add(p.Id);
+        return l;
+    }
+
+    // Kurulu baglantilar ve sahip surecleri (IPv4). .NET'in listesinde surec bilgisi yok.
+    [DllImport("iphlpapi.dll", SetLastError = true)]
+    static extern uint GetExtendedTcpTable(IntPtr tablo, ref int boyut, bool sirali, int aile, int sinif, int ayrilmis);
+
+    internal static List<TcpKayit> TcpTablosu()
+    {
+        const int AF_INET = 2, TCP_TABLE_OWNER_PID_CONNECTIONS = 4, MIB_TCP_STATE_ESTAB = 5;
+        var l = new List<TcpKayit>();
+        int boyut = 0;
+        GetExtendedTcpTable(IntPtr.Zero, ref boyut, false, AF_INET, TCP_TABLE_OWNER_PID_CONNECTIONS, 0);
+        IntPtr p = Marshal.AllocHGlobal(boyut + 4096);
+        try
+        {
+            boyut += 4096;
+            if (GetExtendedTcpTable(p, ref boyut, false, AF_INET, TCP_TABLE_OWNER_PID_CONNECTIONS, 0) != 0) return l;
+            int n = Marshal.ReadInt32(p);
+            for (int i = 0; i < n; i++)
+            {
+                // Satir: durum, yerel adres, yerel port, uzak adres, uzak port, surec (6 x DWORD)
+                int o = 4 + i * 24;
+                if (Marshal.ReadInt32(p, o) != MIB_TCP_STATE_ESTAB) continue;
+                long adres = (uint)Marshal.ReadInt32(p, o + 12);
+                int ham = Marshal.ReadInt32(p, o + 16);
+                l.Add(new TcpKayit { Ip = new IPAddress(adres).ToString(), Port = ((ham & 0xff) << 8) | ((ham >> 8) & 0xff), Pid = Marshal.ReadInt32(p, o + 20) });
+            }
+        }
+        finally { Marshal.FreeHGlobal(p); }
+        return l;
+    }
+
+    // ------------------------------------------------------------------
+    // SUNUCU ARAMA. Hicbir sunucuya bagli degilken VPN'deki makineler taranir: sunucu
+    // ayari gerekmez, RDP'nin nasil kuruldugu da onemli degildir. Yalnizca VPN
+    // (Tailscale makineleri + VPN bagdastiricisinin agi) taranir, ofis/ev agi taranmaz.
+    // Print360.ini'de SunucuArama=0 kapatir.
+    // ------------------------------------------------------------------
+    static readonly ManualResetEvent aramaTetik = new ManualResetEvent(false);
+
+    static void SunucuAramaDongusu()
+    {
+        Thread.Sleep(20000);   // once normal yollar denensin
+        string sonOzet = null;
+        while (true)
+        {
+            try
+            {
+                var cfg = ReadIni();
+                bool kapali = cfg.ContainsKey("SunucuArama") && cfg["SunucuArama"].Trim() == "0";
+                if (!kapali && sunucuBagli == 0)
+                {
+                    var adaylar = AramaAdaylari();
+                    string ozet = adaylar.Count + " aday";
+                    if (adaylar.Count > 0)
+                    {
+                        var bulunan = SunuculariTara(adaylar, cfg);
+                        if (ozet != sonOzet) Log("SUNUCU ARAMA: VPN'de " + adaylar.Count + " makine tarandi, " + bulunan.Count + " Print360 sunucusu bulundu.");
+                        foreach (var u in bulunan)
+                        {
+                            bool biliniyor;
+                            lock (sonCalisanSunucular) biliniyor = sonCalisanSunucular.Exists(x => string.Equals(x, u, StringComparison.OrdinalIgnoreCase));
+                            if (!biliniyor) Log("SUNUCU BULUNDU: " + u + " (VPN taramasi; ayar gerekmedi)");
+                            SunucuHatirla(u);
+                            saglik.Basarili(u);
+                        }
+                        if (bulunan.Count > 0) hbTetik.Set();
+                    }
+                    sonOzet = ozet;
+                }
+            }
+            catch (Exception ex) { Log("Sunucu arama: " + ex.Message); }
+            aramaTetik.Reset(); aramaTetik.WaitOne(120000);   // 2 dk'da bir ya da ag degisince
+        }
+    }
+
+    static List<string> AramaAdaylari()
+    {
+        var l = new List<string>();
+        var kendi = new List<string>();
+        foreach (var n in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (n.OperationalStatus != OperationalStatus.Up) continue;
+            bool vpn = RdpAlgilama.VpnMi(n.NetworkInterfaceType.ToString(), n.Name, n.Description);
+            foreach (var a in n.GetIPProperties().UnicastAddresses)
+            {
+                if (a.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork) continue;
+                string ip = a.Address.ToString();
+                kendi.Add(ip);
+                if (vpn && a.IPv4Mask != null)
+                    foreach (var x in RdpAlgilama.AltAgAdaylari(ip, a.IPv4Mask.ToString()))
+                        if (!l.Contains(x)) l.Add(x);
+            }
+        }
+        foreach (var x in RdpAlgilama.TailscaleEslesleri(TailscaleDurumu(), kendi))
+            if (!l.Contains(x)) l.Insert(0, x);   // once Tailscale makineleri
+        return l;
+    }
+
+    static string TailscaleDurumu()
+    {
+        try
+        {
+            // 32-bit surecte ProgramFiles (x86) doner; Tailscale 64-bit klasorde olur
+            string pf = Environment.GetEnvironmentVariable("ProgramW6432");
+            if (string.IsNullOrEmpty(pf)) pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            string exe = Path.Combine(pf, @"Tailscale\tailscale.exe");
+            if (!File.Exists(exe)) return "";
+            var psi = new ProcessStartInfo(exe, "status --json")
+            { UseShellExecute = false, RedirectStandardOutput = true, CreateNoWindow = true, StandardOutputEncoding = Encoding.UTF8 };
+            using (var p = Process.Start(psi))
+            {
+                var oku = p.StandardOutput.ReadToEndAsync();
+                if (!p.WaitForExit(10000)) { try { p.Kill(); } catch { } return ""; }
+                return oku.Result;
+            }
+        }
+        catch (Exception ex) { Ayr("Tailscale durumu okunamadi: " + ex.Message); return ""; }
+    }
+
+    // Once port (hizli, paralel), sonra acik olanlarda Print360 dogrulamasi.
+    static List<string> SunuculariTara(List<string> adaylar, Dictionary<string, string> cfg)
+    {
+        bool https = !cfg.ContainsKey("UseHttps") || cfg["UseHttps"].Trim() != "0";
+        string ps = cfg.ContainsKey("Port") ? cfg["Port"].Trim() : "";
+        int port;
+        if (!int.TryParse(ps, out port)) port = https ? 8443 : 8360;
+        var acik = new List<string>();
+        var kuyruk = new Queue<string>(adaylar);
+        var isler = new List<Thread>();
+        for (int i = 0; i < Math.Min(32, adaylar.Count); i++)
+        {
+            var t = new Thread(delegate ()
+            {
+                while (true)
+                {
+                    string ip;
+                    lock (kuyruk) { if (kuyruk.Count == 0) return; ip = kuyruk.Dequeue(); }
+                    try
+                    {
+                        using (var c = new System.Net.Sockets.TcpClient())
+                        {
+                            var a = c.BeginConnect(ip, port, null, null);
+                            if (a.AsyncWaitHandle.WaitOne(1500) && c.Connected) { c.EndConnect(a); lock (acik) acik.Add(ip); }
+                        }
+                    }
+                    catch { }
+                }
+            }) { IsBackground = true };
+            t.Start(); isler.Add(t);
+        }
+        foreach (var t in isler) t.Join();
+
+        var sonuc = new List<string>();
+        foreach (var ip in acik)
+        {
+            string u = (https ? "https://" : "http://") + ip + ":" + port;
+            try
+            {
+                var r = (HttpWebRequest)WebRequest.Create(u + "/api/clientversion");
+                r.Timeout = 5000; r.ReadWriteTimeout = 5000; Ortak.VekilUygula(r);
+                using (var y = (HttpWebResponse)r.GetResponse())
+                using (var sr = new StreamReader(y.GetResponseStream()))
+                    if (RdpAlgilama.Print360Yaniti(y.Headers["X-Print360"], sr.ReadToEnd())) sonuc.Add(u);
+            }
+            catch (Exception ex) { Ayr("Tarama: " + u + " Print360 degil: " + ex.Message); }
+        }
+        return sonuc;
+    }
+
+    // AG DEGISTI (VPN baglandi/koptu): eski kararlar ve eski yoldaki baglantilar gecersiz.
+    // Bekleme sureleri sifirlanir, acik baglantilar kapatilir, sunucular hemen denenir.
+    static string sonVpnDurumu = "", lastVpnNotu;
+    static void AgDegisti()
+    {
+        try
+        {
+            saglik.Sifirla();
+            Ortak.DogrudanBaglan = false;
+            foreach (var u in SunucuAdresleri(ReadIni()))
+                try { ServicePointManager.FindServicePoint(new Uri(u)).CloseConnectionGroup(null); } catch { }
+            string vpn = string.Join(", ", RdpAlgilama.AcikVpnler().ToArray());
+            lock (saglik)
+                if (vpn != sonVpnDurumu)
+                {
+                    Log(vpn.Length > 0 ? "AG DEGISTI: VPN acik (" + vpn + ") - sunucular hemen yeniden deneniyor."
+                                       : "AG DEGISTI: VPN kapandi - sunucular hemen yeniden deneniyor.");
+                    sonVpnDurumu = vpn;
+                }
+            hbTetik.Set();
+            aramaTetik.Set();
+        }
+        catch (Exception ex) { Log("Ag degisimi: " + ex.Message); }
     }
 
     // Geriye uyumluluk: tek sunucu isteyen yerler icin ilkini dondurur
@@ -1556,7 +1761,11 @@ static partial class ClientAgent
                         Log("RDP oturumu ACILDI: " + s + " - sunucuya hemen baglaniliyor.");
                     foreach (var s in kapanan)
                         Log("RDP oturumu KAPANDI: " + s + (simdi.Count > 0 ? " (acik kalan: " + string.Join(", ", simdi) + ")" : "."));
-                    if (acilan.Count > 0) sonRdpSunucu = acilan[acilan.Count - 1];
+                    if (acilan.Count > 0)
+                    {
+                        sonRdpSunucu = acilan[acilan.Count - 1];
+                        saglik.Sifirla();   // yeni oturum: bekleme suresi "hemen baglaniliyor"u engellemesin
+                    }
                     rdpAcik = simdi.Count > 0;
                     onceki = simdi;
                     hbTetik.Set();   // kalp atisi dongusu hemen calissin
@@ -1975,12 +2184,15 @@ static partial class ClientAgent
                     lastOk = false;
                     sunucuBagli = 0;
                     durumKanal = sunucular.Count + " adres denendi: " + string.Join(" , ", sunucular.ToArray());
+                    string vpnNotu = RdpAlgilama.AcikVpnler().Count > 0
+                        ? "VPN acik: VPN/guvenlik duvari kurali sunucunun Print360 portuna (HTTPS 8443) izin vermeli." : "";
+                    if (vpnNotu.Length > 0 && (lastVpnNotu != vpnNotu)) { Log("BAGLANTI: " + vpnNotu); lastVpnNotu = vpnNotu; }
                     if (rdpAcik)
                     {
-                        durumMetin = "UYARI: Acik RDP sunucularinin hicbirinde Print360 yanit vermiyor.";
+                        durumMetin = "UYARI: Acik RDP sunucularinin hicbirinde Print360 yanit vermiyor. " + vpnNotu;
                         DurumBildir(false, "Print360 sunucusu bulunamadi",
                             "RDP baglantisi var ama hicbir sunucuda Print360 yanit vermiyor.\r\n"
-                            + "Sunucuya Print360-Server-Setup.exe kurulu mu?");
+                            + (vpnNotu.Length > 0 ? vpnNotu : "Sunucuya Print360-Server-Setup.exe kurulu mu?"));
                     }
                     else
                     {
@@ -1993,7 +2205,10 @@ static partial class ClientAgent
             else
             {
                 durumKanal = "HTTPS (sunucu otomatik araniyor)";
-                durumMetin = "RDP baglantisi bekleniyor - sunucu henuz bulunamadi";
+                // RDP penceresi acik ama adres yok: yerel tunel ya da baglanti kurulmadi
+                durumMetin = RdpSurecleri().Count > 0
+                    ? "RDP penceresi acik ama sunucu adresi belirlenemedi (tunel/ag gecidi olabilir). Print360.ini'de Server= yazin."
+                    : "RDP baglantisi bekleniyor - sunucu henuz bulunamadi";
                 DurumBildir(false, "Print360 baglanti yok",
                     "Sunucu bulunamadi. RDP baglantisi acildiginda otomatik baglanacak.");
             }

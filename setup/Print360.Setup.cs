@@ -598,6 +598,22 @@ static class Kurulum
         string[] diger = sunucu ? IstemciIkilileri : SunucuIkilileri;
         string kalinti = Path.Combine(Path.Combine(kok, KALINTI_KLASORU), simdi.ToString("yyyyMMdd_HHmmss"));
 
+        // Kenara alinanlar sonsuza kadar birikmesin: 30 gun geri alma suresi, sonra silinir.
+        string kalintiKok = Path.Combine(kok, KALINTI_KLASORU);
+        if (Directory.Exists(kalintiKok))
+        {
+            foreach (var d in Directory.GetDirectories(kalintiKok))
+            {
+                DateTime t;
+                if (!DateTime.TryParseExact(Path.GetFileName(d), "yyyyMMdd_HHmmss", null, System.Globalization.DateTimeStyles.None, out t)
+                    || (simdi - t).TotalDays < 30) continue;
+                try { Directory.Delete(d, true); r.Add("SILINDI (30 gunluk suresi doldu): " + KALINTI_KLASORU + "\\" + Path.GetFileName(d)); }
+                catch (Exception ex) { r.Add("SILINEMEDI: " + KALINTI_KLASORU + "\\" + Path.GetFileName(d) + " (" + ex.Message + ")"); }
+            }
+            if (Directory.GetFileSystemEntries(kalintiKok).Length == 0)
+                try { Directory.Delete(kalintiKok); } catch { }
+        }
+
         foreach (var f in Directory.GetFiles(kok))
         {
             string ad = Path.GetFileName(f);
@@ -769,6 +785,25 @@ static class Kurulum
             && !ad.Equals("Print360 " + httpsPort, StringComparison.OrdinalIgnoreCase);
     }
 
+    // Print360'in GECERLI iki kaydi (sunucu, istemci) disindaki Print360 kaydi kalintidir.
+    internal static bool KaldirmaKaydiKalintiMi(string anahtar, string gorunenAd)
+    {
+        if (string.IsNullOrEmpty(gorunenAd) || !gorunenAd.StartsWith("Print360", StringComparison.OrdinalIgnoreCase)) return false;
+        return anahtar.IndexOf("PRINT360CLI", StringComparison.OrdinalIgnoreCase) < 0
+            && anahtar.IndexOf("PRINT360SRV", StringComparison.OrdinalIgnoreCase) < 0;
+    }
+
+    // Veri klasoru ve calisan kurulum ASLA silinmez; yalnizca adinda Print360 gecen klasor.
+    internal static bool KurulumKlasoruSilinebilirMi(string konum, string veriKok, string calisanKlasor)
+    {
+        if (string.IsNullOrEmpty(konum) || !Directory.Exists(konum)) return false;
+        string k = Path.GetFullPath(konum).TrimEnd('\\') + "\\", v = Path.GetFullPath(veriKok).TrimEnd('\\') + "\\",
+               c = Path.GetFullPath(calisanKlasor).TrimEnd('\\') + "\\";
+        if (Path.GetFileName(k.TrimEnd('\\')).IndexOf("Print360", StringComparison.OrdinalIgnoreCase) < 0) return false;
+        return !v.StartsWith(k, StringComparison.OrdinalIgnoreCase) && !k.StartsWith(v, StringComparison.OrdinalIgnoreCase)
+            && !c.StartsWith(k, StringComparison.OrdinalIgnoreCase);
+    }
+
     static void SistemKalintilariTemizle(bool sunucu, string httpPort, string httpsPort)
     {
         int n = 0;
@@ -817,6 +852,36 @@ static class Kurulum
             }
         }
         catch (Exception ex) { Yaz("  Zamanlanmis gorevler taranamadi: " + ex.Message); }
+
+        // 2b) Baska kimlikle yapilmis eski kurulumlarin "Programlar" kaydi ve klasoru
+        foreach (var gorunum in new[] { Microsoft.Win32.RegistryView.Registry64, Microsoft.Win32.RegistryView.Registry32 })
+        {
+            try
+            {
+                using (var hk = Microsoft.Win32.RegistryKey.OpenBaseKey(Microsoft.Win32.RegistryHive.LocalMachine, gorunum))
+                using (var u = hk.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", true))
+                {
+                    if (u == null) continue;
+                    foreach (var ad in u.GetSubKeyNames())
+                    {
+                        string gorunen, konum;
+                        using (var k = u.OpenSubKey(ad))
+                        {
+                            gorunen = k == null ? "" : Convert.ToString(k.GetValue("DisplayName"));
+                            konum = k == null ? "" : Convert.ToString(k.GetValue("InstallLocation"));
+                        }
+                        if (!KaldirmaKaydiKalintiMi(ad, gorunen)) continue;
+                        u.DeleteSubKeyTree(ad, false);
+                        Yaz("  KALINTI SILINDI: eski kurulum kaydi '" + gorunen + "'");
+                        n++;
+                        if (KurulumKlasoruSilinebilirMi(konum, BASE, AppDomain.CurrentDomain.BaseDirectory))
+                            try { Directory.Delete(konum, true); Yaz("  KALINTI SILINDI: eski kurulum klasoru " + konum); }
+                            catch (Exception ex) { Yaz("  Eski kurulum klasoru silinemedi: " + konum + " (" + ex.Message + ")"); }
+                    }
+                }
+            }
+            catch (Exception ex) { Yaz("  Eski kurulum kayitlari taranamadi: " + ex.Message); }
+        }
 
         // 3) Masaustu kisayollari (ortak masaustu)
         try
