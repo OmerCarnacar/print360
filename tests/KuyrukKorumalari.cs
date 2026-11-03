@@ -46,10 +46,10 @@ class KuyrukKorumalari
         Kuyruk.SuresiDolanKok = Path.Combine(kok, "_suresi-dolan-test");
         Kuyruk.Simdi = delegate { return saat; };
 
-        string q = Path.Combine(kok, "EVOPC");
+        string q = Path.Combine(kok, "TESTPC2");
         Directory.CreateDirectory(q);
-        string zehirli = Path.Combine(q, "20260919_100000_001_FS~Bozuk.pdf.gz");
-        string saglam  = Path.Combine(q, "20260919_100500_002_FS~Saglam.pdf.gz");
+        string zehirli = Path.Combine(q, "20260919_100000_001_KUL1~Bozuk.pdf.gz");
+        string saglam  = Path.Combine(q, "20260919_100500_002_KUL1~Saglam.pdf.gz");
         File.WriteAllText(zehirli, "x"); File.SetCreationTimeUtc(zehirli, DateTime.UtcNow.AddMinutes(-30));
         File.WriteAllText(saglam,  "x"); File.SetCreationTimeUtc(saglam,  DateTime.UtcNow.AddMinutes(-25));
 
@@ -77,25 +77,25 @@ class KuyrukKorumalari
 
         // --- 4) Sure siniri: 7 gunden eski is teslim edilmez, ayri klasore alinir
         Kuyruk.SureSaat = 168;
-        string eski = Path.Combine(q, "20260901_090000_003_FS~Eski Gizli Belge.pdf.gz");
-        string yeni = Path.Combine(q, "20260919_115900_004_FS~Yeni.pdf.gz");
+        string eski = Path.Combine(q, "20260901_090000_003_KUL1~Eski Gizli Belge.pdf.gz");
+        string yeni = Path.Combine(q, "20260919_115900_004_KUL1~Yeni.pdf.gz");
         File.WriteAllText(eski, "x"); File.SetCreationTime(eski, DateTime.Now.AddDays(-18));
         File.WriteAllText(yeni, "x");
         var dolan = Kuyruk.SuresiDolanlariAyir();
         Kontrol(dolan.Count == 1 && !File.Exists(eski)
-                && File.Exists(Path.Combine(Path.Combine(Kuyruk.SuresiDolanKok, "EVOPC"), Path.GetFileName(eski))),
+                && File.Exists(Path.Combine(Path.Combine(Kuyruk.SuresiDolanKok, "TESTPC2"), Path.GetFileName(eski))),
                 "18 gunluk is kuyruktan cikarildi (silinmedi)", dolan.Count > 0 ? dolan[0] : "(yok)");
         Kontrol(File.Exists(yeni) && File.Exists(saglam), "suresi dolmamis islere dokunulmadi", null);
 
         // --- 5) Karantinadaki ve suresi dolan isler bir daha VERILMEZ / sayilmaz
         int dk;
-        Kontrol(!Kuyruk.Bekliyor("EVOPC", "20260919_100000_001_FS~Bozuk.pdf", out dk),
+        Kontrol(!Kuyruk.Bekliyor("TESTPC2", "20260919_100000_001_KUL1~Bozuk.pdf", out dk),
                 "karantinadaki is 'kuyrukta bekliyor' sayilmiyor", null);
 
         // --- 6) GORUNURLUK: kenara alinan is panelde "Teslim edildi" GORUNMEMELI
-        string dk1 = Kuyruk.DurumMetni("EVOPC", "20260919_100000_001_FS~Bozuk.pdf");
+        string dk1 = Kuyruk.DurumMetni("TESTPC2", "20260919_100000_001_KUL1~Bozuk.pdf");
         Kontrol(dk1 != null && dk1.StartsWith("KARANTINADA"), "karantinadaki is panelde KARANTINADA gorunuyor", dk1);
-        string dk2 = Kuyruk.DurumMetni("EVOPC", "20260901_090000_003_FS~Eski Gizli Belge.pdf");
+        string dk2 = Kuyruk.DurumMetni("TESTPC2", "20260901_090000_003_KUL1~Eski Gizli Belge.pdf");
         Kontrol(dk2 != null && dk2.StartsWith("SURESI DOLDU"), "suresi dolan is panelde SURESI DOLDU gorunuyor", dk2);
 
         var ayr = Kuyruk.Ayrilanlar();
@@ -104,38 +104,38 @@ class KuyrukKorumalari
 
         // --- 7) YENIDEN GONDER: is kuyruga doner, zamani sifirlanir, hemen yeniden ayrilmaz
         string hata;
-        bool geri1 = Kuyruk.GeriAl("suresi-dolan", "EVOPC", "20260901_090000_003_FS~Eski Gizli Belge.pdf", out hata);
-        string donen = Path.Combine(q, "20260901_090000_003_FS~Eski Gizli Belge.pdf.gz");
+        bool geri1 = Kuyruk.GeriAl("suresi-dolan", "TESTPC2", "20260901_090000_003_KUL1~Eski Gizli Belge.pdf", out hata);
+        string donen = Path.Combine(q, "20260901_090000_003_KUL1~Eski Gizli Belge.pdf.gz");
         Kontrol(geri1 && File.Exists(donen) && (DateTime.Now - File.GetCreationTime(donen)).TotalMinutes < 1,
                 "suresi dolan is kuyruga dondu, olusturma zamani SIMDI yapildi", geri1 ? "tamam" : hata);
         Kontrol(Kuyruk.SuresiDolanlariAyir().Count == 0 && File.Exists(donen),
                 "geri alinan is bir sonraki taramada YENIDEN ayrilmiyor", null);
 
-        bool geri2 = Kuyruk.GeriAl("karantina", "EVOPC", "20260919_100000_001_FS~Bozuk.pdf", out hata);
+        bool geri2 = Kuyruk.GeriAl("karantina", "TESTPC2", "20260919_100000_001_KUL1~Bozuk.pdf", out hata);
         Kontrol(geri2 && File.Exists(zehirli), "karantinadaki is kuyruga dondu", geri2 ? "tamam" : hata);
         Kontrol(!Kuyruk.SorunluysaAyir(zehirli, out hata), "geri alinan isin deneme sayaci sifirlandi", null);
 
         // --- 8) GUVENLIK: yol gecisi ve gecersiz girdiler reddedilir
         bool yg1 = Kuyruk.GeriAl("karantina", @"..\..\Windows", "x.pdf", out hata);
-        bool yg2 = Kuyruk.GeriAl("baska-tur", "EVOPC", "x.pdf", out hata);
-        bool yg3 = Kuyruk.GeriAl("karantina", "EVOPC", @"..\..\..\gizli.pdf", out hata);
+        bool yg2 = Kuyruk.GeriAl("baska-tur", "TESTPC2", "x.pdf", out hata);
+        bool yg3 = Kuyruk.GeriAl("karantina", "TESTPC2", @"..\..\..\gizli.pdf", out hata);
         Kontrol(!yg1 && !yg2 && !yg3, "yol gecisi / gecersiz tur / olmayan dosya reddediliyor", hata);
 
         // --- 9) ANLIK GORUNTU: panel/CSV icin onbellekli tarama
         // Kuyrugu degistiren islem onbellegi BOZMALI; aksi halde panel eski durumu gosterir.
         Kuyruk.AnlikSureMs = 600000;   // uretimdeki gibi onbellekli (cok uzun tut)
-        string yeniIs = "20260919_120000_009_FS~Anlik.pdf";
+        string yeniIs = "20260919_120000_009_KUL1~Anlik.pdf";
         Kuyruk.AnligiBoz();
-        Kontrol(Kuyruk.DurumMetni("EVOPC", yeniIs) == null, "olmayan is null (goruntu alindi)", null);
+        Kontrol(Kuyruk.DurumMetni("TESTPC2", yeniIs) == null, "olmayan is null (goruntu alindi)", null);
         File.WriteAllText(Path.Combine(q, yeniIs + ".gz"), "x");
-        Kontrol(Kuyruk.DurumMetni("EVOPC", yeniIs) == null,
+        Kontrol(Kuyruk.DurumMetni("TESTPC2", yeniIs) == null,
                 "onbellek suresi icinde dogrudan eklenen dosya gorunmez (onbellek gercekten calisiyor)", null);
         string yol9 = Path.Combine(q, yeniIs + ".gz");
         saat = saat.AddHours(1);
         for (int i = 0; i < 9; i++) Kuyruk.SorunluysaAyir(yol9, out hata);   // karantinaya alinir
         saat = saat.AddMinutes(5);
         Kuyruk.SorunluysaAyir(yol9, out hata);
-        string d9 = Kuyruk.DurumMetni("EVOPC", yeniIs);
+        string d9 = Kuyruk.DurumMetni("TESTPC2", yeniIs);
         Kontrol(d9 != null && d9.StartsWith("KARANTINADA"),
                 "karantinaya alma onbellegi bozuyor: panel yeni durumu hemen gosteriyor", d9);
         Kuyruk.AnlikSureMs = 0;

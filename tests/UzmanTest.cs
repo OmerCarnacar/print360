@@ -231,7 +231,7 @@ partial class UzmanTest
     {
         Console.WriteLine("--- 1. Normal teslim (Turkce ve ozel karakterli adlar)");
         var adlar = new[] { "20261012_090000_001_ayse~Şubat Faturası İçin Özet.pdf", "20261012_090001_002_ali~fiyat %50 & kâr = #1.pdf",
-                            "20261012_090002_003_FS.pdf" };
+                            "20261012_090002_003_KUL1.pdf" };
         var icerik = new Dictionary<string, byte[]>();
         int t = 1;
         foreach (var a in adlar) { icerik[a] = Pdf(50 * 1024, t++); KuyrugaKoy(a, icerik[a]); }
@@ -254,10 +254,10 @@ partial class UzmanTest
     {
         Console.WriteLine("--- 2. Buyuk dosya (20 MB, sikistirilamaz)");
         var b = Pdf(20 * 1024 * 1024, 42);
-        KuyrugaKoy("20261012_091000_001_FS~Buyuk Rapor.pdf", b);
+        KuyrugaKoy("20261012_091000_001_KUL1~Buyuk Rapor.pdf", b);
         var sw = System.Diagnostics.Stopwatch.StartNew();
         bool ok = Al();
-        string y = Path.Combine(iJobs, "20261012_091000_001_FS~Buyuk Rapor.pdf");
+        string y = Path.Combine(iJobs, "20261012_091000_001_KUL1~Buyuk Rapor.pdf");
         Kontrol(ok && File.Exists(y) && File.ReadAllBytes(y).SequenceEqual(b) && KuyrukSayisi() == 0,
                 "20 MB is butun geldi ve onaylandi (" + sw.ElapsedMilliseconds + " ms)", null);
         JobsTemizle();
@@ -267,7 +267,7 @@ partial class UzmanTest
     {
         Console.WriteLine("--- 3. Indirmenin ORTASINDA baglanti kopuyor");
         var b = Pdf(3 * 1024 * 1024, 7);
-        string ad = "20261012_092000_001_FS~Kopan Indirme.pdf";
+        string ad = "20261012_092000_001_KUL1~Kopan Indirme.pdf";
         KuyrugaKoy(ad, b);
         vekil.Mod = "indirmeyi-kes"; vekil.KesBayt = 256 * 1024;
         bool ok = Al();
@@ -290,7 +290,7 @@ partial class UzmanTest
     {
         Console.WriteLine("--- 4. Onay (ACK) sunucuya giderken kayboluyor");
         var b = Pdf(80 * 1024, 9);
-        string ad = "20261012_093000_001_FS~Onayi Kaybolan.pdf";
+        string ad = "20261012_093000_001_KUL1~Onayi Kaybolan.pdf";
         KuyrugaKoy(ad, b);
         vekil.Mod = "onayi-dusur";
         Al();
@@ -314,7 +314,7 @@ partial class UzmanTest
         var icerik = new Dictionary<string, byte[]>();
         for (int i = 0; i < 20; i++)
         {
-            string ad = "20261012_094000_" + i.ToString("000") + "_FS~Es Zamanli " + i + ".pdf";
+            string ad = "20261012_094000_" + i.ToString("000") + "_KUL1~Es Zamanli " + i + ".pdf";
             icerik[ad] = Pdf(120 * 1024, 100 + i); KuyrugaKoy(ad, icerik[ad]);
         }
         int hata = 0;
@@ -332,7 +332,7 @@ partial class UzmanTest
     static void YanlisSifre()
     {
         Console.WriteLine("--- 6. Yanlis istemci sifresi");
-        KuyrugaKoy("20261012_095000_001_FS~Sifre Testi.pdf", Pdf(10 * 1024, 11));
+        KuyrugaKoy("20261012_095000_001_KUL1~Sifre Testi.pdf", Pdf(10 * 1024, 11));
         bool ok = Al(null, "YANLIS-ANAHTAR");
         string g = IstemciGunlugu();
         Kontrol(!ok && KuyrukSayisi() == 1 && Jobs().Length == 0, "is VERILMEDI, sunucuda kaldi", null);
@@ -378,7 +378,7 @@ partial class UzmanTest
         Console.WriteLine("--- 9. Istemci isi diske yazamiyor (zehirli is) -> karantina, arkadaki is akar");
         var saat = DateTime.Now;
         Kuyruk.Simdi = delegate { return saat; };
-        string zehir = "20261012_096000_001_FS~Yazilamayan.pdf", saglam = "20261012_096001_002_FS~Arkadaki.pdf";
+        string zehir = "20261012_096000_001_KUL1~Yazilamayan.pdf", saglam = "20261012_096001_002_KUL1~Arkadaki.pdf";
         KuyrugaKoy(zehir, Pdf(20 * 1024, 21));
         KuyrugaKoy(saglam, Pdf(20 * 1024, 22));
         // Yalnizca BU isin adiyla klasor olusturulur: istemci o adla dosya yazamaz (ad bir klasore ait)
@@ -420,7 +420,7 @@ partial class UzmanTest
     {
         Console.WriteLine("--- 11. 'Basildi' bildirimi uctan uca (istemci -> sunucu -> panel)");
         Ayarla(typeof(ClientAgent), "printedCsv", Path.Combine(kok, "istemci\\stats\\printed.csv"));
-        string ad = "20261015_090000_001_FS~Şirket İçi Özet.pdf";
+        string ad = "20261015_090000_001_KUL1~Şirket İçi Özet.pdf";
         Cagir(typeof(ClientAgent), "RecordPrinted", ad, makine + " \\ Yazıcı Ğ-1", "OK");
         string[] kayit;
         bool var = Basilanlar().TryGetValue(ad, out kayit);
@@ -435,7 +435,7 @@ partial class UzmanTest
         Console.WriteLine("--- 12. Sunucu kapaliyken 'basildi' bildirimi kaybolmuyor");
         int bos; var l = new TcpListener(IPAddress.Loopback, 0); l.Start(); bos = ((IPEndPoint)l.LocalEndpoint).Port; l.Stop();
         IniYaz("testkey", "localhost:" + bos);
-        string ad = "20261015_091000_001_FS~Bekleyen Bildirim.pdf";
+        string ad = "20261015_091000_001_KUL1~Bekleyen Bildirim.pdf";
         Cagir(typeof(ClientAgent), "RecordPrinted", ad, makine + " \\ HP", "OK");
         string bekleyen = Path.Combine(kok, "istemci\\stats\\gonderilemeyen-bildirimler.csv");
         Kontrol(File.Exists(bekleyen) && File.ReadAllText(bekleyen).Contains(ad) && !Basilanlar().ContainsKey(ad),
@@ -476,8 +476,8 @@ partial class UzmanTest
     static void CiftOnay()
     {
         Console.WriteLine("--- 14. Ayni is iki kez onaylaniyor (iki ajan ayni isi indirdi)");
-        KuyrugaKoy("20261015_093000_001_FS~Cift Onay A.pdf", Pdf(5 * 1024, 41));
-        KuyrugaKoy("20261015_093001_002_FS~Cift Onay B.pdf", Pdf(5 * 1024, 42));
+        KuyrugaKoy("20261015_093000_001_KUL1~Cift Onay A.pdf", Pdf(5 * 1024, 41));
+        KuyrugaKoy("20261015_093001_002_KUL1~Cift Onay B.pdf", Pdf(5 * 1024, 42));
         string id;
         using (var wc = new WebClient())
         {
@@ -603,13 +603,13 @@ partial class UzmanTest
     {
         Console.WriteLine("--- 17. Birden fazla RDP oturumu: acilan / kapanan / sira degisimi");
         List<string> ac, kap;
-        var bir = new List<string> { "10.2.0.61" };
-        var iki = new List<string> { "10.2.0.61", "10.2.0.70" };
-        Kontrol(ClientAgent.RdpDegisimi(bir, iki, out ac, out kap) && ac.Count == 1 && ac[0] == "10.2.0.70" && kap.Count == 0,
+        var bir = new List<string> { "10.77.0.61" };
+        var iki = new List<string> { "10.77.0.61", "10.77.0.70" };
+        Kontrol(ClientAgent.RdpDegisimi(bir, iki, out ac, out kap) && ac.Count == 1 && ac[0] == "10.77.0.70" && kap.Count == 0,
                 "ikinci sunucuya acilan oturum algilandi (eskiden yalnizca ilk oturum izleniyordu)", string.Join(",", ac));
-        Kontrol(!ClientAgent.RdpDegisimi(iki, new List<string> { "10.2.0.70", "10.2.0.61" }, out ac, out kap),
+        Kontrol(!ClientAgent.RdpDegisimi(iki, new List<string> { "10.77.0.70", "10.77.0.61" }, out ac, out kap),
                 "baglanti sirasi degisince sahte ACILDI yok", null);
-        Kontrol(ClientAgent.RdpDegisimi(iki, new List<string> { "10.2.0.70" }, out ac, out kap) && kap.Count == 1 && kap[0] == "10.2.0.61" && ac.Count == 0,
+        Kontrol(ClientAgent.RdpDegisimi(iki, new List<string> { "10.77.0.70" }, out ac, out kap) && kap.Count == 1 && kap[0] == "10.77.0.61" && ac.Count == 0,
                 "oturumlardan biri kapaninca o oturum KAPANDI olarak algilandi", string.Join(",", kap));
         Kontrol(ClientAgent.RdpDegisimi(bir, new List<string>(), out ac, out kap) && kap.Count == 1,
                 "son oturum kapandi", null);

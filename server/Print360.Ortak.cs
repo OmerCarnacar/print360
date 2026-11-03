@@ -748,7 +748,7 @@ static class RdpAlgilama
         return true;
     }
 
-    // RDP PORTU PRINT360 PORTU DEGILDIR. Sahada RDP adresi 100.102.89.1:54822 idi; 54822
+    // RDP PORTU PRINT360 PORTU DEGILDIR. Sahada RDP adresi 100.64.0.50:13389 idi; 13389
     // istemcinin Port ayarina girmis, istemci RDP servisine 3 sn'de bir HTTPS istegi atmisti.
     // Mstsc gecmisindeki "sunucu:port" satirindan RDP portu okunur (yoksa 0).
     public static int MruPortu(string kayit)
@@ -800,7 +800,7 @@ static class RdpAlgilama
     }
 
     // Ayni makinenin CALISTIGI bilinen adresi varken baska porttaki adresi eler.
-    // Sahada: Port=54822 ayari yuzunden tarama 8443'u bulduktan sonra da 54822 her 3 sn'de
+    // Sahada: Port=13389 ayari yuzunden tarama 8443'u bulduktan sonra da 13389 her 3 sn'de
     // denenip hata veriyor, guncelleme ve bildirimler de o yanlis adrese gidiyordu.
     // Bilinen adres su an hatadaysa (sunucu port degistirmis olabilir) ikisi de denenir.
     public static string CalisanAdres(string url, IList<string> bilinen, Func<string, bool> sorunlu)

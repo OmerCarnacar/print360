@@ -141,7 +141,7 @@ class OlayGunlugu
         Kontrol(a(WebExceptionStatus.SecureChannelFailure, 0).Contains("TLS"), "TLS uyusmazligi ayri anlatiliyor", null);
 
         // Vekil karari: Windows vekili bu adres icin tanimliysa yol degistirilir
-        var hedef = new Uri("https://91.151.88.119:8443/");
+        var hedef = new Uri("https://203.0.113.10:8443/");
         Ortak.DogrudanBaglan = false;
         Ortak.VekilBul = delegate(Uri u) { return new Uri("http://vekil.firma.local:8080/"); };
         string m1 = Ortak.VekilDegerlendir(hedef, WebExceptionStatus.ConnectFailure, 0);
@@ -265,7 +265,7 @@ class OlayGunlugu
 
         Kontrol(Ortak.GizliMaskele("ClientKey=gizli123") == "ClientKey=*** (8 karakter)"
              && Ortak.GizliMaskele("Password=x") == "Password=*** (1 karakter)"
-             && Ortak.GizliMaskele("Server=91.151.88.119") == "Server=91.151.88.119"
+             && Ortak.GizliMaskele("Server=203.0.113.10") == "Server=203.0.113.10"
              && Ortak.GizliMaskele("ClientKey=") == "ClientKey=(bos)",
                 "tani paketinde sifreler maskelenir, diger ayarlar aynen kalir", Ortak.GizliMaskele("ClientKey=gizli123"));
     }
@@ -311,7 +311,7 @@ class OlayGunlugu
     {
         // VPN kapaliyken sunucu bekleme suresine girdi; VPN acilinca hemen denenmeli
         var s = new SunucuSagligi();
-        const string u = "https://10.2.0.5:8443";
+        const string u = "https://10.77.0.5:8443";
         for (int i = 0; i < 6; i++) s.Basarisiz(u, "ConnectFailure");
         Kontrol(!s.Denenebilir(u), "VPN kapali: sunucu bekleme suresinde", null);
         Kontrol(s.HataVar(u), "son denemesi basarisiz sunucu isaretlenir (kisa port denemesine girer)", null);
@@ -320,14 +320,14 @@ class OlayGunlugu
 
         // RDP farkli porttan: yalnizca mstsc'nin baglantisi sayilir
         var b = new[] {
-            new TcpKayit { Ip = "10.2.0.61", Port = 3389, Pid = 1 },     // baska program, 3389
-            new TcpKayit { Ip = "10.2.0.90", Port = 3390, Pid = 500 },   // mstsc, farkli port
+            new TcpKayit { Ip = "10.77.0.61", Port = 3389, Pid = 1 },     // baska program, 3389
+            new TcpKayit { Ip = "10.77.0.90", Port = 3390, Pid = 500 },   // mstsc, farkli port
             new TcpKayit { Ip = "142.250.1.1", Port = 443, Pid = 2 },    // tarayici: RDP degil
             new TcpKayit { Ip = "127.0.0.1", Port = 13389, Pid = 500 },  // mstsc, yerel tunel
-            new TcpKayit { Ip = "10.2.0.90", Port = 3390, Pid = 500 } }; // ayni sunucu
+            new TcpKayit { Ip = "10.77.0.90", Port = 3390, Pid = 500 } }; // ayni sunucu
         var l = RdpAlgilama.Sec(b, new[] { 500 });
-        Kontrol(l.Contains("10.2.0.90"), "farkli porttan giden RDP algilandi (eskiden 'RDP oturumu yok')", string.Join(",", l.ToArray()));
-        Kontrol(l.Contains("10.2.0.61"), "3389 baglantisi eskisi gibi algilanir", null);
+        Kontrol(l.Contains("10.77.0.90"), "farkli porttan giden RDP algilandi (eskiden 'RDP oturumu yok')", string.Join(",", l.ToArray()));
+        Kontrol(l.Contains("10.77.0.61"), "3389 baglantisi eskisi gibi algilanir", null);
         Kontrol(!l.Contains("142.250.1.1"), "RDP olmayan baglanti sunucu sanilmaz", null);
         Kontrol(!l.Contains("127.0.0.1"), "yerel tunel sunucu sanilmaz", null);
         Kontrol(l.Count == 2, "ayni sunucu bir kez listelenir", l.Count.ToString());
@@ -345,34 +345,34 @@ class OlayGunlugu
         Kontrol(RdpAlgilama.AltAgAdaylari("10.8.0.5", "255.255.255.0").Count == 253 && !RdpAlgilama.AltAgAdaylari("10.8.0.5", "255.255.255.0").Contains("10.8.0.5"),
                 "VPN agi taranir, kendi adresi haric", null);
         Kontrol(RdpAlgilama.AltAgAdaylari("100.64.0.1", "255.255.255.255").Count == 0, "noktadan noktaya VPN'de tarama yok", null);
-        // Sahadan: Port=54822 + tarama 8443'u buldu
-        var bilinenler = new List<string> { "https://100.102.89.1:8443" };
+        // Sahadan: Port=13389 + tarama 8443'u buldu
+        var bilinenler = new List<string> { "https://100.64.0.50:8443" };
         Func<string, bool> saglam = x => false, sorunlu = x => true;
-        var ad = RdpAlgilama.YanlisPortlariEle(new List<string> { "https://100.102.89.1:54822", "https://100.102.89.1:8443", "https://10.2.0.5:8443" }, bilinenler, saglam);
-        Kontrol(ad.Count == 2 && ad[0] == "https://100.102.89.1:8443" && ad[1] == "https://10.2.0.5:8443",
+        var ad = RdpAlgilama.YanlisPortlariEle(new List<string> { "https://100.64.0.50:13389", "https://100.64.0.50:8443", "https://10.77.0.5:8443" }, bilinenler, saglam);
+        Kontrol(ad.Count == 2 && ad[0] == "https://100.64.0.50:8443" && ad[1] == "https://10.77.0.5:8443",
                 "calisan port bilinince yanlis port denenmez, baska sunucuya dokunulmaz", string.Join(",", ad.ToArray()));
-        Kontrol(RdpAlgilama.CalisanAdres("https://100.102.89.1:54822", bilinenler, saglam) == "https://100.102.89.1:8443", "guncelleme calisan porta gider", null);
-        Kontrol(RdpAlgilama.YanlisPortlariEle(new List<string> { "https://100.102.89.1:54822" }, bilinenler, sorunlu)[0] == "https://100.102.89.1:54822",
+        Kontrol(RdpAlgilama.CalisanAdres("https://100.64.0.50:13389", bilinenler, saglam) == "https://100.64.0.50:8443", "guncelleme calisan porta gider", null);
+        Kontrol(RdpAlgilama.YanlisPortlariEle(new List<string> { "https://100.64.0.50:13389" }, bilinenler, sorunlu)[0] == "https://100.64.0.50:13389",
                 "bilinen adres hatadaysa ayardaki port yine denenir (sunucu port degistirmis olabilir)", null);
         Kontrol(SunucuSagligi.BaglantiKapandiMi(WebExceptionStatus.ReceiveFailure) && !SunucuSagligi.BaglantiKapandiMi(WebExceptionStatus.ConnectFailure),
                 "port acik ama baglanti kesiliyor durumu ayirt edilir", null);
-        // Sahadan: mstsc adresi 100.102.89.1:54822, 54822 Print360 port ayarina girmis
-        var rp = new HashSet<int> { 3389, 54822 };
-        Kontrol(RdpAlgilama.MruPortu("100.102.89.1:54822") == 54822 && RdpAlgilama.MruPortu("SRV01") == 0 && RdpAlgilama.MruPortu("fe80::1") == 0,
+        // Sahadan: mstsc adresi 100.64.0.50:13389, 13389 Print360 port ayarina girmis
+        var rp = new HashSet<int> { 3389, 13389 };
+        Kontrol(RdpAlgilama.MruPortu("100.64.0.50:13389") == 13389 && RdpAlgilama.MruPortu("SRV01") == 0 && RdpAlgilama.MruPortu("fe80::1") == 0,
                 "RDP gecmisinden port okunur", null);
-        Kontrol(RdpAlgilama.GecerliPort("54822", rp) == "" && RdpAlgilama.GecerliPort("3389", rp) == "" && RdpAlgilama.GecerliPort(" 9443 ", rp) == "9443",
+        Kontrol(RdpAlgilama.GecerliPort("13389", rp) == "" && RdpAlgilama.GecerliPort("3389", rp) == "" && RdpAlgilama.GecerliPort(" 9443 ", rp) == "9443",
                 "RDP portu Print360 portu sayilmaz, gercek port korunur", null);
-        Kontrol(RdpAlgilama.SunucuGecerli("100.102.89.1:54822", rp) == "100.102.89.1" && RdpAlgilama.SunucuGecerli("srv:9443", rp) == "srv:9443",
+        Kontrol(RdpAlgilama.SunucuGecerli("100.64.0.50:13389", rp) == "100.64.0.50" && RdpAlgilama.SunucuGecerli("srv:9443", rp) == "srv:9443",
                 "sunucu adresindeki RDP portu atilir, panel portu korunur", null);
         var notlar = new List<string>();
-        var onar = RdpAlgilama.AyarOnar(new[] { "; yorum", "Server=100.102.89.1:54822", "Port=54822", "Printer=Xerox" }, rp, notlar);
-        Kontrol(onar != null && onar[1] == "Server=100.102.89.1" && onar[2] == "Port=" && onar[3] == "Printer=Xerox" && onar[0] == "; yorum" && notlar.Count == 2,
+        var onar = RdpAlgilama.AyarOnar(new[] { "; yorum", "Server=100.64.0.50:13389", "Port=13389", "Printer=Xerox" }, rp, notlar);
+        Kontrol(onar != null && onar[1] == "Server=100.64.0.50" && onar[2] == "Port=" && onar[3] == "Printer=Xerox" && onar[0] == "; yorum" && notlar.Count == 2,
                 "ayar dosyasi onarilir, diger satirlara dokunulmaz", onar == null ? "null" : string.Join(" | ", onar.ToArray()));
         Kontrol(RdpAlgilama.AyarOnar(new[] { "Server=srv:9443", "Port=9443", "Server2=x" }, rp, new List<string>()) == null, "dogru ayarlar degistirilmez", null);
         Kontrol(RdpAlgilama.AyarOnar(new[] { "Server=", "Port=" }, rp, new List<string>()) == null, "bos ayarlar degistirilmez", null);
         string mk, pt;
         Kontrol(RdpAlgilama.AdresAyir("srv", out mk, out pt) && mk == "srv" && pt == "", "adres: yalnizca makine", null);
-        Kontrol(RdpAlgilama.AdresAyir(" 100.102.89.1:9443 ", out mk, out pt) && mk == "100.102.89.1" && pt == "9443", "adres: makine ve port", null);
+        Kontrol(RdpAlgilama.AdresAyir(" 100.64.0.50:9443 ", out mk, out pt) && mk == "100.64.0.50" && pt == "9443", "adres: makine ve port", null);
         Kontrol(RdpAlgilama.AdresAyir("https://srv:9443/panel", out mk, out pt) && mk == "srv" && pt == "9443", "adres: tarayicidan yapistirilmis", null);
         Kontrol(!RdpAlgilama.AdresAyir("  ", out mk, out pt) && !RdpAlgilama.AdresAyir("a b", out mk, out pt), "adres: bos ya da gecersiz reddedilir", null);
         var yz = RdpAlgilama.AyarlariYaz(new[] { "; yorum", "Server=eski", "SunucuArama=0" }, new Dictionary<string, string> { { "Server", "srv:9443" }, { "Port", "" } });

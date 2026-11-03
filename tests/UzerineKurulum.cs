@@ -164,21 +164,21 @@ class UzerineKurulumTest
     {
         var simdi = new DateTime(2026, 10, 1, 12, 0, 0);
         Action<string, DateTime> is_ = (yol, t) => { Yaz(k, yol); File.SetCreationTime(Path.Combine(k, yol), t); };
-        is_("queue\\DESKTOP-7FRHC7B\\20260821_193128_109_FS~Belgeyi Yazdir.pdf.gz", new DateTime(2026, 8, 21, 19, 31, 0));
-        is_("queue\\DESKTOP-7FRHC7B\\20260919_164250_935_FS.pdf.gz", new DateTime(2026, 9, 19, 16, 42, 0));
-        is_("queue\\EVOPC\\20261001_115000_001_FS.pdf.gz", new DateTime(2026, 10, 1, 11, 50, 0));
-        is_("queue\\EVOPC\\_sorunlu\\20260930_100000_001_FS.pdf.gz", new DateTime(2026, 9, 30, 10, 0, 0));
+        is_("queue\\DESKTOP-TEST01\\20260821_193128_109_KUL1~Belgeyi Yazdir.pdf.gz", new DateTime(2026, 8, 21, 19, 31, 0));
+        is_("queue\\DESKTOP-TEST01\\20260919_164250_935_KUL1.pdf.gz", new DateTime(2026, 9, 19, 16, 42, 0));
+        is_("queue\\TESTPC2\\20261001_115000_001_KUL1.pdf.gz", new DateTime(2026, 10, 1, 11, 50, 0));
+        is_("queue\\TESTPC2\\_sorunlu\\20260930_100000_001_KUL1.pdf.gz", new DateTime(2026, 9, 30, 10, 0, 0));
         Directory.CreateDirectory(Path.Combine(k, "queue\\BOS-PC"));
-        Yaz(k, "spool\\FS.pdf");
+        Yaz(k, "spool\\KUL1.pdf");
 
         var r = Kurulum.BekleyenRaporu(k, true, simdi);
         string hepsi = string.Join("\n", r.ToArray());
         Kontrol(hepsi.Contains("BEKLEYEN 3 IS KORUNDU (2 makine, en eskisi 2026-08-21)"), "toplam, makine sayisi, en eski tarih", hepsi);
-        Kontrol(hepsi.Contains("DESKTOP-7FRHC7B: 2 is") && hepsi.Contains("EVOPC: 1 is") && !hepsi.Contains("BOS-PC"),
+        Kontrol(hepsi.Contains("DESKTOP-TEST01: 2 is") && hepsi.Contains("TESTPC2: 1 is") && !hepsi.Contains("BOS-PC"),
                 "makine bazinda dokum (bos klasor yazilmaz)", hepsi);
         Kontrol(hepsi.Contains("2 is 7 gunden eski") && hepsi.Contains("Yeniden gonder"),
                 "eski islerin akibeti aciklaniyor (silinmez, yeniden gonderilebilir)", hepsi);
-        Kontrol(hepsi.Contains("Karantinada 1 is") && hepsi.Contains("SPOOL'DA 1") && hepsi.Contains("FS.pdf"),
+        Kontrol(hepsi.Contains("Karantinada 1 is") && hepsi.Contains("SPOOL'DA 1") && hepsi.Contains("KUL1.pdf"),
                 "karantina ve spool da raporlaniyor", hepsi);
 
         string ik = Path.Combine(k, "istemci");

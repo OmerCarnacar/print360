@@ -743,8 +743,8 @@ Artık istemci adı her döngü turunda **ve her işten hemen önce** Windows'a
 (WTS API) yeniden soruluyor. Değişiklik günlüğe açıkça yazılıyor:
 
 ```
-ISTEMCI DEGISTI: 'DESKTOP-A' -> 'EVOPC' (ayni oturuma baska makineden
-baglanildi); ciktilar artik 'EVOPC' makinesine gidecek
+ISTEMCI DEGISTI: 'DESKTOP-A' -> 'TESTPC2' (ayni oturuma baska makineden
+baglanildi); ciktilar artik 'TESTPC2' makinesine gidecek
 ```
 
 Oturum kopukken WTS boş döner; o durumda son bilinen ad korunur.

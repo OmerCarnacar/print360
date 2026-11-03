@@ -80,7 +80,7 @@ partial class UzmanTest
     static void P1TeslimHizi()
     {
         Console.WriteLine("--- P1. Teslim hizi: tek makine, 300 is (20 KB)");
-        for (int i = 0; i < 300; i++) KuyrugaKoy("20261021_100000_" + i.ToString("000") + "_FS~Perf " + i + ".pdf", Pdf(20 * 1024, 1000 + i));
+        for (int i = 0; i < 300; i++) KuyrugaKoy("20261021_100000_" + i.ToString("000") + "_KUL1~Perf " + i + ".pdf", Pdf(20 * 1024, 1000 + i));
         var sw = Stopwatch.StartNew();
         int n = 0;
         while (n < 400 && Al(Dogrudan)) n++;
@@ -251,7 +251,7 @@ partial class UzmanTest
     static void P6IstemciDongusu()
     {
         Console.WriteLine("--- P6. Istemci: 20 is dosyasinin hazirlik denetimi");
-        for (int i = 0; i < 20; i++) File.WriteAllBytes(Path.Combine(iJobs, "20261021_120000_" + i.ToString("000") + "_FS~Hazir " + i + ".pdf"), Pdf(10 * 1024, i));
+        for (int i = 0; i < 20; i++) File.WriteAllBytes(Path.Combine(iJobs, "20261021_120000_" + i.ToString("000") + "_KUL1~Hazir " + i + ".pdf"), Pdf(10 * 1024, i));
         var dosyalar = Directory.GetFiles(iJobs).ToList();
         var m = typeof(ClientAgent).GetMethod("HazirOlanlar", OZEL);
         var sw = Stopwatch.StartNew();
