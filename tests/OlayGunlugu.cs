@@ -370,6 +370,14 @@ class OlayGunlugu
                 "ayar dosyasi onarilir, diger satirlara dokunulmaz", onar == null ? "null" : string.Join(" | ", onar.ToArray()));
         Kontrol(RdpAlgilama.AyarOnar(new[] { "Server=srv:9443", "Port=9443", "Server2=x" }, rp, new List<string>()) == null, "dogru ayarlar degistirilmez", null);
         Kontrol(RdpAlgilama.AyarOnar(new[] { "Server=", "Port=" }, rp, new List<string>()) == null, "bos ayarlar degistirilmez", null);
+        string mk, pt;
+        Kontrol(RdpAlgilama.AdresAyir("srv", out mk, out pt) && mk == "srv" && pt == "", "adres: yalnizca makine", null);
+        Kontrol(RdpAlgilama.AdresAyir(" 100.102.89.1:9443 ", out mk, out pt) && mk == "100.102.89.1" && pt == "9443", "adres: makine ve port", null);
+        Kontrol(RdpAlgilama.AdresAyir("https://srv:9443/panel", out mk, out pt) && mk == "srv" && pt == "9443", "adres: tarayicidan yapistirilmis", null);
+        Kontrol(!RdpAlgilama.AdresAyir("  ", out mk, out pt) && !RdpAlgilama.AdresAyir("a b", out mk, out pt), "adres: bos ya da gecersiz reddedilir", null);
+        var yz = RdpAlgilama.AyarlariYaz(new[] { "; yorum", "Server=eski", "SunucuArama=0" }, new Dictionary<string, string> { { "Server", "srv:9443" }, { "Port", "" } });
+        Kontrol(yz.Count == 4 && yz[0] == "; yorum" && yz[1] == "Server=srv:9443" && yz[2] == "SunucuArama=0" && yz[3] == "Port=",
+                "baglanti ayari yazilir, diger satirlar korunur", string.Join(" | ", yz.ToArray()));
         var hp = RdpAlgilama.HizliPortlar("9443");
         Kontrol(hp[0] == 9443 && hp.Contains(8443) && hp.Contains(8360) && hp.FindAll(x => x == 9443).Count == 1,
                 "ayardaki port once denenir, varsayilanlar da taranir, tekrar yok", null);

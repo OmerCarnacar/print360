@@ -718,6 +718,36 @@ static class RdpAlgilama
         return l;
     }
 
+    // baglanti.ini yalnizca bu anahtarlari ezebilir (CertHash, ClientKey gibi ayarlar haric).
+    public static readonly string[] BaglantiAnahtarlari = { "Server", "Port", "UseHttps", "BaglantiAraci", "SunucuArama" };
+
+    // Mevcut satirlara degerleri yazar: anahtar varsa degistirir, yoksa ekler.
+    public static List<string> AyarlariYaz(IEnumerable<string> satirlar, IDictionary<string, string> degerler)
+    {
+        var l = new List<string>(satirlar);
+        foreach (var kv in degerler)
+        {
+            int i = l.FindIndex(x => x.StartsWith(kv.Key + "=", StringComparison.OrdinalIgnoreCase));
+            if (i >= 0) l[i] = kv.Key + "=" + kv.Value; else l.Add(kv.Key + "=" + kv.Value);
+        }
+        return l;
+    }
+
+    // "srv", "srv:9443", "https://srv:9443/" -> makine + port. Bos ya da gecersizse false.
+    public static bool AdresAyir(string metin, out string makine, out string port)
+    {
+        makine = ""; port = "";
+        string a = (metin ?? "").Trim();
+        int s = a.IndexOf("://");
+        if (s >= 0) a = a.Substring(s + 3);
+        a = a.Split('/')[0];
+        int i = a.LastIndexOf(':');
+        if (i > 0 && a.IndexOf(':') == i) { port = a.Substring(i + 1); a = a.Substring(0, i); }
+        if (a.Length == 0 || a.IndexOfAny(new[] { ' ', ',', ';', '\\' }) >= 0) return false;
+        makine = a;
+        return true;
+    }
+
     // RDP PORTU PRINT360 PORTU DEGILDIR. Sahada RDP adresi 100.102.89.1:54822 idi; 54822
     // istemcinin Port ayarina girmis, istemci RDP servisine 3 sn'de bir HTTPS istegi atmisti.
     // Mstsc gecmisindeki "sunucu:port" satirindan RDP portu okunur (yoksa 0).

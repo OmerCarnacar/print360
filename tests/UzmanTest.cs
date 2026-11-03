@@ -556,6 +556,25 @@ partial class UzmanTest
         Kontrol(bulunan == "http://localhost:" + sunucuPort, "port taramasi sunucuyu farkli portta buldu", bulunan);
         Kontrol(ClientAgent.HostTara("localhost", new[] { bosPort }) == null, "baska servis sunucu sanilmadi", null);
         Kontrol(ClientAgent.HostTara("192.0.2.1", new[] { 8443 }) == null, "yanit vermeyen makine taramayi bozmaz", null);
+        Kontrol(ClientAgent.HostTara("localhost", aralik, () => true) == null, "tarama durdurulabilir", null);
+        int ilerleme = 0;
+        ClientAgent.HostTara("localhost", Enumerable.Range(1, 300), null, n => ilerleme = n);
+        Kontrol(ilerleme >= 256, "tam taramada ilerleme raporlanir", ilerleme.ToString());
+        var pt = ClientAgent.HizliTara(new List<string> { "localhost", "olmayan-makine.invalid" }, new List<int> { sunucuPort }, null);
+        Kontrol(pt.Count == 1 && pt[0] == "http://localhost:" + sunucuPort, "paralel taramada calisan makine bulunur", string.Join(",", pt.ToArray()));
+
+        // Bulunan adres kaydedilir; Print360.ini'ye (salt okunur) dokunulmaz, CertHash ezilemez
+        string ini = iIni, kayit = Path.Combine(Path.GetDirectoryName(iIni), "baglanti.ini");
+        string iniOnce = File.ReadAllText(ini);
+        ClientAgent.BaglantiKaydet("http://localhost:" + sunucuPort);
+        var ayar = (Dictionary<string, string>)typeof(ClientAgent).GetMethod("ReadIni", OZEL).Invoke(null, null);
+        Kontrol(File.ReadAllText(ini) == iniOnce && File.Exists(kayit), "kayit baglanti.ini'ye yazildi, Print360.ini degismedi", null);
+        Kontrol(ayar["Server"] == "localhost:" + sunucuPort && ayar["UseHttps"] == "0" && ayar["Port"] == "", "kaydedilen baglanti ayarlardan okunuyor", ayar["Server"]);
+        File.AppendAllText(kayit, "CertHash=SAHTE\r\nClientKey=SAHTE\r\n");
+        ayar = (Dictionary<string, string>)typeof(ClientAgent).GetMethod("ReadIni", OZEL).Invoke(null, null);
+        Kontrol((!ayar.ContainsKey("CertHash") || ayar["CertHash"] != "SAHTE") && (!ayar.ContainsKey("ClientKey") || ayar["ClientKey"] != "SAHTE"),
+                "baglanti.ini sertifika ve sifre ayarini ezemez", null);
+        File.Delete(kayit);
         Kontrol(ClientAgent.HostTara("olmayan-makine.invalid", new[] { 8443 }) == null, "cozulemeyen ad taramayi bozmaz", null);
         yabanci.Close();
     }

@@ -1442,19 +1442,21 @@ static partial class ClientAgent
         }
     }
 
-    // Print360.ini'ye yanlislikla girmis RDP portunu kalici olarak temizler.
+    // Ayara yanlislikla girmis RDP portunu kalici olarak temizler. Print360.ini kullanicilara
+    // SALT OKUNURDUR; duzeltilmis deger, onu ezen baglanti.ini'ye yazilir.
     static void AyarlariOnar()
     {
         try
         {
-            if (!File.Exists(iniFile)) return;
+            var cfg = ReadIni();
             var notlar = new List<string>();
-            var yeni = RdpAlgilama.AyarOnar(File.ReadAllLines(iniFile, Encoding.UTF8), RdpPortlari(), notlar);
+            var yeni = RdpAlgilama.AyarOnar(new[] { "Port=" + (cfg.ContainsKey("Port") ? cfg["Port"] : ""),
+                                                    "Server=" + (cfg.ContainsKey("Server") ? cfg["Server"] : "") }, RdpPortlari(), notlar);
             if (yeni == null) return;
-            File.WriteAllLines(iniFile, yeni.ToArray(), Encoding.UTF8);
+            BaglantiAyariYaz(new Dictionary<string, string> { { "Port", yeni[0].Substring(5) }, { "Server", yeni[1].Substring(7) } });
             foreach (var n in notlar) Log("AYAR DUZELTILDI: " + n + " (Print360 portu ayri bir porttur; istemci kendisi bulur).");
         }
-        catch (Exception ex) { Ayr("Ayar dosyasi onarilamadi: " + ex.Message); }
+        catch (Exception ex) { Log("AYAR DUZELTILEMEDI: " + ex.Message); }
     }
 
     static List<int> RdpSurecleri()
@@ -1509,7 +1511,7 @@ static partial class ClientAgent
     static readonly Dictionary<string, DateTime> sonHizliTarama = new Dictionary<string, DateTime>();
     static readonly Dictionary<string, DateTime> sonTamTarama = new Dictionary<string, DateTime>();
     const int TamTaramaMakineSiniri = 16;
-    static readonly string bulunanDosya = Path.Combine(baseDir, @"stats\bulunan-sunucular.txt");
+    static string BulunanDosya { get { return Path.Combine(Path.GetDirectoryName(iniFile), @"stats\bulunan-sunucular.txt"); } }
 
     static void SunucuAramaDongusu()
     {
@@ -1531,31 +1533,8 @@ static partial class ClientAgent
         if (mod == "0") return;
         bool bagli = sunucuBagli > 0;
 
-        // RDP ile baglanilan + Server= ile verilen makineler
-        var dogrudan = new List<string>(RdpSunucularBul());
-        if (cfg.ContainsKey("Server"))
-            foreach (var x in cfg["Server"].Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
-            {
-                string h = x.Trim().Split(':')[0];
-                if (h.Length > 0 && !h.Equals("auto", StringComparison.OrdinalIgnoreCase) && !dogrudan.Contains(h)) dogrudan.Add(h);
-            }
-        var kendi = new List<string>();
-        var vpnAgi = new List<string>();
-        foreach (var n in NetworkInterface.GetAllNetworkInterfaces())
-        {
-            if (n.OperationalStatus != OperationalStatus.Up) continue;
-            bool vpn = RdpAlgilama.VpnMi(n.NetworkInterfaceType.ToString(), n.Name, n.Description);
-            foreach (var a in n.GetIPProperties().UnicastAddresses)
-            {
-                if (a.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork) continue;
-                string ip = a.Address.ToString();
-                kendi.Add(ip);
-                if (vpn && a.IPv4Mask != null)
-                    foreach (var y in RdpAlgilama.AltAgAdaylari(ip, a.IPv4Mask.ToString()))
-                        if (!vpnAgi.Contains(y)) vpnAgi.Add(y);
-            }
-        }
-        var tailscale = RdpAlgilama.TailscaleEslesleri(TailscaleDurumu(), kendi);
+        List<string> dogrudan, tailscale, vpnAgi;
+        AramaHedefleri(cfg, out dogrudan, out tailscale, out vpnAgi);
 
         // Bagliyken yalnizca adresi henuz bilinmeyen RDP sunuculari, makine basina 30 dk'da bir
         var hizli = new List<string>();
@@ -1570,24 +1549,7 @@ static partial class ClientAgent
 
         var rdpPort = RdpPortlari();
         var portlar = RdpAlgilama.HizliPortlar(RdpAlgilama.GecerliPort(cfg.ContainsKey("Port") ? cfg["Port"] : "", rdpPort));
-        var bulunan = new List<string>();
-        var kuyruk = new Queue<string>(hizli);
-        var isler = new List<Thread>();
-        for (int i = 0; i < Math.Min(32, hizli.Count); i++)
-        {
-            var t = new Thread(delegate ()
-            {
-                while (true)
-                {
-                    string h;
-                    lock (kuyruk) { if (kuyruk.Count == 0) return; h = kuyruk.Dequeue(); }
-                    string u = HostTara(h, portlar);
-                    if (u != null) lock (bulunan) bulunan.Add(u);
-                }
-            }) { IsBackground = true };
-            t.Start(); isler.Add(t);
-        }
-        foreach (var t in isler) t.Join();
+        var bulunan = HizliTara(hizli, portlar, null);
         foreach (var u in bulunan) BulunanEkle(u);
 
         // Hizli tarama bulamadi: tum portlar (VPN agina degil, sinirli sayida makineye)
@@ -1607,6 +1569,59 @@ static partial class ClientAgent
                 if (u != null) { BulunanEkle(u); break; }
             }
         }
+    }
+
+    static void AramaHedefleri(Dictionary<string, string> cfg, out List<string> dogrudan, out List<string> tailscale, out List<string> vpnAgi)
+    {
+        // RDP ile baglanilan + Server= ile verilen makineler
+        dogrudan = new List<string>(RdpSunucularBul());
+        if (cfg.ContainsKey("Server"))
+            foreach (var x in cfg["Server"].Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string h = x.Trim().Split(':')[0];
+                if (h.Length > 0 && !h.Equals("auto", StringComparison.OrdinalIgnoreCase) && !dogrudan.Contains(h)) dogrudan.Add(h);
+            }
+        var kendi = new List<string>();
+        vpnAgi = new List<string>();
+        foreach (var n in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (n.OperationalStatus != OperationalStatus.Up) continue;
+            bool vpn = RdpAlgilama.VpnMi(n.NetworkInterfaceType.ToString(), n.Name, n.Description);
+            foreach (var a in n.GetIPProperties().UnicastAddresses)
+            {
+                if (a.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork) continue;
+                string ip = a.Address.ToString();
+                kendi.Add(ip);
+                if (vpn && a.IPv4Mask != null)
+                    foreach (var y in RdpAlgilama.AltAgAdaylari(ip, a.IPv4Mask.ToString()))
+                        if (!vpnAgi.Contains(y)) vpnAgi.Add(y);
+            }
+        }
+        tailscale = RdpAlgilama.TailscaleEslesleri(TailscaleDurumu(), kendi);
+    }
+
+    // Makineleri paralel tarar (en fazla 32 makine ayni anda).
+    internal static List<string> HizliTara(List<string> makineler, List<int> portlar, Func<bool> iptal)
+    {
+        var bulunan = new List<string>();
+        var kuyruk = new Queue<string>(makineler);
+        var isler = new List<Thread>();
+        for (int i = 0; i < Math.Min(32, makineler.Count); i++)
+        {
+            var t = new Thread(delegate ()
+            {
+                while (iptal == null || !iptal())
+                {
+                    string h;
+                    lock (kuyruk) { if (kuyruk.Count == 0) return; h = kuyruk.Dequeue(); }
+                    string u = HostTara(h, portlar, iptal);
+                    if (u != null) lock (bulunan) bulunan.Add(u);
+                }
+            }) { IsBackground = true };
+            t.Start(); isler.Add(t);
+        }
+        foreach (var t in isler) t.Join();
+        return bulunan;
     }
 
     static bool SureDoldu(Dictionary<string, DateTime> defter, string h, TimeSpan sure)
@@ -1633,11 +1648,11 @@ static partial class ClientAgent
         saglik.Basarili(u);
         try
         {
-            var satirlar = File.Exists(bulunanDosya) ? File.ReadAllLines(bulunanDosya).ToList() : new List<string>();
+            var satirlar = File.Exists(BulunanDosya) ? File.ReadAllLines(BulunanDosya).ToList() : new List<string>();
             if (!satirlar.Contains(u))
             {
                 satirlar.Add(u);
-                File.WriteAllLines(bulunanDosya, satirlar.Skip(Math.Max(0, satirlar.Count - 20)).ToArray());
+                File.WriteAllLines(BulunanDosya, satirlar.Skip(Math.Max(0, satirlar.Count - 20)).ToArray());
             }
         }
         catch (Exception ex) { Ayr("Bulunan sunucu kaydedilemedi: " + ex.Message); }
@@ -1648,8 +1663,8 @@ static partial class ClientAgent
     {
         try
         {
-            if (!File.Exists(bulunanDosya)) return;
-            foreach (var l in File.ReadAllLines(bulunanDosya))
+            if (!File.Exists(BulunanDosya)) return;
+            foreach (var l in File.ReadAllLines(BulunanDosya))
                 if (l.Trim().Length > 0) SunucuHatirla(l.Trim());
         }
         catch { }
@@ -1678,7 +1693,7 @@ static partial class ClientAgent
 
     // Makinenin verilen portlarini tarar, acik olanlarda Print360 arar. HTTPS bulununca
     // durur; yalnizca HTTP bulunursa aramayi bitirip onu doner. Bulunamazsa null.
-    internal static string HostTara(string host, IEnumerable<int> portlar)
+    internal static string HostTara(string host, IEnumerable<int> portlar, Func<bool> iptal = null, Action<int> ilerleme = null)
     {
         const int GRUP = 256, BEKLE_MS = 600;
         IPAddress ip;
@@ -1691,11 +1706,20 @@ static partial class ClientAgent
         if (ip == null) return null;
         string yedek = null;
         var grup = new List<int>(GRUP);
+        int biten = 0;
         foreach (var port in portlar)
         {
             grup.Add(port);
-            if (grup.Count == GRUP) { string u = GrupTara(host, ip, grup, BEKLE_MS, ref yedek); grup.Clear(); if (u != null) return u; }
+            if (grup.Count == GRUP)
+            {
+                if (iptal != null && iptal()) return yedek;
+                string u = GrupTara(host, ip, grup, BEKLE_MS, ref yedek);
+                biten += grup.Count; grup.Clear();
+                if (ilerleme != null) ilerleme(biten);
+                if (u != null) return u;
+            }
         }
+        if (iptal != null && iptal()) return yedek;
         if (grup.Count > 0) { string u = GrupTara(host, ip, grup, BEKLE_MS, ref yedek); if (u != null) return u; }
         return yedek;
     }
@@ -2601,14 +2625,22 @@ static partial class ClientAgent
     static Dictionary<string, string> ReadIni()
     {
         var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (!File.Exists(iniFile)) return d;
-        foreach (var line in File.ReadAllLines(iniFile))
+        Action<string, bool> oku = (yol, yalnizBaglanti) =>
         {
-            var t = line.Trim();
-            if (t.Length == 0 || t.StartsWith(";") || t.StartsWith("#")) continue;
-            int i = t.IndexOf('=');
-            if (i > 0) d[t.Substring(0, i).Trim()] = t.Substring(i + 1).Trim();
-        }
+            if (!File.Exists(yol)) return;
+            foreach (var line in File.ReadAllLines(yol))
+            {
+                var t = line.Trim();
+                if (t.Length == 0 || t.StartsWith(";") || t.StartsWith("#")) continue;
+                int i = t.IndexOf('=');
+                if (i <= 0) continue;
+                string k = t.Substring(0, i).Trim();
+                if (yalnizBaglanti && !RdpAlgilama.BaglantiAnahtarlari.Contains(k, StringComparer.OrdinalIgnoreCase)) continue;
+                d[k] = t.Substring(i + 1).Trim();
+            }
+        };
+        oku(iniFile, false);
+        try { oku(BaglantiDosyasi, true); } catch { }   // bozuk/kilitli kullanici dosyasi ajani durdurmasin
         return d;
     }
 
@@ -2718,6 +2750,7 @@ static partial class ClientAgent
         tepsi.Text = "Print360 istemci";
         var menu = new System.Windows.Forms.ContextMenuStrip();
         menu.Items.Add("Durum penceresi", null, delegate { PencereAc(); });
+        menu.Items.Add("Sunucu baglantisi (tara / elle gir)...", null, delegate { BaglantiAraciAc(false); });
         menu.Items.Add("Yazdirma klasoru", null, delegate {
             try { Process.Start("explorer.exe", jobsDir); } catch { } });
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
@@ -2774,6 +2807,7 @@ static partial class ClientAgent
 
         // Ikinci kez calistirilirsa (kisayol) mevcut ornek pencereyi acsin
         new Thread(GosterSinyaliniDinle) { IsBackground = true }.Start();
+        new Thread(AcilisBaglantiKontrolu) { IsBackground = true }.Start();
 
         System.Windows.Forms.Application.Run(new System.Windows.Forms.ApplicationContext());
     }
@@ -3016,16 +3050,19 @@ static partial class ClientAgent
             alt.Dock = System.Windows.Forms.DockStyle.Bottom;
             alt.Height = 46;
             var btnYenile = new System.Windows.Forms.Button();
-            btnYenile.Text = "Yenile"; btnYenile.SetBounds(12, 9, 92, 28);
+            btnYenile.Text = "Yenile"; btnYenile.SetBounds(12, 9, 66, 28);
             btnYenile.Click += delegate { Yenile(); };
             var btnKlasor = new System.Windows.Forms.Button();
-            btnKlasor.Text = "Yazdirma klasoru"; btnKlasor.SetBounds(112, 9, 140, 28);
+            btnKlasor.Text = "Yazdirma klasoru"; btnKlasor.SetBounds(84, 9, 116, 28);
+            var btnBaglanti = new System.Windows.Forms.Button();
+            btnBaglanti.Text = "Sunucu baglantisi"; btnBaglanti.SetBounds(206, 9, 120, 28);
+            btnBaglanti.Click += delegate { BaglantiAraciAc(false); };
             btnKlasor.Click += delegate { try { Process.Start("explorer.exe", jobsDir); } catch { } };
             var lblSurum = new System.Windows.Forms.Label();
             lblSurum.Text = "Print360 v" + Surum.Etiket + "  -  " + Environment.MachineName
                           + "   |   Ucretsiz ve acik kaynak (GPL-3.0)";
             lblSurum.ForeColor = System.Drawing.Color.Gray;
-            lblSurum.SetBounds(266, 6, 500, 16);
+            lblSurum.SetBounds(334, 6, 440, 16);
 
             // Gelistirici + tiklanabilir e-posta ve LinkedIn baglantilari
             var lnkMail = new System.Windows.Forms.LinkLabel();
@@ -3037,13 +3074,13 @@ static partial class ClientAgent
             lnkMail.ForeColor = System.Drawing.Color.Gray;
             lnkMail.LinkColor = System.Drawing.Color.FromArgb(0x3B, 0x82, 0xF6);
             lnkMail.ActiveLinkColor = System.Drawing.Color.FromArgb(0x63, 0x66, 0xF1);
-            lnkMail.SetBounds(266, 23, 505, 18);
+            lnkMail.SetBounds(334, 23, 440, 18);
             lnkMail.LinkClicked += delegate (object s, System.Windows.Forms.LinkLabelLinkClickedEventArgs e)
             {
                 if (Convert.ToString(e.Link.LinkData) == "linkedin") LinkedInAc();
                 else MailAc();
             };
-            alt.Controls.Add(btnYenile); alt.Controls.Add(btnKlasor);
+            alt.Controls.Add(btnYenile); alt.Controls.Add(btnKlasor); alt.Controls.Add(btnBaglanti);
             alt.Controls.Add(lblSurum); alt.Controls.Add(lnkMail);
 
             Controls.Add(tab); Controls.Add(alt); Controls.Add(ustPanel);

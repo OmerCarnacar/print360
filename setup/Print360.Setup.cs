@@ -436,6 +436,9 @@ static class Kurulum
         sb.AppendLine("Printer=" + Al(p, "printer"));
         sb.AppendLine("Server=" + Al(p, "server"));
         sb.AppendLine("ClientKey=" + Al(p, "clientkey"));
+        // Kurulumda sunucu yazildiysa kullanicinin onceki baglanti secimi onu ezmesin
+        if (Al(p, "server").Trim().Length > 0)
+            try { File.Delete(Path.Combine(BASE, "baglanti.ini")); } catch { }
         // Port artik sihirbazda sorulmuyor (istemci kendisi bulur). 3389 RDP'dir, panel olamaz.
         string istemciPort = Al(p, "port");
         sb.AppendLine("Port=" + (istemciPort.Trim() == "3389" ? "" : istemciPort));
@@ -575,7 +578,7 @@ static class Kurulum
         "Print360.ini", "db.ini", "mail.ini", "panel.pwd", "cert-thumbprint.txt", "rules.csv",
         "print360.db", "print360.db-journal", "print360.db-wal", "print360.db-shm",
         "kimlik.txt", "makine-adi.txt", "SumatraPDF-settings.txt",
-        "kurulum-sunucu.txt", "kurulum-istemci.txt", "hata-ayiklama.txt" };
+        "kurulum-sunucu.txt", "kurulum-istemci.txt", "hata-ayiklama.txt", "baglanti.ini" };
     internal static readonly string[] BilinenKlasorler = {
         "logs", "stats", "archive", "queue", "queue-suresi-dolan", "spool", "update",
         "jobs", "done", "failed", "vc-outbox", "sumatrapdfcache", "x64", "x86", KALINTI_KLASORU };

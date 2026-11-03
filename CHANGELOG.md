@@ -10,6 +10,25 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [Yayınlanmamış]
+
+### Eklendi
+- **Sunucu bağlantı aracı:** adres ve port taraması yapan, bulamazsa elle girişe izin veren
+  pencere. Tepsi menüsünden ve durum penceresindeki "Sunucu bağlantısı" düğmesinden
+  açılır. Açılışta sunucuya bağlanılamadıysa ve RDP açıksa ya da hiç adres kayıtlı
+  değilse kendiliğinden açılıp tarar; tek sunucu bulursa kaydeder. Girilen port RDP
+  portuysa reddedilir, adres doğrulanamazsa kaydetmeden önce sorulur. "Açılışta bir daha
+  açma" seçeneği vardır.
+
+### Düzeltildi
+- **Kaydedilen bağlantı için `baglanti.ini`:** `Print360.ini` kullanıcılara salt okunurdur;
+  bir önceki sürümdeki "ayar kendini onarır" adımı bu yüzden gerçek kurulumlarda dosyaya
+  yazamıyordu (RDP portu yine de yok sayılıyordu). Bağlantı ayarları artık kullanıcının
+  yazabildiği `baglanti.ini`'ye gidiyor. Bu dosya yalnızca sunucu, port ve arama ayarlarını
+  ezebilir, sertifika ve şifreye dokunamaz. Kurulumda sunucu yazılırsa dosya silinir.
+
+---
+
 ## [2026.11.02.2301]
 
 ### Düzeltildi
