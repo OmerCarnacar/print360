@@ -10,7 +10,7 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
-## [Yayınlanmamış]
+## [2026.11.03.0841]
 
 ### Eklendi
 - **Sunucu bağlantı aracı:** adres ve port taraması yapan, bulamazsa elle girişe izin veren
