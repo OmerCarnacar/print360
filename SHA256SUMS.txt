@@ -1,29 +1,29 @@
 Print360 — Dosya Doğrulama (SHA-256)
 =====================================
 
-Sürüm : 2026.11.05.1546  (paket: Print360-Kurulum-v2026.11.05.1546.zip)
+Sürüm : 2026.11.05.1631  (paket: Print360-Kurulum-v2026.11.05.1631.zip)
 Tarih : 05.11.2026
 
 İndirdiğiniz dosyanın yolda değiştirilmediğini doğrulamak için aşağıdaki
 özetleri kullanın. Değerler birebir tutmuyorsa dosyayı KULLANMAYIN, yeniden
 indirin.
 
-B5A06C5E27D77398606297775E633F70E4628AD1B65CF72283B519DCB04E1C17  Print360-Kurulum-v2026.11.05.1546.zip
-4C7A1E2F7FDA42F736698FB72B3150F0D9CAD4C64F8D7EE1E6017722003A80A4  Print360-Server-Setup.exe
-6EA5E90C54A2717E6930A99B11DD8528B372A53B52E7A0456DA1F5964C2AD77C  Print360-Client-Setup.exe
+945815191F7E35B8843CCE258A7AF7D266D1C4851502051FC5EFE3B87EA964B8  Print360-Kurulum-v2026.11.05.1631.zip
+D58B187AC5D1F9A9D1C9270662AB4683AF4AAE586F76BE41BBEB52042845F43C  Print360-Server-Setup.exe
+B58A8E4107DECE1197F14F7E87608BDE963649BE3E41ADAC19181FFD428617AD  Print360-Client-Setup.exe
 
 
 NASIL DOĞRULANIR
 ----------------
 PowerShell'de indirdiğiniz dosyanın bulunduğu klasörde:
 
-    Get-FileHash .\Print360-Kurulum-v2026.11.05.1546.zip -Algorithm SHA256
+    Get-FileHash .\Print360-Kurulum-v2026.11.05.1631.zip -Algorithm SHA256
 
 Çıkan Hash değeri, yukarıdaki satırla aynı olmalıdır.
 
 Komut isteminde (cmd) aynı işlem:
 
-    certutil -hashfile Print360-Kurulum-v2026.11.05.1546.zip SHA256
+    certutil -hashfile Print360-Kurulum-v2026.11.05.1631.zip SHA256
 
 
 VIRUSTOTAL

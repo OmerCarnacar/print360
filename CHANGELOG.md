@@ -10,7 +10,7 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
-## [Yayınlanmamış]
+## [2026.11.05.1631]
 
 ### Eklendi
 - **Kesintisiz, tam ayrıntılı hata kaydı:** yeni `logs\hatalar.log` her denemeyi filtresiz yazar
