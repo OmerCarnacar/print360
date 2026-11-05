@@ -10,7 +10,7 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
-## [Yayınlanmamış]
+## [2026.11.05.1653]
 
 ### Düzeltildi
 - **VPN kapalıyken hata mesajı yanlış yere baktırıyordu:** portu yalnızca VPN'den açık
