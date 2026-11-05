@@ -402,6 +402,22 @@ static class Ortak
             : "BAGLANTI YOLU DEGISTI: dogrudan ulasilamadi; Windows vekil sunucusu (" + vekil + ") uzerinden denenecek";
     }
 
+    // Durum penceresinin yazici adina ekledigi etiketleri atar. Eskiden secili satir metni
+    // etiketiyle birlikte kaydediliyordu ("Xerox   [1. SIRA - benim yazicim]"): boyle bir
+    // yazici olmadigi icin sira bozuluyor, "Siradan cikar" da gercek adi silemiyordu.
+    public static string YaziciAdiTemizle(string ad)
+    {
+        string s = (ad ?? "").Trim();
+        string eski;
+        do
+        {
+            eski = s;
+            s = System.Text.RegularExpressions.Regex.Replace(s,
+                @"\s{2,}(\[(1\. SIRA - benim yazicim|\d+\. yedek)\]|\(Windows varsayilani\)|\(varsayilan\))$", "").Trim();
+        } while (s != eski);
+        return s;
+    }
+
     // ------------------------------------------------------------------
     // YARIM DOSYA DENETIMI. Aktarim yarida kesilirse (RDP koptu, ag dustu)
     // dosya eksik kalir. Eskiden yaziciya gonderiliyor, PDF motoru anlamsiz bir

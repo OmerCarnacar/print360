@@ -654,6 +654,13 @@ partial class UzmanTest
 
     static void RdpOturumDegisimi()
     {
+        // Etiketle kaydedilmis bozuk yazici sirasi okunurken onarilir, tekrarlar kalkar
+        var yazDosya = (string)typeof(ClientAgent).GetProperty("KisiselYaziciDosyasi", OZEL | BindingFlags.Public).GetValue(null, null);
+        Directory.CreateDirectory(Path.GetDirectoryName(yazDosya));
+        File.WriteAllLines(yazDosya, new[] { "Xerox (Kopya 1)   [3. yedek]", "Xerox (Kopya 1)   [1. SIRA - benim yazicim]", "Xerox (Kopya 1)", "HP" });
+        var onarilan = ClientAgent.KisiselYaziciListesi();
+        Kontrol(onarilan.Count == 2 && onarilan[0] == "Xerox (Kopya 1)" && onarilan[1] == "HP", "bozuk yazici sirasi onarildi", string.Join(" > ", onarilan.ToArray()));
+        File.Delete(yazDosya);
         Console.WriteLine("--- 17. Birden fazla RDP oturumu: acilan / kapanan / sira degisimi");
         List<string> ac, kap;
         var bir = new List<string> { "10.77.0.61" };

@@ -375,6 +375,12 @@ class OlayGunlugu
         Kontrol(Kuyruk.Sanitize("PC-01") == "PC-01" && Kuyruk.Sanitize("COMPAQ") == "COMPAQ" && Kuyruk.Sanitize("a\\b") == "a_b", "normal adlar eskisi gibi kalir", null);
         Kontrol(Kuyruk.MakineAdiGecerli("PC-01") && !Kuyruk.MakineAdiGecerli("") && !Kuyruk.MakineAdiGecerli(new string('a', 65)) && !Kuyruk.MakineAdiGecerli("a\nb"),
                 "gecersiz makine adi reddedilir", null);
+        // Sahadan: "Hedef yazici sirasi: Xerox Phaser 3020 (Kopya 1)   [1. SIRA - benim yazicim] > ..."
+        const string XR = "Xerox Phaser 3020 (Kopya 1)";
+        Kontrol(Ortak.YaziciAdiTemizle(XR + "   [1. SIRA - benim yazicim]") == XR && Ortak.YaziciAdiTemizle(XR + "   [3. yedek]") == XR
+                && Ortak.YaziciAdiTemizle(XR + "   (Windows varsayilani)") == XR, "etiketler yazici adindan atilir", null);
+        Kontrol(Ortak.YaziciAdiTemizle(XR) == XR && Ortak.YaziciAdiTemizle("HP [Kat 2]") == "HP [Kat 2]" && Ortak.YaziciAdiTemizle("Canon (varsayilan) A4") == "Canon (varsayilan) A4",
+                "gercek yazici adina dokunulmaz (parantez ve koseli parantez dahil)", null);
         string mk, pt;
         Kontrol(RdpAlgilama.AdresAyir("srv", out mk, out pt) && mk == "srv" && pt == "", "adres: yalnizca makine", null);
         Kontrol(RdpAlgilama.AdresAyir(" 100.64.0.50:9443 ", out mk, out pt) && mk == "100.64.0.50" && pt == "9443", "adres: makine ve port", null);

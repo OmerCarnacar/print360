@@ -977,7 +977,8 @@ static partial class ClientAgent
                 foreach (var ln in File.ReadAllLines(f, Encoding.UTF8))
                 {
                     // Eski surumlerden kalan BOM'u da temizle
-                    string s = ln.Trim().TrimStart('﻿').Trim();
+                    // Eski surumlerin etiketle kaydettigi adlar da onarilir
+                    string s = Ortak.YaziciAdiTemizle(ln.Trim().TrimStart('﻿'));
                     if (s.Length == 0) continue;
                     bool var_ = false;
                     foreach (var x in liste) if (string.Equals(x, s, StringComparison.OrdinalIgnoreCase)) { var_ = true; break; }
@@ -3007,9 +3008,8 @@ static partial class ClientAgent
             Func<string> seciliAd = delegate
             {
                 if (lvYazici.SelectedItems.Count == 0) return null;
-                string ad = lvYazici.SelectedItems[0].Text;
-                int p = ad.IndexOf("   (");
-                return p > 0 ? ad.Substring(0, p) : ad;
+                // Gercek ad Tag'de; satir metni etiket icerir
+                return lvYazici.SelectedItems[0].Tag as string;
             };
             Action uyar = delegate
             {
@@ -3287,6 +3287,7 @@ static partial class ClientAgent
                         + (vars && sn < 0 ? "   (Windows varsayilani)" : "");
 
                     var it = new System.Windows.Forms.ListViewItem(new string[] { etiket, durum, hata, kuyruk });
+                    it.Tag = ad;
                     if (hata.Length > 0 || durum == "Cevrimdisi" || durum == "Durduruldu")
                         it.ForeColor = System.Drawing.Color.Firebrick;
                     else if (sn == 1)

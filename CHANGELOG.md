@@ -24,6 +24,10 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
   alıyor. `CON`, `NUL` gibi Windows'a ayrılmış adlar da güvenli hale getiriliyor.
 
 ### Düzeltildi
+- **Yazıcı sırası bozuluyordu:** durum penceresindeki düğmeler yazıcı adını ekrandaki etiketiyle
+  kaydediyordu (`Xerox   [1. SIRA - benim yazicim]`). Böyle bir yazıcı olmadığı için sıra
+  bozuluyor, yedeğe geçildi diye yanlış satır yazılabiliyor, "Sıradan çıkar" da gerçek adı
+  silemiyordu. Artık gerçek ad kullanılıyor; bozulmuş listeler okunurken onarılıyor.
 - **Tarama gerçek sunucuyu kaçırabiliyordu:** ilk HTTPS bağlantısı 17-27 sn sürebildiği
   halde doğrulama 3 sn'de vazgeçiyordu. Süre 30 sn oldu, açık portlar paralel doğrulanıyor;
   hızlı taramada port yanıtı için 1,5 sn bekleniyor.
