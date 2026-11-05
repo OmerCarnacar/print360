@@ -10,6 +10,29 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [Yayınlanmamış]
+
+### Eklendi
+- **Kesintisiz, tam ayrıntılı hata kaydı:** yeni `logs\hatalar.log` her denemeyi filtresiz yazar
+  ve 5 MB'de devreder; durum penceresine **Hatalar** sekmesi eklendi. `client.log` tekrarları
+  eskisi gibi özetler. Hata satırları artık yalnızca kısa mesaj değil; hata türü, web durumu,
+  HTTP kodu, yanıtın Print360'tan gelip gelmediği, soket/Windows kodu, iç hata zinciri ve kodun
+  neresinde olduğunu içeriyor. Sunucu ajanı ve panel günlüklerinde de aynı ayrıntı var. İstemci
+  şifresi maskelenir.
+
+### Güvenlik
+- **Otomatik güncelleme imzasız dosya çalıştırıyordu:** istemci sunucudan indirdiği `.exe`'yi
+  denetlemeden çalıştırıyordu ve sertifika varsayılan olarak doğrulanmıyordu. Araya giren biri
+  ya da sahte bir sunucu istemcide kod çalıştırabilirdi. Resmî sürümler artık dijital imzalıdır;
+  istemci yalnızca imzası doğru dosyayı kabul eder. İmzası olmayan eski sunucudan güncelleme
+  alınmaz: önce sunucuyu güncelleyin.
+- **Panel girişinde deneme sınırı:** bir adresten 5 hatalı denemeden sonra 15 dakika giriş
+  denenmez; panele uyarı düşer.
+- **POST boyut sınırı:** kimliksiz gelebilen isteklerde büyük gövde belleği doldurabiliyordu;
+  artık 413 ile reddediliyor.
+
+---
+
 ## [2026.11.05.1546]
 
 ### Güvenlik

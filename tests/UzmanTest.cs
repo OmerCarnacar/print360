@@ -500,6 +500,10 @@ partial class UzmanTest
         int once = Satir(IstemciGunlugu(), "IS ALINAMADI");
         for (int i = 0; i < 20; i++) { Al(a, "YANLIS"); Al(b, "YANLIS"); }   // 40 basarisiz yoklama (~2 dk'lik gercek yoklama)
         int eklenen = Satir(IstemciGunlugu(), "IS ALINAMADI") - once;
+        string hataKaydi = File.ReadAllText(Path.Combine(Path.GetDirectoryName(iLog), "hatalar.log"));
+        Kontrol(Satir(hataKaydi, "IS ALINAMADI") >= 40, "hatalar.log HER denemeyi yazdi (40 deneme, kesintisiz)", Satir(hataKaydi, "IS ALINAMADI").ToString());
+        Kontrol(hataKaydi.Contains("System.Net.WebException") && hataKaydi.Contains("HTTP 403") && hataKaydi.Contains("YER: "), "kayitta hata turu, HTTP kodu ve kod yeri var", null);
+        Kontrol(!hataKaydi.Contains("key=YANLIS") && !hataKaydi.Contains("key=testkey"), "hata kaydinda istemci sifresi GORUNMUYOR", null);
         Kontrol(eklenen <= 4, "40 basarisiz yoklamada en fazla 4 satir (sunucu basina ilk hata); eskiden her yoklama yaziliyordu",
                 eklenen + " satir eklendi");
     }
@@ -615,6 +619,20 @@ partial class UzmanTest
         ClientAgent.rdpUclari.Add("baska-makine|" + sunucuPort);
         Kontrol(ClientAgent.HostTara("localhost", new[] { sunucuPort }) != null, "baska makinenin RDP portu bu makinede sunucuyu engellemez", null);
         ClientAgent.rdpUclari.Clear();
+
+        // Kimliksiz buyuk POST bellegi dolduramaz
+        int buyukKod = -1;
+        try
+        {
+            var br = (HttpWebRequest)WebRequest.Create("http://localhost:" + sunucuPort + "/api/printed?machine=BUYUK-PC&key=k9");
+            br.Method = "POST"; br.Proxy = null;
+            var bv = new byte[2 * 1024 * 1024];
+            br.ContentLength = bv.Length;
+            using (var st = br.GetRequestStream()) st.Write(bv, 0, bv.Length);
+            using (var y = (HttpWebResponse)br.GetResponse()) buyukKod = (int)y.StatusCode;
+        }
+        catch (WebException ex) { var y = ex.Response as HttpWebResponse; buyukKod = y != null ? (int)y.StatusCode : 413; }
+        Kontrol(buyukKod == 413, "2 MB govde reddedilir (413)", buyukKod.ToString());
 
         // Sifresiz istemci acigi: kayitli makinenin isi sifresiz alinamaz
         var bosAyar = new Dictionary<string, string>();

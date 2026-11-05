@@ -57,7 +57,7 @@ static partial class ClientAgent
             new Thread(delegate()
             {
                 try { foreach (var satir in TaniRaporu(false).Split('\n')) if (satir.Trim().Length > 0) Log("[AYRINTI] " + satir.TrimEnd('\r')); }
-                catch (Exception ex) { Log("Ortam ozeti alinamadi: " + ex.Message); }
+                catch (Exception ex) { Log("Ortam ozeti alinamadi: " + Ortak.HataDetayi(ex)); }
             }) { IsBackground = true }.Start();
             Bildir("Hata ayiklama modu ACIK", "24 saat boyunca her adim ayrintili kaydedilir. Sorunu tekrarlayin, sonra 'Tani paketi olustur'.", true);
         }
@@ -87,7 +87,7 @@ static partial class ClientAgent
             Ekle(zip, "rapor.txt", TaniRaporu(true));
 
             // Gunlukler (asil + devredilmis + yazilamadiginda kullanilan yedekler)
-            foreach (var f in new[] { logFile, logFile + ".1" })
+            foreach (var f in new[] { logFile, logFile + ".1", HataDosyasi, HataDosyasi + ".1" })
                 DosyaEkle(zip, f, "logs/" + Path.GetFileName(f));
             try
             {

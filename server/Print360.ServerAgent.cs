@@ -120,7 +120,7 @@ static class ServerAgent
                     if (++tick % 30 == 0) { PullClientStats(); CheckConnection(); VarsayilanYaziciAyarla(); } // ~60 sn'de bir
                     if (tick % 1800 == 0) PurgeArchive(); // saatte bir: 90 gunden eski arsivi sil
                 }
-                catch (Exception ex) { Log("HATA: " + ex.Message); }
+                catch (Exception ex) { Log("HATA: " + Ortak.HataDetayi(ex)); }
                 Thread.Sleep(2000);
             }
         }
@@ -193,7 +193,7 @@ static class ServerAgent
                     Log("YARIM BASKI kenara alindi: " + hedef + " - yazdiran uygulama islemi tamamlamadan durmus olabilir; "
                         + "kullanici belgeyi yeniden yazdirmali.");
                 }
-                catch (Exception ex) { Log("Yarim spool dosyasi tasinamadi: " + ex.Message); }
+                catch (Exception ex) { Log("Yarim spool dosyasi tasinamadi: " + Ortak.HataDetayi(ex)); }
             }
             return;
         }
@@ -233,7 +233,7 @@ static class ServerAgent
         }
         catch (Exception ex)
         {
-            Log("UYARI: gonderilen spool dosyasi silinemedi ve tasinamadi (" + ex.Message + "). Is TEKRAR GONDERILMEYECEK; "
+            Log("UYARI: gonderilen spool dosyasi silinemedi ve tasinamadi (" + Ortak.HataDetayi(ex) + "). Is TEKRAR GONDERILMEYECEK; "
               + "dosya serbest kalinca silinecek: " + yol);
             return false;
         }
@@ -409,7 +409,7 @@ static class ServerAgent
                     }
             }
         }
-        catch (Exception ex) { Log("SEC: client yazici listesi alinamadi: " + ex.Message); }
+        catch (Exception ex) { Log("SEC: client yazici listesi alinamadi: " + Ortak.HataDetayi(ex)); }
 
         if (yazicilar.Count == 0) { Log("SEC: '" + lokalPc + "' icin yazici listesi henuz yok - client tarafina devredildi."); return ""; }
 
@@ -457,7 +457,7 @@ static class ServerAgent
                     }
                 }
             }
-            catch (Exception ex) { Log("SEC penceresi hatasi: " + ex.Message); }
+            catch (Exception ex) { Log("SEC penceresi hatasi: " + Ortak.HataDetayi(ex)); }
         });
         t.SetApartmentState(ApartmentState.STA);
         t.IsBackground = true;
@@ -529,7 +529,7 @@ static class ServerAgent
                 varsayilanLoglandi = true; // ayni uyariyi tekrarlamamak icin
             }
         }
-        catch (Exception ex) { Log("Varsayilan yazici: " + ex.Message); }
+        catch (Exception ex) { Log("Varsayilan yazici: " + Ortak.HataDetayi(ex)); }
     }
 
     static string SpoolPath(string type)
@@ -633,7 +633,7 @@ static class ServerAgent
                 Log("Bekleyen " + tasinan + " is '" + eskiMakine + "' kuyrugundan '" + yeniMakine
                   + "' kuyruguna tasindi (kullanici artik bu makineden bagli).");
         }
-        catch (Exception ex) { Log("Bekleyen isler tasinirken hata: " + ex.Message); }
+        catch (Exception ex) { Log("Bekleyen isler tasinirken hata: " + Ortak.HataDetayi(ex)); }
     }
 
     static void Dispatch(string jobType, string spoolFile)
@@ -822,7 +822,7 @@ static class ServerAgent
             using (var gz = new GZipStream(fs, CompressionMode.Compress))
                 gz.Write(pdf, 0, pdf.Length);
         }
-        catch (Exception ex) { Log("Arsiv hatasi: " + ex.Message); }
+        catch (Exception ex) { Log("Arsiv hatasi: " + Ortak.HataDetayi(ex)); }
     }
 
     // 90 gunden eski arsiv dosyalarini temizle
@@ -888,7 +888,7 @@ static class ServerAgent
                     }
             }
         }
-        catch (Exception ex) { Log("Cevrimici istemci sorgusu: " + ex.Message); }
+        catch (Exception ex) { Log("Cevrimici istemci sorgusu: " + Ortak.HataDetayi(ex)); }
 
         var tekil = new System.Collections.Generic.List<string>();
         foreach (var a in adlar)
@@ -949,7 +949,7 @@ static class ServerAgent
             }
             return true;
         }
-        catch (Exception ex) { Log("Kuyruk hatasi: " + ex.Message); return false; }
+        catch (Exception ex) { Log("Kuyruk hatasi: " + Ortak.HataDetayi(ex)); return false; }
     }
 
     // PrintService olay gunlugunden (Event 307) belge adi ve sayfa sayisi.
@@ -994,7 +994,7 @@ static class ServerAgent
                 Ayr("Belge adi: " + adaylar.Count + " aday olay var ama hicbiri bu ise (yazilma " + spoolYazma.ToString("HH:mm:ss")
                     + ") uymuyor ya da baska ise verildi");
         }
-        catch (Exception ex) { Log("Belge adi okunamadi (olay gunlugu): " + ex.Message); }
+        catch (Exception ex) { Log("Belge adi okunamadi (olay gunlugu): " + Ortak.HataDetayi(ex)); }
     }
 
     // PDF'in ilk MediaBox kaydindan kagit boyutunu tespit et (A4, A5, A3, Letter...)
@@ -1098,7 +1098,7 @@ static class ServerAgent
                 }
             }
         }
-        catch (Exception ex) { Log("VC mesaj islenemedi (" + tur + "): " + ex.Message); }
+        catch (Exception ex) { Log("VC mesaj islenemedi (" + tur + "): " + Ortak.HataDetayi(ex)); }
     }
 
     static System.Collections.Generic.Dictionary<string, string> ParsePairs(string s)
@@ -1125,7 +1125,7 @@ static class ServerAgent
         string machine = clientName.Length > 0 ? clientName : user;
         string dst = Path.Combine(clientsDir, Sanitize(machine) + ".csv");
         try { File.Copy(src, dst, true); }
-        catch (Exception ex) { Log("Istatistik cekilemedi: " + ex.Message); }
+        catch (Exception ex) { Log("Istatistik cekilemedi: " + Ortak.HataDetayi(ex)); }
     }
 
     static string FindClientDir(string sub, bool create)

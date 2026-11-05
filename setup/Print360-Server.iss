@@ -50,6 +50,7 @@ Source: "bin-server\Print360.ServerAgent.exe"; DestDir: "{app}\bin"; Flags: igno
 Source: "bin-server\Print360.Dashboard.exe";   DestDir: "{app}\bin"; Flags: ignoreversion
 Source: "bin-server\Print360.Panel.exe";       DestDir: "{app}\bin"; Flags: ignoreversion
 Source: "bin-server\Print360.ClientAgent.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
+Source: "bin-server\Print360.ClientAgent.exe.sig"; DestDir: "{app}\bin"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "bin-server\Print360.ico";             DestDir: "{app}\bin"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "bin-server\Print360.Setup.exe";       DestDir: "{app}"; Flags: ignoreversion
 ; SQLite calisma zamani (MSSQL yoksa yerel veritabani icin)

@@ -41,7 +41,7 @@ static partial class ClientAgent
         try { Process.Start(new ProcessStartInfo(LINKEDIN) { UseShellExecute = true }); }
         catch (Exception ex)
         {
-            Log("LinkedIn acilamadi: " + ex.Message);
+            Log("LinkedIn acilamadi: " + Ortak.HataDetayi(ex));
             try
             {
                 System.Windows.Forms.Clipboard.SetText(LINKEDIN);
@@ -65,7 +65,7 @@ static partial class ClientAgent
         }
         catch (Exception ex)
         {
-            Log("Posta programi acilamadi: " + ex.Message);
+            Log("Posta programi acilamadi: " + Ortak.HataDetayi(ex));
             try
             {   // Posta istemcisi yoksa adresi panoya kopyala ve bildir
                 System.Windows.Forms.Clipboard.SetText(EPOSTA);
@@ -283,7 +283,7 @@ static partial class ClientAgent
                           + "Kayit kaldirildi - uzak masaustu artik normal acilir.");
                     }
             }
-            catch (Exception ex) { Log("RDP eklenti denetimi: " + ex.Message); }
+            catch (Exception ex) { Log("RDP eklenti denetimi: " + Ortak.HataDetayi(ex)); }
         }
     }
 
@@ -329,7 +329,7 @@ static partial class ClientAgent
                 File.Move(tmp, son);
             }
         }
-        catch (Exception ex) { Log("VC outbox yazilamadi (" + tur + "): " + ex.Message); }
+        catch (Exception ex) { Log("VC outbox yazilamadi (" + tur + "): " + Ortak.HataDetayi(ex)); }
     }
 
     [STAThread]
@@ -464,7 +464,7 @@ static partial class ClientAgent
                 takilma.Temizle(dosyalar);
                 Prune();
             }
-            catch (Exception ex) { Log("HATA: " + ex.Message); }
+            catch (Exception ex) { Log("HATA: " + Ortak.HataDetayi(ex)); }
             Thread.Sleep(2000);
         }
     }
@@ -562,7 +562,7 @@ static partial class ClientAgent
                 Log("UYARI: AJAN YONETICI YETKISIYLE (yukseltilmis) CALISIYOR. Gerekli degil; kullanicinin ag yazicilari "
                     + "gorunmeyebilir. Oturumu kapatip acin.");
         }
-        catch (Exception ex) { Log("Kimlik denetimi yapilamadi: " + ex.Message); }
+        catch (Exception ex) { Log("Kimlik denetimi yapilamadi: " + Ortak.HataDetayi(ex)); }
     }
 
     static void BaslangicDenetimi()
@@ -579,7 +579,7 @@ static partial class ClientAgent
             if (sorun > 0)
                 Bildir("Print360 klasor sorunu", sorun + " sorun bulundu; ayrinti: C:\\Print360\\logs\\client.log", false);
         }
-        catch (Exception ex) { Log("Klasor denetimi yapilamadi: " + ex.Message); }
+        catch (Exception ex) { Log("Klasor denetimi yapilamadi: " + Ortak.HataDetayi(ex)); }
 
         try
         {
@@ -611,7 +611,7 @@ static partial class ClientAgent
                 sorun++;
             }
         }
-        catch (Exception ex) { Log("Yarim is denetimi yapilamadi: " + ex.Message); }
+        catch (Exception ex) { Log("Yarim is denetimi yapilamadi: " + Ortak.HataDetayi(ex)); }
 
         // 2b) Onceki oturumdan gonderilememis "basildi" bildirimleri ve RDP kanalinda bekleyen mesajlar
         try
@@ -652,7 +652,7 @@ static partial class ClientAgent
             if (!onceki.Equals(Environment.MachineName, StringComparison.OrdinalIgnoreCase))
                 File.WriteAllText(adDosyasi, Environment.MachineName);
         }
-        catch (Exception ex) { Log("Bilgisayar adi denetimi: " + ex.Message); }
+        catch (Exception ex) { Log("Bilgisayar adi denetimi: " + Ortak.HataDetayi(ex)); }
 
         Log(sorun == 0 ? "Baslangic denetimi: sorun yok (klasorler yazilabilir, yarim is yok)."
                        : "Baslangic denetimi: " + sorun + " bulgu (yukaridaki satirlar).");
@@ -732,7 +732,7 @@ static partial class ClientAgent
         FileStream kilit;
         try { kilit = new FileStream(isaret, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
         catch (IOException) { return; }   // baska bir oturumdaki ajan bu isi isliyor
-        catch (Exception ex) { Log("UYARI: is kilidi alinamadi (" + ex.Message + "); is kilitsiz isleniyor: " + Path.GetFileName(file)); kilit = null; }
+        catch (Exception ex) { Log("UYARI: is kilidi alinamadi (" + Ortak.HataDetayi(ex) + "); is kilitsiz isleniyor: " + Path.GetFileName(file)); kilit = null; }
         try
         {
             if (kilit != null)
@@ -1001,7 +1001,7 @@ static partial class ClientAgent
             Log("Hedef yazici sirasi (" + Environment.UserName + "): " +
                 (liste == null || liste.Count == 0 ? "(Windows varsayilani)" : string.Join(" > ", liste.ToArray())));
         }
-        catch (Exception ex) { Log("Yazici sirasi kaydedilemedi: " + ex.Message); }
+        catch (Exception ex) { Log("Yazici sirasi kaydedilemedi: " + Ortak.HataDetayi(ex)); }
     }
 
     // Yaziciyi 1. siraya al (varsa listeden cikarilip basa eklenir)
@@ -1066,7 +1066,7 @@ static partial class ClientAgent
             KisiselYaziciListesiYaz(new List<string> { v });
             Log("Varsayilan hedef yazici otomatik ayarlandi (Windows varsayilanindan): " + v);
         }
-        catch (Exception ex) { Log("Varsayilan yazici kurulamadi: " + ex.Message); }
+        catch (Exception ex) { Log("Varsayilan yazici kurulamadi: " + Ortak.HataDetayi(ex)); }
     }
 
     // Bir yazici SU AN kullanilabilir mi? (kurulu + cevrimdisi/hatali degil)
@@ -1206,7 +1206,7 @@ static partial class ClientAgent
             if (File.Exists(dst)) File.Delete(dst);
             File.Move(file, dst);
         }
-        catch (Exception ex) { Log("failed tasima hatasi: " + ex.Message); }
+        catch (Exception ex) { Log("failed tasima hatasi: " + Ortak.HataDetayi(ex)); }
         RecordPrinted(fname, yazici, "HATA: " + neden);
         Log("BASILAMADI (" + neden + "): " + fname + "  [dosya: " + failedDir + "]");
         Bildir("YAZDIRILAMADI", GorunenBelgeAdi(fname) + "\r\nYazici: " + yazici
@@ -1226,11 +1226,11 @@ static partial class ClientAgent
             string dc = Path.Combine(doneDir, fname);
             if (File.Exists(dc)) File.Delete(dc);
             File.Move(file, dc);
-            try { Process.Start(dst); } catch (Exception ex) { Log("PDF acilamadi (dosya masaustunde): " + ex.Message); }
+            try { Process.Start(dst); } catch (Exception ex) { Log("PDF acilamadi (dosya masaustunde): " + Ortak.HataDetayi(ex)); }
             RecordPrinted(fname, "PDF olarak acildi");
             Log("PDF modunda teslim edildi: " + dst);
         }
-        catch (Exception ex) { Log("PDF goruntule hatasi: " + ex.Message); }
+        catch (Exception ex) { Log("PDF goruntule hatasi: " + Ortak.HataDetayi(ex)); }
     }
 
     // Kullaniciya gosterilecek BELGE ADI. Sunucu, orijinal belge adini dosya
@@ -1293,7 +1293,7 @@ static partial class ClientAgent
                         secilen = dlg.PrinterSettings.PrinterName;
                 }
             }
-            catch (Exception ex) { Log("Yazici secim penceresi hatasi: " + ex.Message); }
+            catch (Exception ex) { Log("Yazici secim penceresi hatasi: " + Ortak.HataDetayi(ex)); }
         });
         t.SetApartmentState(ApartmentState.STA);
         t.IsBackground = true;
@@ -1329,9 +1329,21 @@ static partial class ClientAgent
         while (true)
         {
             try { GuncellemeKontrol(); }
-            catch (Exception ex) { Log("Guncelleme kontrolu: " + ex.Message); }
+            catch (Exception ex) { Log("Guncelleme kontrolu: " + Ortak.HataDetayi(ex)); }
             Thread.Sleep(30 * 60 * 1000); // 30 dakikada bir
         }
+    }
+
+    // Resmi surumleri dogrulayan acik anahtar (gizli degildir). Kendi derlemesini dagitanlar
+    // kendi anahtarini uretip burayi degistirir (bkz. CONTRIBUTING).
+    const string GUNCELLEME_ANAHTARI = "<RSAKeyValue><Modulus>pQWUNQWwx+n53pCyjgatbTjYUvILQ8dl85czX7Y1/Lvf28r6uTg+HrNoZzbAPt2X5ntHIb1yMHNfxERJlYOr/g+GH6wB8DTkCJpeev0wGxS+eguFv46CP51paJ+K9W2dreq9CDCjiGjveJ1kt5tQ1fyTuEcBJaCcYLV6V2MsS4pEJ4ULu7OcJjWlVkFTQr+b/7CuQQZosg+Lq0Lcyuu0y2yb2lu+QuGaBbSCGuqXmD5/JT1N1F4Pr+1xXSAcCk5gC461blskLoUGjlBXQF3yxVVVqgY+d4lHx5MfUH41ttNv4SVDND/vevVVZURBzwfww0VoMMYaZItqMH0PB9aAMhxstPHujpBJuf0VFJnduuj5E/ssdkugQTntJnf4fO9W694mW9R4Z84aI42EiEI6Z4hW42+niWtjlwSfuJH1sVNOI2IwETn0ANZ14svr4prJrErofeHtLEIsFkmV3yMp/MmipaglEGphAzgOVQSXNa10j0iA/Q4wZmA1xVgs3bV5</Modulus><Exponent>AQAB</Exponent></RSAKeyValue>";
+    static DateTime sonImzaUyarisi = DateTime.MinValue;
+
+    static void ImzaUyarisi(string sebep, string surum)
+    {
+        if ((DateTime.Now - sonImzaUyarisi).TotalHours < 6) return;
+        sonImzaUyarisi = DateTime.Now;
+        Log("GUNCELLEME REDDEDILDI: " + surum + " | " + sebep + ". Istemci kurulumunu elle guncelleyebilirsiniz.");
     }
 
     static void GuncellemeKontrol()
@@ -1360,11 +1372,24 @@ static partial class ClientAgent
         Ayr("Guncelleme denetimi: sunucu " + sunucuSurum + ", bu istemci " + Surum.V);
         if (sv == mv) return; // guncel
 
+        // IMZA DENETIMI. Sunucunun sertifikasi varsayilan olarak dogrulanmaz; imzasiz guncellemede
+        // araya giren biri ya da sahte bir sunucu bu makinede kod calistirabilirdi.
+        byte[] imza = null;
+        try { using (var wc = new P360WebClient()) imza = wc.DownloadData(baseUrl + "/api/clientexe.sig"); }
+        catch (WebException) { }
+        if (imza == null || imza.Length == 0) { ImzaUyarisi("sunucu imza dosyasi vermiyor (sunucuyu ayni surume guncelleyin)", sunucuSurum); return; }
+
         Log("Yeni surum bulundu: " + sunucuSurum + " (mevcut " + Surum.V + "). Indiriliyor...");
         string cur = Process.GetCurrentProcess().MainModule.FileName;   // C:\Print360\Print360.ClientAgent.exe
         string yeni = cur + ".new";
         using (var wc = new P360WebClient()) wc.DownloadFile(baseUrl + "/api/clientexe", yeni);
         if (!File.Exists(yeni) || new FileInfo(yeni).Length < 4096) { try { File.Delete(yeni); } catch { } return; }
+        if (!Ortak.ImzaGecerli(File.ReadAllBytes(yeni), imza, GUNCELLEME_ANAHTARI))
+        {
+            try { File.Delete(yeni); } catch { }
+            ImzaUyarisi("IMZA GECERSIZ - dosya resmi surum degil, CALISTIRILMADI", sunucuSurum);
+            return;
+        }
 
         // INDIRILEN DOSYA GERCEKTEN DAHA YENI MI? Sunucu yanlis surum bildirirse
         // (eski sunucular panelin kendi surumunu bildirir) ayni dosyayi 30
@@ -1381,7 +1406,7 @@ static partial class ClientAgent
                 return;
             }
         }
-        catch (Exception ex) { Log("Indirilen guncelleme dogrulanamadi: " + ex.Message); try { File.Delete(yeni); } catch { } return; }
+        catch (Exception ex) { Log("Indirilen guncelleme dogrulanamadi: " + Ortak.HataDetayi(ex)); try { File.Delete(yeni); } catch { } return; }
 
         // Guncelleyici: ajan kapansin -> yeni exe'yi eskinin uzerine yaz -> yeniden baslat
         string cmd = Path.Combine(baseDir, "update.cmd");
@@ -1427,7 +1452,7 @@ static partial class ClientAgent
             return RdpAlgilama.Sec(kayitlar, pidler);
         }
         catch (Exception ex)
-        { if (sonOtoLog != ex.Message) { Log("Oto sunucu bulma: " + ex.Message); sonOtoLog = ex.Message; } }
+        { if (sonOtoLog != Ortak.HataDetayi(ex)) { Log("Oto sunucu bulma: " + Ortak.HataDetayi(ex)); sonOtoLog = Ortak.HataDetayi(ex); } }
         return RdpAlgilama.Sec(kayitlar, new int[0]);
     }
 
@@ -1480,7 +1505,7 @@ static partial class ClientAgent
             BaglantiAyariYaz(new Dictionary<string, string> { { "Port", yeni[0].Substring(5) }, { "Server", yeni[1].Substring(7) } });
             foreach (var n in notlar) Log("AYAR DUZELTILDI: " + n + " (Print360 portu ayri bir porttur; istemci kendisi bulur).");
         }
-        catch (Exception ex) { Log("AYAR DUZELTILEMEDI: " + ex.Message); }
+        catch (Exception ex) { Log("AYAR DUZELTILEMEDI: " + Ortak.HataDetayi(ex)); }
     }
 
     static List<int> RdpSurecleri()
@@ -1545,7 +1570,7 @@ static partial class ClientAgent
         while (true)
         {
             try { SunucuAramaTuru(); }
-            catch (Exception ex) { Log("Sunucu arama: " + ex.Message); }
+            catch (Exception ex) { Log("Sunucu arama: " + Ortak.HataDetayi(ex)); }
             aramaTetik.Reset(); aramaTetik.WaitOne(120000);   // 2 dk'da bir ya da ag degisince
         }
     }
@@ -1829,7 +1854,7 @@ static partial class ClientAgent
             hbTetik.Set();
             aramaTetik.Set();
         }
-        catch (Exception ex) { Log("Ag degisimi: " + ex.Message); }
+        catch (Exception ex) { Log("Ag degisimi: " + Ortak.HataDetayi(ex)); }
     }
 
     // Geriye uyumluluk: tek sunucu isteyen yerler icin ilkini dondurur
@@ -2090,7 +2115,7 @@ static partial class ClientAgent
                     }
                 }
             }
-            catch (Exception ex) { Log("Is cekme dongusu: " + ex.Message); }
+            catch (Exception ex) { Log("Is cekme dongusu: " + Ortak.HataDetayi(ex)); }
             Thread.Sleep(3000);
         }
     }
@@ -2202,10 +2227,12 @@ static partial class ClientAgent
                         string neden = !yazmaEvresi ? "AKTARIM YARIDA KESILDI (baglanti koptu ya da veri bozuk geldi)"
                                      : ex is UnauthorizedAccessException ? "DOSYA YAZILAMADI (jobs klasorune yazma izni yok)"
                                      : "DOSYA YAZILAMADI (disk dolu / dosya kilitli)";
+                        HataKaydet("IS INDIRILEMEDI [" + baseUrl + "]: " + fname + " | " + neden + " | " + (acilmis / 1024)
+                                   + " KB acilmisti, gecen " + kron.ElapsedMilliseconds + " ms", ex);
                         foreach (var satir in IsHatasi(baseUrl).Hata("IS INDIRILEMEDI [" + baseUrl + "]: " + fname + " | " + neden + " | "
-                                     + ex.GetType().Name + ": " + ex.Message
+                                     + Ortak.HataDetayi(ex)
                                      + " | onay gonderilmedi: is sunucuda kuyrukta kaldi, yeniden indirilecek"))
-                            Log(satir + (satir.StartsWith("IS INDIRILEMEDI") ? " | " + (acilmis / 1024) + " KB acilmisti, gecen "
+                            Ortak.Gunluk(logFile, satir + (satir.StartsWith("IS INDIRILEMEDI") ? " | " + (acilmis / 1024) + " KB acilmisti, gecen "
                                          + kron.ElapsedMilliseconds + " ms" : ""));
                         return false;
                     }
@@ -2289,9 +2316,10 @@ static partial class ClientAgent
                 // Ilk hata ANINDA yazilir; ayni hata tekrar ederse sayilir; FARKLI bir
                 // hata hemen yazilir (eskiden 2 dk'lik kisitlama araya gireni yutuyordu).
                 // Sure (ms) mesaja girmez: her denemede farkli olur, tekrar sayilamazdi.
-                foreach (var satir in IsHatasi(baseUrl).Hata(string.Format("IS ALINAMADI [{0}] asama: {1} | durum: {2} | {3}",
-                             baseUrl, asama, ex.Status, HataAcikla(ex))))
-                    Log(satir + (satir.StartsWith("IS ALINAMADI") ? " | gecen " + kron.ElapsedMilliseconds + " ms" : ""));
+                HataKaydet("IS ALINAMADI [" + baseUrl + "] asama: " + asama + " | gecen " + kron.ElapsedMilliseconds + " ms | " + HataAcikla(ex), ex);
+                foreach (var satir in IsHatasi(baseUrl).Hata(string.Format("IS ALINAMADI [{0}] asama: {1} | durum: {2} | {3} | {4}",
+                             baseUrl, asama, ex.Status, HataAcikla(ex), Ortak.HataDetayi(ex))))
+                    Ortak.Gunluk(logFile, satir + (satir.StartsWith("IS ALINAMADI") ? " | gecen " + kron.ElapsedMilliseconds + " ms" : ""));
                 YoluDegerlendir(baseUrl, ex);
                 return false;
             }
@@ -2309,7 +2337,7 @@ static partial class ClientAgent
             // Yazici saglik taramasi baglantidan BAGIMSIZ yapilir: sunucu yokken de
             // arayuzdeki yazici listesi dolu ve guncel kalir.
             try { sonYaziciRapor = YaziciSaglikRaporu(); }
-            catch (Exception ex) { Log("Yazici taramasi: " + ex.Message); }
+            catch (Exception ex) { Log("Yazici taramasi: " + Ortak.HataDetayi(ex)); }
             // VC modu: heartbeat + yazici sagligi RDP kanalindan (HTTPS/IP/port gerekmez)
             if (VcAcik(cfg))
             {
@@ -2322,7 +2350,7 @@ static partial class ClientAgent
                     string r = sonYaziciRapor;
                     if (r.Length > 0) VcYaz("YAZICI", Environment.MachineName + "\n" + r);
                 }
-                catch (Exception ex) { Log("Yazici sagligi (VC): " + ex.Message); }
+                catch (Exception ex) { Log("Yazici sagligi (VC): " + Ortak.HataDetayi(ex)); }
                 // VC modunda gercek baglanti gostergesi: mstsc icindeki eklenti
                 // vc-outbox'taki .msg dosyalarini tuketiyorsa kanal calisiyordur.
                 // Dosyalar birikiyorsa (RDP kapali / eklenti yok) baglanti yok demektir.
@@ -2392,7 +2420,12 @@ static partial class ClientAgent
                         }
                         catch { }
                     }
-                    catch (Exception ex) { sonHataMesaji = HataAcikla(ex); YoluDegerlendir(baseUrl, ex); }
+                    catch (Exception ex)
+                    {
+                        sonHataMesaji = HataAcikla(ex);
+                        HataKaydet("KALP ATISI BASARISIZ [" + baseUrl + "] | " + sonHataMesaji, ex);
+                        YoluDegerlendir(baseUrl, ex);
+                    }
                 }
 
                 if (basarili.Count > 0)
@@ -2490,7 +2523,7 @@ static partial class ClientAgent
                       .Append(YaziciHata(err)).Append("\",\"").Append(q).Append("\"\r\n");
                 }
         }
-        catch (Exception ex) { Log("Yazici taramasi: " + ex.Message); }
+        catch (Exception ex) { Log("Yazici taramasi: " + Ortak.HataDetayi(ex)); }
         return sb.ToString();
     }
 
@@ -2578,7 +2611,7 @@ static partial class ClientAgent
         lock (bildirimKilit)
         {
             try { File.AppendAllText(BekleyenBildirimDosyasi, csvLine.TrimEnd('\r', '\n') + "\r\n"); }
-            catch (Exception ex) { Log("UYARI: bildirim bekletilemedi, KAYBOLACAK: " + ex.Message + " | " + csvLine); }
+            catch (Exception ex) { Log("UYARI: bildirim bekletilemedi, KAYBOLACAK: " + Ortak.HataDetayi(ex) + " | " + csvLine); }
         }
     }
 
@@ -2605,7 +2638,7 @@ static partial class ClientAgent
                 if (!File.Exists(dosya)) return;
                 satirlar = File.ReadAllLines(dosya).Where(l => l.Trim().Length > 0).ToList();
             }
-            catch (Exception ex) { Log("Bekleyen bildirimler okunamadi: " + ex.Message); return; }
+            catch (Exception ex) { Log("Bekleyen bildirimler okunamadi: " + Ortak.HataDetayi(ex)); return; }
             if (satirlar.Count == 0) { try { File.Delete(dosya); } catch { } return; }
 
             string url = baseUrl + "/api/printed?machine=" + Uri.EscapeDataString(Environment.MachineName)
@@ -2712,7 +2745,16 @@ static partial class ClientAgent
 
 
     // Kilitli + devreden gunluk: bkz. Ortak.Gunluk (ajan yedi thread calistirir)
-    static void Log(string msg) { Ortak.Gunluk(logFile, msg); }
+    static void Log(string msg)
+    {
+        Ortak.Gunluk(logFile, msg);
+        if (msg != null && msg.Contains(Ortak.HATA_ONEKI)) Ortak.Gunluk(HataDosyasi, msg);   // tam hata kaydi
+    }
+
+    // KESINTISIZ HATA KAYDI. client.log tekrarlari ozetler (gunluk sismesin); hatalar.log HER
+    // denemeyi filtresiz ve tam ayrintiyla yazar. 5 MB'de devreder.
+    static string HataDosyasi { get { return Path.Combine(Path.GetDirectoryName(logFile), "hatalar.log"); } }
+    static void HataKaydet(string baslik, Exception ex) { Ortak.Gunluk(HataDosyasi, baslik + " | " + Ortak.HataDetayi(ex)); }
 
     // ==================== ARAYUZ ====================
     // Tepsi simgesi + durum penceresi: baglanti durumu, yazici listesi, gorevler.
@@ -2807,7 +2849,7 @@ static partial class ClientAgent
                     Bildir("Tani paketi hazir", Path.GetFileName(z) + " masaustunde. Belge icerikleri dahil degildir.", true);
                     try { Process.Start("explorer.exe", "/select,\"" + z + "\""); } catch { }
                 }
-                catch (Exception ex) { Log("Tani paketi olusturulamadi: " + ex); Bildir("Tani paketi", "Olusturulamadi: " + ex.Message, false); }
+                catch (Exception ex) { Log("Tani paketi olusturulamadi: " + ex); Bildir("Tani paketi", "Olusturulamadi: " + Ortak.HataDetayi(ex), false); }
             }) { IsBackground = true }.Start();
         });
         menu.Opening += delegate
@@ -2898,7 +2940,7 @@ static partial class ClientAgent
             pencere.BringToFront();
             pencere.Activate();
         }
-        catch (Exception ex) { Log("Durum penceresi acilamadi: " + ex.Message); }
+        catch (Exception ex) { Log("Durum penceresi acilamadi: " + Ortak.HataDetayi(ex)); }
     }
 
     // printed.csv satirini alanlara ayir ("a","b",...)
@@ -2933,7 +2975,7 @@ static partial class ClientAgent
         System.Windows.Forms.Label lblDurum, lblKanal;
         System.Windows.Forms.ListView lvGorev, lvYazici;
         System.Windows.Forms.Label lblHedef;   // "Hedef siraniz: 1) ... 2) ..."
-        System.Windows.Forms.TextBox txtLog;
+        System.Windows.Forms.TextBox txtLog, txtHata;
         System.Windows.Forms.Timer zamanlayici;
         static readonly System.Drawing.Color Mavi = System.Drawing.Color.FromArgb(0x3B, 0x82, 0xF6);
         static readonly System.Drawing.Color Indigo = System.Drawing.Color.FromArgb(0x63, 0x66, 0xF1);
@@ -3080,7 +3122,15 @@ static partial class ClientAgent
             var tpL = new System.Windows.Forms.TabPage("Gunluk");
             tpL.Controls.Add(txtLog);
 
-            tab.TabPages.Add(tpG); tab.TabPages.Add(tpY); tab.TabPages.Add(tpL);
+            txtHata = new System.Windows.Forms.TextBox();
+            txtHata.Multiline = true; txtHata.ReadOnly = true;
+            txtHata.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
+            txtHata.Dock = System.Windows.Forms.DockStyle.Fill;
+            txtHata.BackColor = System.Drawing.Color.White;
+            txtHata.Font = new System.Drawing.Font("Consolas", 8.5f);
+            var tpH = new System.Windows.Forms.TabPage("Hatalar");
+            tpH.Controls.Add(txtHata);
+            tab.TabPages.Add(tpG); tab.TabPages.Add(tpY); tab.TabPages.Add(tpL); tab.TabPages.Add(tpH);
 
             // --- Alt cubuk ---
             var alt = new System.Windows.Forms.Panel();
@@ -3311,16 +3361,21 @@ static partial class ClientAgent
         {
             try
             {
-                if (!File.Exists(logFile)) return;
-                string[] tum;
-                using (var fs = new FileStream(logFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-                using (var sr = new StreamReader(fs))
-                    tum = sr.ReadToEnd().Split(new string[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
-                int bas = Math.Max(0, tum.Length - 200);
-                var sb = new StringBuilder();
-                for (int i = tum.Length - 1; i >= bas; i--) sb.AppendLine(tum[i]);
-                string yeni = sb.ToString();
-                if (txtLog.Text != yeni) txtLog.Text = yeni;
+                Action<string, System.Windows.Forms.TextBox, int, string> doldur = (dosya, kutu, adet, bos) =>
+                {
+                    if (!File.Exists(dosya)) { if (kutu.Text != bos) kutu.Text = bos; return; }
+                    string[] tum;
+                    using (var fs = new FileStream(dosya, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                    using (var sr = new StreamReader(fs))
+                        tum = sr.ReadToEnd().Split(new string[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+                    int bas = Math.Max(0, tum.Length - adet);
+                    var sb = new StringBuilder();
+                    for (int i = tum.Length - 1; i >= bas; i--) sb.AppendLine(tum[i]);
+                    string yeni = sb.ToString();
+                    if (kutu.Text != yeni) kutu.Text = yeni;
+                };
+                doldur(logFile, txtLog, 200, "");
+                doldur(HataDosyasi, txtHata, 500, "Kayitli hata yok. (" + HataDosyasi + ")");
             }
             catch { }
         }

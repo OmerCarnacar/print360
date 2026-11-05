@@ -111,6 +111,20 @@ Ok "Print360.ClientAgent.exe (v$fullVer)"
 Copy-Item "$binC\Print360.ClientAgent.exe" (Join-Path $binS "Print360.ClientAgent.exe") -Force
 Ok "Istemci ajani sunucu dagitimina eklendi (otomatik guncelleme)"
 
+# Otomatik guncelleme imzasi. Ozel anahtar YALNIZCA bu bilgisayardadir, depoya girmez.
+# Anahtarsiz yapim (CI, kaynaktan derleyenler) calisir ama otomatik guncelleme veremez.
+$imzaAnahtar = Join-Path $root "vendor\update-imza.key.xml"
+$imzaDosya = Join-Path $binS "Print360.ClientAgent.exe.sig"
+if (Test-Path $imzaDosya) { Remove-Item $imzaDosya -Force }
+if (Test-Path $imzaAnahtar) {
+    $rsa = New-Object System.Security.Cryptography.RSACryptoServiceProvider
+    $rsa.PersistKeyInCsp = $false
+    $rsa.FromXmlString([IO.File]::ReadAllText($imzaAnahtar))
+    [IO.File]::WriteAllBytes($imzaDosya, $rsa.SignData([IO.File]::ReadAllBytes("$binS\Print360.ClientAgent.exe"), "SHA256"))
+    $rsa.Dispose()
+    Ok "Istemci ajani imzalandi (otomatik guncelleme)"
+} else { Write-Host "    [UYARI] Imza anahtari yok: bu yapim otomatik guncelleme veremez" -ForegroundColor Yellow }
+
 # NATIVE YAPILANDIRICI - kurulum isini bu yapar (PowerShell GEREKMEZ)
 & $csc /nologo /target:exe /r:System.Data.dll /r:System.IO.Compression.dll `
     /r:System.IO.Compression.FileSystem.dll /r:Microsoft.CSharp.dll `

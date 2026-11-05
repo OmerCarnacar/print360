@@ -402,6 +402,85 @@ static class Ortak
             : "BAGLANTI YOLU DEGISTI: dogrudan ulasilamadi; Windows vekil sunucusu (" + vekil + ") uzerinden denenecek";
     }
 
+    // HATANIN TAM DOKUMU. Yalnizca ex.Message yazmak sebebi gizliyordu: hangi tur hata, hangi
+    // soket/Windows kodu, HTTP yaniti, ic hata zinciri ve kodun neresinde oldugu kayboluyordu.
+    // Sifre (key=...) maskelenir. Tek satirdir; ayni hata icin ayni metni uretir.
+    public const string HATA_ONEKI = "[HATA ";
+    public static string HataDetayi(Exception ex)
+    {
+        if (ex == null) return "";
+        var sb = new StringBuilder(HATA_ONEKI);
+        int derinlik = 0;
+        for (var e = ex; e != null && derinlik < 6; e = e.InnerException, derinlik++)
+        {
+            if (derinlik > 0) sb.Append(" <- IC HATA: ");
+            sb.Append(e.GetType().FullName).Append(": ").Append((e.Message ?? "").Replace("\r", " ").Replace("\n", " ").Trim());
+            var w = e as WebException;
+            if (w != null)
+            {
+                sb.Append(" (web durumu ").Append(w.Status);
+                var r = w.Response as HttpWebResponse;
+                if (r != null)
+                {
+                    try
+                    {
+                        sb.Append(", HTTP ").Append((int)r.StatusCode).Append(' ').Append(r.StatusDescription)
+                          .Append(", adres ").Append(r.ResponseUri)
+                          .Append(r.Headers["X-Print360"] != null ? ", yanit Print360'tan" : ", yanit Print360'tan DEGIL");
+                    }
+                    catch { }
+                }
+                sb.Append(')');
+            }
+            var so = e as System.Net.Sockets.SocketException;
+            if (so != null) sb.Append(" (soket hatasi ").Append(so.SocketErrorCode).Append(", kod ").Append(so.NativeErrorCode).Append(')');
+            var wn = e as System.ComponentModel.Win32Exception;
+            if (wn != null && so == null) sb.Append(" (Windows hata kodu ").Append(wn.NativeErrorCode).Append(')');
+            if (so == null && wn == null && w == null && e.HResult != 0) sb.Append(" (HRESULT 0x").Append(e.HResult.ToString("X8")).Append(')');
+        }
+        string yer = HataYeri(ex);
+        if (yer.Length > 0) sb.Append(" | YER: ").Append(yer);
+        sb.Append(']');
+        return System.Text.RegularExpressions.Regex.Replace(sb.ToString(), @"(?i)\bkey=[^&\s,)]*", "key=***");
+    }
+
+    // Kendi kodumuzdaki son cagrilar (sistem kutuphanesi kareleri atlanir).
+    static string HataYeri(Exception ex)
+    {
+        try
+        {
+            var st = new System.Diagnostics.StackTrace(ex, false);
+            var l = new List<string>();
+            foreach (var f in st.GetFrames() ?? new System.Diagnostics.StackFrame[0])
+            {
+                var m = f.GetMethod();
+                if (m == null || m.DeclaringType == null) continue;
+                string ns = m.DeclaringType.Namespace ?? "";
+                if (ns.StartsWith("System") || ns.StartsWith("Microsoft")) continue;
+                l.Add(m.DeclaringType.Name + "." + m.Name);
+                if (l.Count == 4) break;
+            }
+            return string.Join(" < ", l.ToArray());
+        }
+        catch { return ""; }
+    }
+
+    // GUNCELLEME IMZASI. Istemci indirdigi exe'yi yalnizca dogru imzayla calistirir.
+    public static bool ImzaGecerli(byte[] veri, byte[] imza, string acikAnahtarXml)
+    {
+        if (veri == null || imza == null || imza.Length == 0 || string.IsNullOrEmpty(acikAnahtarXml)) return false;
+        try
+        {
+            using (var rsa = new System.Security.Cryptography.RSACryptoServiceProvider())
+            {
+                rsa.PersistKeyInCsp = false;
+                rsa.FromXmlString(acikAnahtarXml);
+                return rsa.VerifyData(veri, "SHA256", imza);
+            }
+        }
+        catch { return false; }
+    }
+
     // Durum penceresinin yazici adina ekledigi etiketleri atar. Eskiden secili satir metni
     // etiketiyle birlikte kaydediliyordu ("Xerox   [1. SIRA - benim yazicim]"): boyle bir
     // yazici olmadigi icin sira bozuluyor, "Siradan cikar" da gercek adi silemiyordu.
@@ -675,6 +754,44 @@ class OturumDeposu
     }
 
     public int Sayi { get { lock (kilit) return oturumlar.Count; } }
+}
+
+// ------------------------------------------------------------------
+// PANEL GIRIS SINIRI. Panel internete acik olabilir ve parola tahmini sinirsizdi.
+// Bir adresten 5 hatali denemeden sonra 15 dk giris denenmez.
+// ------------------------------------------------------------------
+class GirisSiniri
+{
+    class Kayit { public int Hata; public DateTime Son; }
+    readonly Dictionary<string, Kayit> d = new Dictionary<string, Kayit>();
+    public const int EnFazla = 5;
+    public static readonly TimeSpan Sure = TimeSpan.FromMinutes(15);
+
+    public bool Engelli(string ip, DateTime simdi)
+    {
+        lock (d)
+        {
+            Kayit k;
+            if (!d.TryGetValue(ip, out k)) return false;
+            if (simdi - k.Son >= Sure) { d.Remove(ip); return false; }
+            return k.Hata >= EnFazla;
+        }
+    }
+
+    // Hatali deneme. Engel bu denemeyle basladiysa true doner (bir kez bildirilsin).
+    public bool Hatali(string ip, DateTime simdi)
+    {
+        lock (d)
+        {
+            if (d.Count > 5000) d.Clear();
+            Kayit k;
+            if (!d.TryGetValue(ip, out k) || simdi - k.Son >= Sure) { k = new Kayit(); d[ip] = k; }
+            k.Hata++; k.Son = simdi;
+            return k.Hata == EnFazla;
+        }
+    }
+
+    public void Basarili(string ip) { lock (d) d.Remove(ip); }
 }
 
 // ------------------------------------------------------------------

@@ -65,7 +65,7 @@ static partial class ClientAgent
             var s = senkron;
             if (s != null && s.IsHandleCreated) s.BeginInvoke((Action)delegate { BaglantiAraciAc(true); });
         }
-        catch (Exception ex) { Log("Baglanti araci: " + ex.Message); }
+        catch (Exception ex) { Log("Baglanti araci: " + Ortak.HataDetayi(ex)); }
     }
 
     static BaglantiFormu baglantiFormu;
@@ -78,7 +78,7 @@ static partial class ClientAgent
             baglantiFormu.Show();
             baglantiFormu.Activate();
         }
-        catch (Exception ex) { Log("Baglanti araci acilamadi: " + ex.Message); }
+        catch (Exception ex) { Log("Baglanti araci acilamadi: " + Ortak.HataDetayi(ex)); }
     }
 
     class BaglantiFormu : Form
@@ -290,7 +290,7 @@ static partial class ClientAgent
             catch (Exception ex)
             {
                 lblDurum.Text = "Kaydedilemedi: " + ex.Message;
-                Log("BAGLANTI KAYDEDILEMEDI: " + url + " | " + ex.Message);
+                Log("BAGLANTI KAYDEDILEMEDI: " + url + " | " + Ortak.HataDetayi(ex));
             }
         }
     }

@@ -217,6 +217,7 @@ static class Kurulum
             KopyalaVarsa(Path.Combine(binDir, mim, "SQLite.Interop.dll"),
                          Path.Combine(BASE, mim, "SQLite.Interop.dll"));
         KopyalaVarsa(Path.Combine(binDir, "Print360.ClientAgent.exe"), Path.Combine(BASE, "update", "Print360.ClientAgent.exe"));
+        KopyalaVarsa(Path.Combine(binDir, "Print360.ClientAgent.exe.sig"), Path.Combine(BASE, "update", "Print360.ClientAgent.exe.sig"));
         Yaz("[3/8] Bilesenler yerlestirildi.");
 
         // --- 4) db.ini ---

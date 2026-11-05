@@ -26,6 +26,11 @@ git push origin duzeltme/yazici-secimi
 Küçük düzeltmeler için doğrudan PR açabilirsiniz. Büyük değişikliklerden önce
 bir **Issue** açıp konuşalım — emeğiniz boşa gitmesin.
 
+**Otomatik güncelleme imzalıdır.** Resmî sürümlerin özel anahtarı depoda yoktur. Kendi
+sürümünüzü dağıtacaksanız kendi anahtarınızı üretip `vendor/update-imza.key.xml` olarak
+saklayın ve `GUNCELLEME_ANAHTARI` sabitini kendi açık anahtarınızla değiştirin. Anahtarsız
+derleme çalışır ama otomatik güncelleme veremez.
+
 **Fork'unuz sizindir.** İsterseniz kendi sürümünüzü geliştirip dağıtabilirsiniz;
 lisans ([GPL-3.0](LICENSE)) buna izin verir. Koşulları: dağıttığınız sürümün
 kaynak kodunu da GPL-3.0 ile sunmak ve telif bildirimlerini korumak.

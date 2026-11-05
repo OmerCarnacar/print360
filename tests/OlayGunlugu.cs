@@ -381,6 +381,45 @@ class OlayGunlugu
                 && Ortak.YaziciAdiTemizle(XR + "   (Windows varsayilani)") == XR, "etiketler yazici adindan atilir", null);
         Kontrol(Ortak.YaziciAdiTemizle(XR) == XR && Ortak.YaziciAdiTemizle("HP [Kat 2]") == "HP [Kat 2]" && Ortak.YaziciAdiTemizle("Canon (varsayilan) A4") == "Canon (varsayilan) A4",
                 "gercek yazici adina dokunulmaz (parantez ve koseli parantez dahil)", null);
+        // Guncelleme imzasi
+        using (var rsaT = new System.Security.Cryptography.RSACryptoServiceProvider(2048))
+        using (var rsaB = new System.Security.Cryptography.RSACryptoServiceProvider(2048))
+        {
+            rsaT.PersistKeyInCsp = false; rsaB.PersistKeyInCsp = false;
+            var exe = new byte[] { 1, 2, 3, 4, 5 };
+            var imz = rsaT.SignData(exe, "SHA256");
+            string acik = rsaT.ToXmlString(false);
+            Kontrol(Ortak.ImzaGecerli(exe, imz, acik), "dogru imza kabul edilir", null);
+            Kontrol(!Ortak.ImzaGecerli(new byte[] { 1, 2, 3, 4, 6 }, imz, acik), "degistirilmis dosya REDDEDILIR", null);
+            Kontrol(!Ortak.ImzaGecerli(exe, rsaB.SignData(exe, "SHA256"), acik), "baska anahtarla imzalanmis dosya REDDEDILIR", null);
+            Kontrol(!Ortak.ImzaGecerli(exe, null, acik) && !Ortak.ImzaGecerli(exe, new byte[0], acik) && !Ortak.ImzaGecerli(exe, imz, "bozuk") && !Ortak.ImzaGecerli(exe, imz, ""),
+                    "imzasiz ya da bozuk anahtar REDDEDILIR (hata firlatmaz)", null);
+        }
+
+        // Panel giris siniri
+        var gs = new GirisSiniri();
+        var t0g = new DateTime(2026, 11, 6, 10, 0, 0);
+        bool basladi = false;
+        for (int i = 0; i < GirisSiniri.EnFazla; i++) { Kontrol(!gs.Engelli("1.1.1.1", t0g), i == 0 ? "ilk denemeler engellenmez" : "deneme " + (i + 1) + " engellenmez", null); basladi = gs.Hatali("1.1.1.1", t0g); }
+        Kontrol(basladi && gs.Engelli("1.1.1.1", t0g.AddMinutes(1)), "5 hatali denemeden sonra adres engellenir", null);
+        Kontrol(!gs.Engelli("2.2.2.2", t0g), "baska adres etkilenmez", null);
+        Kontrol(!gs.Engelli("1.1.1.1", t0g.AddMinutes(16)), "15 dk sonra engel kalkar", null);
+        gs.Hatali("3.3.3.3", t0g); gs.Basarili("3.3.3.3");
+        for (int i = 0; i < 4; i++) gs.Hatali("3.3.3.3", t0g);
+        Kontrol(!gs.Engelli("3.3.3.3", t0g), "basarili giris sayaci sifirlar", null);
+
+        // Tam hata dokumu
+        Exception hx;
+        try { try { throw new System.Net.Sockets.SocketException(10061); } catch (Exception ic) { throw new WebException("Uzak sunucuya baglanilamiyor", ic, WebExceptionStatus.ConnectFailure, null); } }
+        catch (Exception e2) { hx = e2; }
+        string dok = Ortak.HataDetayi(hx);
+        Kontrol(dok.Contains("System.Net.WebException") && dok.Contains("ConnectFailure"), "dokumde hata turu ve web durumu var", dok);
+        Kontrol(dok.Contains("IC HATA") && dok.Contains("ConnectionRefused") && dok.Contains("10061"), "ic hata ve soket kodu var", dok);
+        Kontrol(dok.Contains("YER: OlayGunlugu."), "kodun neresinde oldugu var", dok);
+        Kontrol(!Ortak.HataDetayi(new Exception("istek basarisiz: /api/jobs?machine=A&key=GIZLI123 reddedildi")).Contains("GIZLI123"), "dokumde sifre maskelenir", null);
+        Kontrol(Ortak.HataDetayi(new Exception("a\r\nb")).IndexOf('\n') < 0, "dokum tek satirdir", null);
+        Kontrol(Ortak.HataDetayi(hx) == dok, "ayni hata ayni metni uretir (tekrar sayilabilir)", null);
+        Kontrol(Ortak.HataDetayi(null) == "", "bos hata sorun cikarmaz", null);
         string mk, pt;
         Kontrol(RdpAlgilama.AdresAyir("srv", out mk, out pt) && mk == "srv" && pt == "", "adres: yalnizca makine", null);
         Kontrol(RdpAlgilama.AdresAyir(" 100.64.0.50:9443 ", out mk, out pt) && mk == "100.64.0.50" && pt == "9443", "adres: makine ve port", null);

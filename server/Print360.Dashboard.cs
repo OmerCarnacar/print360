@@ -91,7 +91,7 @@ static class Dashboard
                     listener = new HttpListener();
                     listener.Prefixes.Add("http://localhost:" + Port + "/");
                     try { listener.Start(); }
-                    catch (Exception ex) { Log("Baslatilamadi: " + ex.Message); return; }
+                    catch (Exception ex) { Log("Baslatilamadi: " + Ortak.HataDetayi(ex)); return; }
                 }
             }
             Log("Dashboard basladi: http://localhost:" + Port + " | surum " + Surum.V
@@ -110,7 +110,7 @@ static class Dashboard
             {
                 HttpListenerContext ctx;
                 try { ctx = listener.GetContext(); }
-                catch (Exception ex) { Log("Dinleyici hatasi: " + ex.Message); continue; }
+                catch (Exception ex) { Log("Dinleyici hatasi: " + Ortak.HataDetayi(ex)); continue; }
 
                 // HER ISTEK AYRI IS PARCACIGINDA islenir.
                 // Eskiden istek dongunun icinde, TEK is parcaciginda islenirdi:
@@ -232,9 +232,15 @@ static class Dashboard
                         return;
                     }
                     if (ctx.Request.HttpMethod == "GET" &&
+                        ctx.Request.Url.AbsolutePath.Equals("/api/clientexe.sig", StringComparison.OrdinalIgnoreCase))
+                    {
+                        HandleClientExe(ctx, @"C:\Print360\update\Print360.ClientAgent.exe.sig");
+                        return;
+                    }
+                    if (ctx.Request.HttpMethod == "GET" &&
                         ctx.Request.Url.AbsolutePath.Equals("/api/clientexe", StringComparison.OrdinalIgnoreCase))
                     {
-                        HandleClientExe(ctx);
+                        HandleClientExe(ctx, @"C:\Print360\update\Print360.ClientAgent.exe");
                         return;
                     }
                     if (ctx.Request.HttpMethod == "GET" &&
@@ -259,7 +265,16 @@ static class Dashboard
                     ctx.Response.OutputStream.Write(body, 0, body.Length);
                     ctx.Response.Close();
         }
-        catch (Exception ex) { Log("Istek hatasi: " + ex.Message); }
+        catch (Exception ex) { Log("Istek hatasi: " + Ortak.HataDetayi(ex)); }
+    }
+
+    // Kimliksiz gelebilen POST govdeleri sinirli: sinirsiz govde bellegi doldururdu.
+    static bool GovdeAsiri(HttpListenerContext ctx, long enFazla)
+    {
+        long n = ctx.Request.ContentLength64;
+        if (n >= 0 && n <= enFazla) return false;
+        try { ctx.Response.StatusCode = 413; ctx.Response.Close(); } catch { }
+        return true;
     }
 
     // Istemciden POST ile gelen CSV satirini makine dosyasina ekle
@@ -270,6 +285,7 @@ static class Dashboard
             string machine = Q(ctx, "machine") ?? "bilinmeyen";
             bool ilkKayitP;
             if (!ClientAuth(ctx, machine, out ilkKayitP)) return;
+            if (GovdeAsiri(ctx, 256 * 1024)) return;
             foreach (char c in Path.GetInvalidFileNameChars()) machine = machine.Replace(c, '_');
             string body;
             using (var sr = new StreamReader(ctx.Request.InputStream, Encoding.UTF8))
@@ -301,7 +317,7 @@ static class Dashboard
             ctx.Response.OutputStream.Write(ok, 0, ok.Length);
             ctx.Response.Close();
         }
-        catch (Exception ex) { Log("Ingest hatasi: " + ex.Message); try { ctx.Response.Close(); } catch { } }
+        catch (Exception ex) { Log("Ingest hatasi: " + Ortak.HataDetayi(ex)); try { ctx.Response.Close(); } catch { } }
     }
 
     // ---------------- E-posta raporu ----------------
@@ -359,7 +375,7 @@ static class Dashboard
                     }
                 }
             }
-            catch (Exception ex) { Log("MailMonitor: " + ex.Message); }
+            catch (Exception ex) { Log("MailMonitor: " + Ortak.HataDetayi(ex)); }
             Thread.Sleep(30000);
         }
     }
@@ -504,7 +520,7 @@ static class Dashboard
                 Log("Eski kuyruk kayitlari uzlastirildi: " + dt.Rows.Count + " 'BEKLIYOR' kayit -> " + acik + " hala kuyrukta (teslim edilecek), "
                   + kapandi + " dosyasi artik yok (KAPANDI), " + karantina + " karantinada, " + dolan + " suresi dolmus. Kayitlar silinmedi.");
         }
-        catch (Exception ex) { Log("Eski kuyruk kayitlari uzlastirilamadi: " + ex.Message); }
+        catch (Exception ex) { Log("Eski kuyruk kayitlari uzlastirilamadi: " + Ortak.HataDetayi(ex)); }
     }
 
     // KUYRUKTA UNUTULAN ISLER. Bir is 10 dakikadir alinmadiysa kullanici
@@ -569,7 +585,7 @@ static class Dashboard
                 lock (hbLock) HbDosyayaYaz();
                 if (++uzlastirmaSayaci % 10 == 1) EskiKuyrukKayitlariniUzlastir();   // acilista + 10 dk'da bir
             }
-            catch (Exception ex) { Log("AlertMonitor: " + ex.Message); }
+            catch (Exception ex) { Log("AlertMonitor: " + Ortak.HataDetayi(ex)); }
             Thread.Sleep(60000);
         }
     }
@@ -771,11 +787,10 @@ static class Dashboard
     }
 
     // Guncel istemci ajani binary'sini dagit (C:\Print360\update\Print360.ClientAgent.exe)
-    static void HandleClientExe(HttpListenerContext ctx)
+    static void HandleClientExe(HttpListenerContext ctx, string yol)
     {
         try
         {
-            string yol = @"C:\Print360\update\Print360.ClientAgent.exe";
             if (!File.Exists(yol)) { ctx.Response.StatusCode = 404; ctx.Response.Close(); return; }
             byte[] data = File.ReadAllBytes(yol);
             ctx.Response.ContentType = "application/octet-stream";
@@ -784,7 +799,7 @@ static class Dashboard
             ctx.Response.OutputStream.Write(data, 0, data.Length);
             ctx.Response.Close();
         }
-        catch (Exception ex) { Log("ClientExe hatasi: " + ex.Message); try { ctx.Response.Close(); } catch { } }
+        catch (Exception ex) { Log("ClientExe hatasi: " + Ortak.HataDetayi(ex)); try { ctx.Response.Close(); } catch { } }
     }
 
     // Yazici saglik raporu: satirlari isle, soruna GECIS aninda uyari uret
@@ -795,6 +810,7 @@ static class Dashboard
             string machine = (Q(ctx, "machine") ?? "?").Trim();
             bool ilk;
             if (!ClientAuth(ctx, machine, out ilk)) return;
+            if (GovdeAsiri(ctx, 256 * 1024)) return;
             string body;
             using (var sr = new StreamReader(ctx.Request.InputStream, Encoding.UTF8))
                 body = sr.ReadToEnd();
@@ -836,7 +852,7 @@ static class Dashboard
             ctx.Response.OutputStream.Write(ok, 0, ok.Length);
             ctx.Response.Close();
         }
-        catch (Exception ex) { Log("PrinterHealth hatasi: " + ex.Message); try { ctx.Response.Close(); } catch { } }
+        catch (Exception ex) { Log("PrinterHealth hatasi: " + Ortak.HataDetayi(ex)); try { ctx.Response.Close(); } catch { } }
     }
 
     // Makine adini klasor adina cevir. ServerAgent.Sanitize ile AYNI olmali;
@@ -905,7 +921,7 @@ static class Dashboard
                     }
                 }
             }
-            catch (Exception ex) { Log("Dosya kuyrugu okunamadi: " + ex.Message); }
+            catch (Exception ex) { Log("Dosya kuyrugu okunamadi: " + Ortak.HataDetayi(ex)); }
 
             if (dosyaYol != null)
             {
@@ -953,7 +969,7 @@ static class Dashboard
             ctx.Response.OutputStream.Write(data, 0, data.Length);
             ctx.Response.Close();
         }
-        catch (Exception ex) { Log("JobFetch hatasi: " + ex.Message); try { ctx.Response.Close(); } catch { } }
+        catch (Exception ex) { Log("JobFetch hatasi: " + Ortak.HataDetayi(ex)); try { ctx.Response.Close(); } catch { } }
     }
 
     // Istemci isi aldigini onaylar: kuyruktan dusur, gecici dosyayi sil
@@ -1083,7 +1099,7 @@ static class Dashboard
             ctx.Response.OutputStream.Write(ok, 0, ok.Length);
             ctx.Response.Close();
         }
-        catch (Exception ex) { Log("JobDone hatasi: " + ex.Message); try { ctx.Response.Close(); } catch { } }
+        catch (Exception ex) { Log("JobDone hatasi: " + Ortak.HataDetayi(ex)); try { ctx.Response.Close(); } catch { } }
     }
 
     // AYNI ADLI IKI MAKINE. Klonlanmis Windows imajlari ayni bilgisayar adini
@@ -1226,7 +1242,7 @@ static class Dashboard
             ctx.Response.OutputStream.Write(ok, 0, ok.Length);
             ctx.Response.Close();
         }
-        catch (Exception ex) { Log("Heartbeat hatasi: " + ex.Message); try { ctx.Response.Close(); } catch { } }
+        catch (Exception ex) { Log("Heartbeat hatasi: " + Ortak.HataDetayi(ex)); try { ctx.Response.Close(); } catch { } }
     }
 
     // Kalp atisi bellegi (bkz. HandleHeartbeat). Dosya, veritabani yokken
@@ -1248,7 +1264,7 @@ static class Dashboard
             File.WriteAllText(hbFile, sb.ToString());
             hbKirli = false; hbSonYazma = DateTime.Now;
         }
-        catch (Exception ex) { Log("heartbeat.csv yazilamadi: " + ex.Message); }
+        catch (Exception ex) { Log("heartbeat.csv yazilamadi: " + Ortak.HataDetayi(ex)); }
     }
 
     static Dictionary<string, string[]> LoadHb()
@@ -1526,7 +1542,7 @@ static class Dashboard
         catch (Exception ex)
         {
             adError = ex.Message;
-            Log("AD sorgusu basarisiz: " + ex.Message);
+            Log("AD sorgusu basarisiz: " + Ortak.HataDetayi(ex));
         }
         adCache = list; adCacheTime = DateTime.Now;
         return list;
@@ -1781,11 +1797,16 @@ static class Dashboard
         ctx.Response.Close();
     }
 
+    static readonly GirisSiniri girisSiniri = new GirisSiniri();
+
     static string HandleLogin(HttpListenerContext ctx)
     {
-        bool wrong = false;
+        bool wrong = false, engel = false;
         bool kullaniciModu = AuthUsers() != null && AuthUsers().Count > 0;
-        if (ctx.Request.HttpMethod == "POST")
+        string girisIp = ctx.Request.RemoteEndPoint != null ? ctx.Request.RemoteEndPoint.Address.ToString() : "?";
+        if (ctx.Request.HttpMethod == "POST" && (GovdeAsiri(ctx, 64 * 1024))) return null;
+        if (ctx.Request.HttpMethod == "POST" && girisSiniri.Engelli(girisIp, DateTime.Now)) engel = true;
+        else if (ctx.Request.HttpMethod == "POST")
         {
             string body;
             using (var sr = new StreamReader(ctx.Request.InputStream, Encoding.UTF8))
@@ -1799,6 +1820,7 @@ static class Dashboard
             }
             if (GirisDogru(usr, pwd))
             {
+                girisSiniri.Basarili(girisIp);
                 // yeni oturum (12 saat); suresi dolanlar temizlenir
                 string token = oturumlar.Ac(TimeSpan.FromHours(12));
                 // SameSite=Strict: baska bir siteden gelen form, panelde islem yapamaz (CSRF).
@@ -1807,6 +1829,12 @@ static class Dashboard
                 return null;
             }
             wrong = true;
+            if (girisSiniri.Hatali(girisIp, DateTime.Now))
+            {
+                Log("Guvenlik: " + girisIp + " adresinden " + GirisSiniri.EnFazla + " hatali panel girisi; adres " + (int)GirisSiniri.Sure.TotalMinutes + " dk engellendi");
+                Db.Alert("Guvenlik", "Panelde tekrarlanan hatali giris: " + girisIp + " (" + (int)GirisSiniri.Sure.TotalMinutes + " dk engellendi)");
+                engel = true;
+            }
             Thread.Sleep(800); // kaba kuvvet yavaslatma
         }
         var sb = new StringBuilder();
@@ -1819,7 +1847,8 @@ static class Dashboard
         sb.Append(".err{color:#c0392b;font-size:13px;margin-bottom:10px}");
         sb.Append("</style></head><body><div class='box'>");
         sb.Append("<h1>&#128424; Print360</h1><p>Yazd&#305;rma Paneli</p>");
-        if (wrong) sb.Append("<div class='err'>Hatal&#305; giri&#351;, tekrar deneyin.</div>");
+        if (engel) sb.Append("<div class='err'>&Ccedil;ok fazla hatal&#305; deneme. 15 dakika sonra tekrar deneyin.</div>");
+        else if (wrong) sb.Append("<div class='err'>Hatal&#305; giri&#351;, tekrar deneyin.</div>");
         sb.Append("<form method='post' action='/login'>");
         if (kullaniciModu)
             sb.Append("<input type='text' name='usr' placeholder='Kullan&#305;c&#305; ad&#305;' autofocus>")
