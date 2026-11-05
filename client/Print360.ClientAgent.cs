@@ -203,34 +203,43 @@ static partial class ClientAgent
         return (not.Length > 0 ? not + " | " : "") + HataAcikla(ex);
     }
 
-    // Bagdastirici listesini okumak 250+ ms surer; her hatada okumak yoklamayi yavaslatirdi.
-    // 30 sn hatirlanir, ag degisince (bkz. AgDegisti) hemen unutulur.
+    // Bagdastirici listesini okumak 250+ ms surer ve hata yolunu yavaslatirdi. Okuma ARKA PLANDA
+    // yapilir, hata yolu hic beklemez: 30 sn'den eskiyse ya da ag degistiyse tazelenir. Ilk
+    // okuma bitene kadar ipucu verilmez (hatanin kendisi yine yazilir).
     static readonly object agKilit = new object();
     static List<string> agYerelIpler;
     static int agVpnSayisi;
     static DateTime agZamani = DateTime.MinValue;
 
-    static string VpnIpucu(string url)
+    static bool agTazeleniyor;
+
+    static void AgDurumunuTazele()
     {
         try
         {
-            lock (agKilit)
-            {
-                if (agYerelIpler == null || (DateTime.Now - agZamani).TotalSeconds >= 30)
-                {
-                    var yerel = new List<string>();
-                    foreach (var n in NetworkInterface.GetAllNetworkInterfaces())
-                        if (n.OperationalStatus == OperationalStatus.Up)
-                            foreach (var a in n.GetIPProperties().UnicastAddresses)
-                                if (a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork) yerel.Add(a.Address.ToString());
-                    agYerelIpler = yerel;
-                    agVpnSayisi = RdpAlgilama.AcikVpnler().Count;
-                    agZamani = DateTime.Now;
-                }
-                return RdpAlgilama.VpnIpucu(url, agYerelIpler, agVpnSayisi);
-            }
+            var yerel = new List<string>();
+            foreach (var n in NetworkInterface.GetAllNetworkInterfaces())
+                if (n.OperationalStatus == OperationalStatus.Up)
+                    foreach (var a in n.GetIPProperties().UnicastAddresses)
+                        if (a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork) yerel.Add(a.Address.ToString());
+            int vpn = RdpAlgilama.AcikVpnler().Count;
+            lock (agKilit) { agYerelIpler = yerel; agVpnSayisi = vpn; agZamani = DateTime.Now; }
         }
-        catch { return ""; }
+        catch { }
+        finally { lock (agKilit) agTazeleniyor = false; }
+    }
+
+    static string VpnIpucu(string url)
+    {
+        lock (agKilit)
+        {
+            if (!agTazeleniyor && (agYerelIpler == null || (DateTime.Now - agZamani).TotalSeconds >= 30))
+            {
+                agTazeleniyor = true;
+                new Thread(AgDurumunuTazele) { IsBackground = true }.Start();
+            }
+            return agYerelIpler == null ? "" : RdpAlgilama.VpnIpucu(url, agYerelIpler, agVpnSayisi);
+        }
     }
 
     static DateTime sonSurumUyarisi = DateTime.MinValue;   // "sunucu eski surumde" uyarisini kisitlar
