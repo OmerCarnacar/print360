@@ -184,7 +184,8 @@ static partial class ClientAgent
                      || (SunucuSagligi.BaglantiKapandiMi(wex.Status) && !BilinenAdres(baseUrl)))
             {
                 // Yol degismediyse (vekil yok ya da iki yol da denendi) sunucu bekleme suresine girer.
-                string b = saglik.Basarisiz(baseUrl, wex.Status.ToString());
+                string vpn = VpnIpucu(baseUrl);
+                string b = saglik.Basarisiz(baseUrl, wex.Status + (vpn.Length > 0 ? " | " + vpn : ""));
                 if (b != null) Log(b);
             }
         }
@@ -193,6 +194,44 @@ static partial class ClientAgent
 
     // Baglanti hatasini INSAN DILINE cevir: sebep + nereye bakilacagi (Ortak.BaglantiHatasiAcikla).
     static string HataAcikla(Exception ex) { return Ortak.BaglantiHatasiAcikla(ex, Environment.MachineName); }
+
+    // Ulasilamama hatasinda once VPN durumu soylenir (en olasi sebep ise).
+    static string HataAcikla(Exception ex, string url)
+    {
+        var w = ex as WebException;
+        string not = w != null && SunucuSagligi.UlasilamamaMi(w.Status) ? VpnIpucu(url) : "";
+        return (not.Length > 0 ? not + " | " : "") + HataAcikla(ex);
+    }
+
+    // Bagdastirici listesini okumak 250+ ms surer; her hatada okumak yoklamayi yavaslatirdi.
+    // 30 sn hatirlanir, ag degisince (bkz. AgDegisti) hemen unutulur.
+    static readonly object agKilit = new object();
+    static List<string> agYerelIpler;
+    static int agVpnSayisi;
+    static DateTime agZamani = DateTime.MinValue;
+
+    static string VpnIpucu(string url)
+    {
+        try
+        {
+            lock (agKilit)
+            {
+                if (agYerelIpler == null || (DateTime.Now - agZamani).TotalSeconds >= 30)
+                {
+                    var yerel = new List<string>();
+                    foreach (var n in NetworkInterface.GetAllNetworkInterfaces())
+                        if (n.OperationalStatus == OperationalStatus.Up)
+                            foreach (var a in n.GetIPProperties().UnicastAddresses)
+                                if (a.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork) yerel.Add(a.Address.ToString());
+                    agYerelIpler = yerel;
+                    agVpnSayisi = RdpAlgilama.AcikVpnler().Count;
+                    agZamani = DateTime.Now;
+                }
+                return RdpAlgilama.VpnIpucu(url, agYerelIpler, agVpnSayisi);
+            }
+        }
+        catch { return ""; }
+    }
 
     static DateTime sonSurumUyarisi = DateTime.MinValue;   // "sunucu eski surumde" uyarisini kisitlar
     static string sonTekrarEdenIs;                      // sunucunun tekrar verdigi is (dongu korumasi)
@@ -1840,6 +1879,7 @@ static partial class ClientAgent
         try
         {
             saglik.Sifirla();
+            lock (agKilit) agYerelIpler = null;
             Ortak.DogrudanBaglan = false;
             foreach (var u in SunucuAdresleri(ReadIni()))
                 try { ServicePointManager.FindServicePoint(new Uri(u)).CloseConnectionGroup(null); } catch { }
@@ -1892,7 +1932,9 @@ static partial class ClientAgent
             }
         }
         catch { }
-        string m = saglik.Basarisiz(baseUrl, "port " + new Uri(baseUrl).Port + " 2 sn icinde yanit vermedi (Print360 yok ya da guvenlik duvari)");
+        string vpnIp = VpnIpucu(baseUrl);
+        string m = saglik.Basarisiz(baseUrl, vpnIp.Length > 0 ? vpnIp
+            : "port " + new Uri(baseUrl).Port + " 2 sn icinde yanit vermedi (Print360 yok ya da guvenlik duvari)");
         if (m != null) Log(m);
         return false;
     }
@@ -2316,9 +2358,9 @@ static partial class ClientAgent
                 // Ilk hata ANINDA yazilir; ayni hata tekrar ederse sayilir; FARKLI bir
                 // hata hemen yazilir (eskiden 2 dk'lik kisitlama araya gireni yutuyordu).
                 // Sure (ms) mesaja girmez: her denemede farkli olur, tekrar sayilamazdi.
-                HataKaydet("IS ALINAMADI [" + baseUrl + "] asama: " + asama + " | gecen " + kron.ElapsedMilliseconds + " ms | " + HataAcikla(ex), ex);
+                HataKaydet("IS ALINAMADI [" + baseUrl + "] asama: " + asama + " | gecen " + kron.ElapsedMilliseconds + " ms | " + HataAcikla(ex, baseUrl), ex);
                 foreach (var satir in IsHatasi(baseUrl).Hata(string.Format("IS ALINAMADI [{0}] asama: {1} | durum: {2} | {3} | {4}",
-                             baseUrl, asama, ex.Status, HataAcikla(ex), Ortak.HataDetayi(ex))))
+                             baseUrl, asama, ex.Status, HataAcikla(ex, baseUrl), Ortak.HataDetayi(ex))))
                     Ortak.Gunluk(logFile, satir + (satir.StartsWith("IS ALINAMADI") ? " | gecen " + kron.ElapsedMilliseconds + " ms" : ""));
                 YoluDegerlendir(baseUrl, ex);
                 return false;
@@ -2422,7 +2464,7 @@ static partial class ClientAgent
                     }
                     catch (Exception ex)
                     {
-                        sonHataMesaji = HataAcikla(ex);
+                        sonHataMesaji = HataAcikla(ex, baseUrl);
                         HataKaydet("KALP ATISI BASARISIZ [" + baseUrl + "] | " + sonHataMesaji, ex);
                         YoluDegerlendir(baseUrl, ex);
                     }
@@ -2454,7 +2496,8 @@ static partial class ClientAgent
                     lastOk = false;
                     sunucuBagli = 0;
                     durumKanal = sunucular.Count + " adres denendi: " + string.Join(" , ", sunucular.ToArray());
-                    string vpnNotu = RdpAlgilama.AcikVpnler().Count > 0
+                    VpnIpucu(sunucular[0]);   // ag durumu tazelensin
+                    string vpnNotu = agVpnSayisi > 0
                         ? "VPN acik: VPN/guvenlik duvari kurali sunucunun Print360 portuna (HTTPS 8443) izin vermeli." : "";
                     if (vpnNotu.Length > 0 && (lastVpnNotu != vpnNotu)) { Log("BAGLANTI: " + vpnNotu); lastVpnNotu = vpnNotu; }
                     if (rdpAcik)
@@ -2467,7 +2510,8 @@ static partial class ClientAgent
                     else
                     {
                         durumMetin = "Sunucuya ulasilamiyor: " + sonHataMesaji;
-                        DurumBildir(false, "Print360 baglanti yok", "Sunucuya ulasilamiyor.");
+                        string agNotu = VpnIpucu(sunucular[0]);
+                        DurumBildir(false, "Print360 baglanti yok", agNotu.Length > 0 ? agNotu : "Sunucuya ulasilamiyor.");
                     }
                 }
                 first = false;

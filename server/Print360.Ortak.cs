@@ -986,6 +986,30 @@ static class RdpAlgilama
         return govde != null && System.Text.RegularExpressions.Regex.IsMatch(govde.Trim(), @"^\d+(\.\d+){2,3}$");
     }
 
+    // 100.64.0.0/10: Tailscale'in dagittigi adres araligi
+    public static bool TailscaleAdresi(string ip)
+    {
+        var p = (ip ?? "").Split('.');
+        int a, b;
+        return p.Length == 4 && int.TryParse(p[0], out a) && int.TryParse(p[1], out b) && a == 100 && b >= 64 && b <= 127;
+    }
+
+    // Sunucuya ulasilamadiginda en olasi sebep. Portu yalnizca VPN'den acik kurulumlarda VPN kapaliyken
+    // hata BEKLENEN durumdur; "sunucu kapali" demek yanlis yere baktirir. Bos: ipucu yok.
+    public static string VpnIpucu(string url, ICollection<string> yerelIpler, int acikVpnSayisi)
+    {
+        Uri u;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out u)) return "";
+        if (TailscaleAdresi(u.Host))
+        {
+            foreach (var ip in yerelIpler) if (TailscaleAdresi(ip)) return "";
+            return "TAILSCALE KAPALI: bu bilgisayar Tailscale agina bagli degil, " + u.Host + " adresine ulasilamaz. Tailscale'i acin; acilinca otomatik baglanir";
+        }
+        if (acikVpnSayisi == 0)
+            return "VPN KAPALI: bu bilgisayarda acik VPN yok. Sunucuya yalnizca VPN'den erisiliyorsa VPN'i acin; acilinca otomatik baglanir";
+        return "";
+    }
+
     // Acik VPN bagdastiricilari (tani ve kullanici iletileri icin)
     public static bool VpnMi(string tur, string ad, string aciklama)
     {

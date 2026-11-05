@@ -420,6 +420,15 @@ class OlayGunlugu
         Kontrol(Ortak.HataDetayi(new Exception("a\r\nb")).IndexOf('\n') < 0, "dokum tek satirdir", null);
         Kontrol(Ortak.HataDetayi(hx) == dok, "ayni hata ayni metni uretir (tekrar sayilabilir)", null);
         Kontrol(Ortak.HataDetayi(null) == "", "bos hata sorun cikarmaz", null);
+        // VPN kapaliyken hata mesaji sebebi soyler
+        Kontrol(RdpAlgilama.TailscaleAdresi("100.64.0.1") && RdpAlgilama.TailscaleAdresi("100.127.255.1") && !RdpAlgilama.TailscaleAdresi("100.63.0.1") && !RdpAlgilama.TailscaleAdresi("100.128.0.1") && !RdpAlgilama.TailscaleAdresi("srv"),
+                "Tailscale adres araligi taninir", null);
+        var ofis = new[] { "10.9.0.5" }; var tsAcik = new[] { "10.9.0.5", "100.64.0.7" };
+        Kontrol(RdpAlgilama.VpnIpucu("https://100.64.0.50:8443", ofis, 0).StartsWith("TAILSCALE KAPALI"), "Tailscale kapaliyken acikca soylenir", null);
+        Kontrol(RdpAlgilama.VpnIpucu("https://100.64.0.50:8443", tsAcik, 1) == "", "Tailscale aciksa sebep baska: yanlis ipucu verilmez", null);
+        Kontrol(RdpAlgilama.VpnIpucu("https://10.77.0.5:8443", ofis, 0).StartsWith("VPN KAPALI"), "VPN yokken olasi sebep soylenir", null);
+        Kontrol(RdpAlgilama.VpnIpucu("https://10.77.0.5:8443", ofis, 1) == "", "VPN aciksa VPN kapali denmez", null);
+        Kontrol(RdpAlgilama.VpnIpucu("gecersiz", ofis, 0) == "", "gecersiz adres sorun cikarmaz", null);
         string mk, pt;
         Kontrol(RdpAlgilama.AdresAyir("srv", out mk, out pt) && mk == "srv" && pt == "", "adres: yalnizca makine", null);
         Kontrol(RdpAlgilama.AdresAyir(" 100.64.0.50:9443 ", out mk, out pt) && mk == "100.64.0.50" && pt == "9443", "adres: makine ve port", null);
