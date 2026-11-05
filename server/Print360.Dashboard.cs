@@ -588,6 +588,12 @@ static class Dashboard
     static bool ClientAuth(HttpListenerContext ctx, string machine, out bool ilkKayit)
     {
         ilkKayit = false;
+        // Sunucu internete acik olabilir: kimlik dogrulamasindan ONCE gecersiz adi reddet.
+        if (!Kuyruk.MakineAdiGecerli(machine))
+        {
+            try { ctx.Response.StatusCode = 400; ctx.Response.Close(); } catch { }
+            return false;
+        }
         string key = Q(ctx, "key") ?? "";
         string onbellekAnahtari = machine + "|" + (key.Length > 0 ? Sha256Hex(key) : "");
         lock (dogrulanan)
@@ -841,11 +847,7 @@ static class Dashboard
     // Sorgu degeri UTF-8 ile (bkz. Ortak.SorguDegeri - QueryString ANSI cozer).
     static string Q(HttpListenerContext ctx, string ad) { return Ortak.SorguDegeri(ctx.Request.RawUrl, ad); }
 
-    static string Sanitize(string s)
-    {
-        foreach (char c in Path.GetInvalidFileNameChars()) s = s.Replace(c, '_');
-        return s;
-    }
+    static string Sanitize(string s) { return Kuyruk.Sanitize(s); }   // tek kural: klasor adlari uyussun
 
     // Istemci icin bekleyen isi ver (GZip'li icerik; basliklar: X-Job-Id, X-File-Name).
     // Is yoksa 204 doner. ACK gelene kadar BEKLIYOR kalir (istemci ayni dosyayi ikinci kez almaz).

@@ -145,7 +145,7 @@ static partial class ClientAgent
                 try { BaglantiAyariYaz(new Dictionary<string, string> { { "BaglantiAraci", chkSorma.Checked ? "0" : "1" } }); }
                 catch (Exception ex) { Durum("Ayar kaydedilemedi: " + ex.Message); }
             };
-            FormClosing += delegate { iptal = true; };
+            FormClosing += delegate { iptal = true; aracTariyor = false; };
             Shown += delegate { if (otomatik) TaramaBaslat(true); };
         }
 
@@ -159,7 +159,7 @@ static partial class ClientAgent
         // Otomatik acilista kayitli adres yanlis olabilir: tum hedefler taranir.
         void TaramaBaslat(bool hepsi)
         {
-            calisiyor = true; iptal = false;
+            calisiyor = true; iptal = false; aracTariyor = true;
             btnTara.Text = "Durdur";
             liste.Items.Clear();
             bar.Style = ProgressBarStyle.Marquee;
@@ -173,7 +173,7 @@ static partial class ClientAgent
                 catch (Exception ex) { Durum("Tarama hatasi: " + ex.Message); }
                 Arayuzde(delegate
                 {
-                    calisiyor = false;
+                    calisiyor = false; aracTariyor = false;
                     btnTara.Text = "Tara"; btnTara.Enabled = true;
                     bar.Style = ProgressBarStyle.Blocks; bar.Value = 0;
                     if (iptal) lblDurum.Text = "Tarama durduruldu.";

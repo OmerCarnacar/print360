@@ -798,7 +798,20 @@ static class Kuyruk
     public static string Sanitize(string s)
     {
         foreach (char c in Path.GetInvalidFileNameChars()) s = s.Replace(c, '_');
+        // ".." kuyruk klasorunun DISINI gosterirdi; CON/NUL gibi adlar Windows'ta dosya olamaz.
+        if (s.Trim('.', ' ').Length == 0) return "_";
+        string u = s.Split('.')[0].ToUpperInvariant();
+        if (u == "CON" || u == "PRN" || u == "AUX" || u == "NUL"
+            || (u.Length == 4 && (u.StartsWith("COM") || u.StartsWith("LPT")) && char.IsDigit(u[3]))) return "_" + s;
         return s;
+    }
+
+    // Istemciden gelen makine adi: bos, asiri uzun ya da denetim karakterli olamaz.
+    public static bool MakineAdiGecerli(string s)
+    {
+        if (string.IsNullOrEmpty(s) || s.Length > 64) return false;
+        foreach (char c in s) if (c < 32) return false;
+        return true;
     }
 
     // Is hala kuyrukta mi? Evetse kac dakikadir bekledigini verir.

@@ -370,6 +370,11 @@ class OlayGunlugu
                 "ayar dosyasi onarilir, diger satirlara dokunulmaz", onar == null ? "null" : string.Join(" | ", onar.ToArray()));
         Kontrol(RdpAlgilama.AyarOnar(new[] { "Server=srv:9443", "Port=9443", "Server2=x" }, rp, new List<string>()) == null, "dogru ayarlar degistirilmez", null);
         Kontrol(RdpAlgilama.AyarOnar(new[] { "Server=", "Port=" }, rp, new List<string>()) == null, "bos ayarlar degistirilmez", null);
+        Kontrol(Kuyruk.Sanitize("..") == "_" && Kuyruk.Sanitize(".") == "_" && Kuyruk.Sanitize(" . ") == "_", "'..' kuyruk klasorunun disina cikamaz", Kuyruk.Sanitize(".."));
+        Kontrol(Kuyruk.Sanitize("CON") == "_CON" && Kuyruk.Sanitize("nul.txt") == "_nul.txt" && Kuyruk.Sanitize("COM1") == "_COM1", "Windows'a ayrilmis adlar klasor olamaz", null);
+        Kontrol(Kuyruk.Sanitize("PC-01") == "PC-01" && Kuyruk.Sanitize("COMPAQ") == "COMPAQ" && Kuyruk.Sanitize("a\\b") == "a_b", "normal adlar eskisi gibi kalir", null);
+        Kontrol(Kuyruk.MakineAdiGecerli("PC-01") && !Kuyruk.MakineAdiGecerli("") && !Kuyruk.MakineAdiGecerli(new string('a', 65)) && !Kuyruk.MakineAdiGecerli("a\nb"),
+                "gecersiz makine adi reddedilir", null);
         string mk, pt;
         Kontrol(RdpAlgilama.AdresAyir("srv", out mk, out pt) && mk == "srv" && pt == "", "adres: yalnizca makine", null);
         Kontrol(RdpAlgilama.AdresAyir(" 100.64.0.50:9443 ", out mk, out pt) && mk == "100.64.0.50" && pt == "9443", "adres: makine ve port", null);

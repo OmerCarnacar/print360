@@ -116,6 +116,24 @@ static partial class ClientAgent
     // tespit edilemez - yanlis alarm degil, yalnizca kacirma olur.
     // Ham UUID sunucuya gonderilmez; yalnizca ozeti (SHA-256, 32 hane).
     static string _kurulumKimligi;
+    // SIFRESIZ ISTEMCI ACIGI: sifre kurulumda istege baglidir. Sifresiz makine sunucuya kaydolmuyor
+    // ve adini bilen herkes o makinenin isini indirebiliyordu. Sifre yoksa bu kuruluma ozel,
+    // kimlik.txt'den turetilen bir anahtar gonderilir; sunucu ilk temasta kaydeder.
+    internal static string IstemciAnahtari(Dictionary<string, string> cfg)
+    {
+        string k = cfg.ContainsKey("ClientKey") ? cfg["ClientKey"].Trim() : "";
+        if (k.Length > 0) return k;
+        string iid = KurulumKimligi();
+        string gizli = "";
+        try { gizli = File.ReadAllText(Path.Combine(baseDir, "kimlik.txt")).Trim(); } catch { }
+        if (gizli.Length == 0) return "";   // kimlik yazilamadiysa eski davranis
+        using (var sha = System.Security.Cryptography.SHA256.Create())
+        {
+            var b = sha.ComputeHash(Encoding.UTF8.GetBytes(gizli + "|print360-anahtar|" + iid));
+            return string.Concat(b.Select(x => x.ToString("x2")));
+        }
+    }
+
     static string KurulumKimligi()
     {
         if (_kurulumKimligi != null) return _kurulumKimligi;
@@ -1415,6 +1433,10 @@ static partial class ClientAgent
     // Bu makinenin kullandigi RDP portlari: 3389, acik mstsc baglantilari ve mstsc gecmisi
     // (kayit defteri: RDP kapaliyken de bilinsin). 30 sn hatirlanir, hep buyur.
     static readonly HashSet<int> rdpPortDefteri = new HashSet<int> { 3389 };
+    // Tarama icin kesin eslesme: port yalnizca O makinede RDP'dir. Port tek basina bakilsaydi,
+    // RDP'si baska bir makinede 8443'ten giden kullanicida Print360'in 8443'u de atlanirdi.
+    internal static readonly HashSet<string> rdpUclari = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    static bool RdpUcuMu(string host, int port) { lock (rdpPortDefteri) return rdpUclari.Contains(host + "|" + port); }
     static DateTime rdpPortZamani = DateTime.MinValue;
 
     internal static HashSet<int> RdpPortlari()
@@ -1429,13 +1451,14 @@ static partial class ClientAgent
                     if (k != null)
                         foreach (var ad in k.GetValueNames())
                         {
-                            int p = RdpAlgilama.MruPortu(Convert.ToString(k.GetValue(ad)));
-                            if (p > 0) rdpPortDefteri.Add(p);
+                            string mru = Convert.ToString(k.GetValue(ad)).Trim();
+                            int p = RdpAlgilama.MruPortu(mru);
+                            if (p > 0) { rdpPortDefteri.Add(p); rdpUclari.Add(mru.Substring(0, mru.LastIndexOf(':')) + "|" + p); }
                         }
                 var pidler = RdpSurecleri();
                 if (pidler.Count > 0)
                     foreach (var c in TcpTablosu())
-                        if (pidler.Contains(c.Pid)) rdpPortDefteri.Add(c.Port);
+                        if (pidler.Contains(c.Pid)) { rdpPortDefteri.Add(c.Port); rdpUclari.Add(c.Ip + "|" + c.Port); }
             }
             catch { }
             return new HashSet<int>(rdpPortDefteri);
@@ -1508,6 +1531,7 @@ static partial class ClientAgent
     // Print360.ini: SunucuArama=0 kapatir, SunucuArama=hizli tam taramayi kapatir.
     // ------------------------------------------------------------------
     static readonly ManualResetEvent aramaTetik = new ManualResetEvent(false);
+    static volatile bool aracTariyor;   // baglanti araci tararken arka plan taramasi durur
     static readonly Dictionary<string, DateTime> sonHizliTarama = new Dictionary<string, DateTime>();
     static readonly Dictionary<string, DateTime> sonTamTarama = new Dictionary<string, DateTime>();
     const int TamTaramaMakineSiniri = 16;
@@ -1530,7 +1554,7 @@ static partial class ClientAgent
         AyarlariOnar();
         var cfg = ReadIni();
         string mod = cfg.ContainsKey("SunucuArama") ? cfg["SunucuArama"].Trim().ToLowerInvariant() : "";
-        if (mod == "0") return;
+        if (mod == "0" || aracTariyor) return;
         bool bagli = sunucuBagli > 0;
 
         List<string> dogrudan, tailscale, vpnAgi;
@@ -1695,7 +1719,7 @@ static partial class ClientAgent
     // durur; yalnizca HTTP bulunursa aramayi bitirip onu doner. Bulunamazsa null.
     internal static string HostTara(string host, IEnumerable<int> portlar, Func<bool> iptal = null, Action<int> ilerleme = null)
     {
-        const int GRUP = 256, BEKLE_MS = 600;
+        const int GRUP = 256;
         IPAddress ip;
         try
         {
@@ -1713,14 +1737,15 @@ static partial class ClientAgent
             if (grup.Count == GRUP)
             {
                 if (iptal != null && iptal()) return yedek;
-                string u = GrupTara(host, ip, grup, BEKLE_MS, ref yedek);
+                string u = GrupTara(host, ip, grup, 600, ref yedek);
                 biten += grup.Count; grup.Clear();
                 if (ilerleme != null) ilerleme(biten);
                 if (u != null) return u;
             }
         }
         if (iptal != null && iptal()) return yedek;
-        if (grup.Count > 0) { string u = GrupTara(host, ip, grup, BEKLE_MS, ref yedek); if (u != null) return u; }
+        // Kisa liste (hizli tarama): VPN'de ilk paket gecikebilir, daha uzun beklenir
+        if (grup.Count > 0) { string u = GrupTara(host, ip, grup, grup.Count <= 64 ? 1500 : 600, ref yedek); if (u != null) return u; }
         return yedek;
     }
 
@@ -1741,18 +1766,28 @@ static partial class ClientAgent
         }
         finally { foreach (var kv in soketler) { try { kv.Value.Close(); } catch { } } }
 
-        foreach (var port in acik)
+        // Portlar PARALEL dogrulanir: bir porttaki yavas/sessiz servis digerlerini bekletmesin.
+        RdpPortlari();   // defter guncel olsun
+        var sonuclar = new List<string>();
+        var isler = new List<Thread>();
+        foreach (var port in acik.Take(32))
         {
-            if (RdpAlgilama.WebDisiPort(port) || RdpPortlari().Contains(port)) continue;   // RDP'ye HTTPS sorulmaz
-            foreach (var sema in new[] { "https", "http" })
+            if (RdpAlgilama.WebDisiPort(port) || RdpUcuMu(host, port)) continue;   // RDP'ye HTTPS sorulmaz
+            int pp = port;
+            var t = new Thread(delegate ()
             {
-                string u = sema + "://" + host + ":" + port;
-                if (!Print360Mi(u)) continue;
-                if (sema == "https") return u;   // sifreli yol bulundu: yeter
-                if (yedek == null) yedek = u;
-                break;
-            }
+                foreach (var sema in new[] { "https", "http" })
+                {
+                    string u = sema + "://" + host + ":" + pp;
+                    if (Print360Mi(u)) { lock (sonuclar) sonuclar.Add(u); return; }
+                }
+            }) { IsBackground = true };
+            t.Start(); isler.Add(t);
         }
+        foreach (var t in isler) t.Join();
+        string sifreli = sonuclar.FirstOrDefault(x => x.StartsWith("https:"));
+        if (sifreli != null) return sifreli;
+        if (yedek == null) yedek = sonuclar.FirstOrDefault();
         return null;
     }
 
@@ -1761,7 +1796,9 @@ static partial class ClientAgent
         try
         {
             var r = (HttpWebRequest)WebRequest.Create(u + "/api/clientversion");
-            r.Timeout = 3000; r.ReadWriteTimeout = 3000; Ortak.VekilUygula(r);
+            // Ilk HTTPS el sikismasi sertifika zinciri yuzunden 17-27 sn surebilir (bkz. BAGLANTI
+            // MALIYETI notu). Kisa sure gercek sunucuyu "Print360 degil" sayiyordu.
+            r.Timeout = 30000; r.ReadWriteTimeout = 30000; Ortak.VekilUygula(r);
             using (var y = (HttpWebResponse)r.GetResponse())
             using (var sr = new StreamReader(y.GetResponseStream()))
                 return RdpAlgilama.Print360Yaniti(y.Headers["X-Print360"], sr.ReadToEnd());
@@ -2034,7 +2071,7 @@ static partial class ClientAgent
                     if (vc) tur = 0;
                     // COKLU RDP: acik TUM sunucular yoklanir; is hangisinden
                     // gelirse gelsin alinir (tek sunucu secmek yanlis olurdu).
-                    string key = cfg.ContainsKey("ClientKey") ? cfg["ClientKey"].Trim() : "";
+                    string key = IstemciAnahtari(cfg);
                     foreach (var baseUrl in SunucuAdresleri(cfg))
                     {
                         if (!YoklanmaliMi(baseUrl)) continue;   // erisilemeyen sunucu digerlerini bekletmesin
@@ -2320,7 +2357,7 @@ static partial class ClientAgent
                 try { prn = new System.Drawing.Printing.PrinterSettings().PrinterName; } catch { }
                 string os = "";
                 try { os = Environment.OSVersion.VersionString; } catch { }
-                string key = cfg.ContainsKey("ClientKey") ? cfg["ClientKey"].Trim() : "";
+                string key = IstemciAnahtari(cfg);
 
                 var basarili = new List<string>();
                 string sonHataMesaji = "";
@@ -2503,7 +2540,7 @@ static partial class ClientAgent
         if (VcAcik(cfg)) { VcYaz("SAYAC", csvLine); return; }
         string baseUrl = BaseUrl(cfg);
         if (baseUrl == null) return;
-        string key = cfg.ContainsKey("ClientKey") ? cfg["ClientKey"].Trim() : "";
+        string key = IstemciAnahtari(cfg);
         string url = baseUrl + "/api/printed?machine=" + Uri.EscapeDataString(Environment.MachineName)
                    + "&key=" + Uri.EscapeDataString(key);
         try

@@ -1146,11 +1146,7 @@ static class ServerAgent
         return null;
     }
 
-    static string Sanitize(string s)
-    {
-        foreach (char c in Path.GetInvalidFileNameChars()) s = s.Replace(c, '_');
-        return s;
-    }
+    static string Sanitize(string s) { return Kuyruk.Sanitize(s); }   // tek kural: klasor adlari uyussun
 
     static void AppendCsv(string path, string[] fields)
     {

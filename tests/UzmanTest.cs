@@ -528,6 +528,17 @@ partial class UzmanTest
         Kontrol(!s.Contains("testkey") && !i.Contains("key=testkey"), "gunluklerde istemci sifresi GORUNMUYOR", null);
     }
 
+    static int HttpKodu(string yol, string yontem)
+    {
+        try
+        {
+            var r = (HttpWebRequest)WebRequest.Create("http://localhost:" + sunucuPort + yol);
+            r.Method = yontem; r.Proxy = null; if (yontem == "POST") r.ContentLength = 0;
+            using (var y = (HttpWebResponse)r.GetResponse()) return (int)y.StatusCode;
+        }
+        catch (WebException ex) { var y = ex.Response as HttpWebResponse; return y != null ? (int)y.StatusCode : -1; }
+    }
+
     static void SunucuTaramasi()
     {
         Console.WriteLine("--- 19. Sunucu arama: port taranir, gercek sunucu bulunur, baska servis sunucu sanilmaz");
@@ -575,6 +586,48 @@ partial class UzmanTest
         Kontrol((!ayar.ContainsKey("CertHash") || ayar["CertHash"] != "SAHTE") && (!ayar.ContainsKey("ClientKey") || ayar["ClientKey"] != "SAHTE"),
                 "baglanti.ini sertifika ve sifre ayarini ezemez", null);
         File.Delete(kayit);
+
+        // Yavas yanit veren gercek sunucu (ilk HTTPS 17-27 sn surebilir): 3 sn'de vazgecilmemeli
+        var dn = new TcpListener(IPAddress.Loopback, 0); dn.Start();
+        int yp = ((IPEndPoint)dn.LocalEndpoint).Port; dn.Stop();
+        var yavas = new HttpListener(); yavas.Prefixes.Add("http://localhost:" + yp + "/"); yavas.Start();
+        new Thread(delegate ()
+        {
+            try
+            {
+                while (yavas.IsListening)
+                {
+                    var c = yavas.GetContext();
+                    Thread.Sleep(4000);
+                    var b = Encoding.UTF8.GetBytes("2026.11.05.1000");
+                    c.Response.OutputStream.Write(b, 0, b.Length); c.Response.Close();
+                }
+            }
+            catch { }
+        }) { IsBackground = true }.Start();
+        Kontrol(ClientAgent.HostTara("localhost", new[] { yp }) == "http://localhost:" + yp, "yavas yanit veren sunucu kacirilmaz", null);
+        yavas.Close();
+
+        // RDP ucu yalnizca O makinede atlanir
+        ClientAgent.rdpUclari.Add("localhost|" + sunucuPort);
+        Kontrol(ClientAgent.HostTara("localhost", new[] { sunucuPort }) == null, "bilinen RDP ucuna HTTPS sorulmaz", null);
+        ClientAgent.rdpUclari.Clear();
+        ClientAgent.rdpUclari.Add("baska-makine|" + sunucuPort);
+        Kontrol(ClientAgent.HostTara("localhost", new[] { sunucuPort }) != null, "baska makinenin RDP portu bu makinede sunucuyu engellemez", null);
+        ClientAgent.rdpUclari.Clear();
+
+        // Sifresiz istemci acigi: kayitli makinenin isi sifresiz alinamaz
+        var bosAyar = new Dictionary<string, string>();
+        string a1 = ClientAgent.IstemciAnahtari(bosAyar), a2 = ClientAgent.IstemciAnahtari(bosAyar);
+        Kontrol(a1.Length == 64 && a1 == a2, "sifresiz kurulumda kuruluma ozel sabit anahtar uretilir", a1);
+        Kontrol(ClientAgent.IstemciAnahtari(new Dictionary<string, string> { { "ClientKey", "benim" } }) == "benim", "kurulumda girilen sifre korunur", null);
+        const string M = "SIFRESIZ-PC";
+        KuyrugaKoy("20261105_100000_001_KUL1~Gizli Belge.pdf", Pdf(5 * 1024, 77), M);
+        Kontrol(HttpKodu("/api/heartbeat?machine=" + M + "&key=" + a1, "POST") == 200, "istemci ilk temasta anahtariyla kaydoldu", null);
+        Kontrol(HttpKodu("/api/jobs?machine=" + M + "&key=", "GET") == 403, "SIFRESIZ ISTEK BASKASININ ISINI ALAMAZ (403)", null);
+        Kontrol(HttpKodu("/api/jobs?machine=" + M + "&key=yanlis", "GET") == 403, "yanlis anahtar da alamaz", null);
+        Kontrol(HttpKodu("/api/jobs?machine=" + M + "&key=" + a1, "GET") == 200, "dogru anahtarla is alinir", null);
+        Kontrol(HttpKodu("/api/jobs?machine=" + new string('a', 65) + "&key=x", "GET") == 400, "asiri uzun makine adi reddedilir", null);
         Kontrol(ClientAgent.HostTara("olmayan-makine.invalid", new[] { 8443 }) == null, "cozulemeyen ad taramayi bozmaz", null);
         yabanci.Close();
     }

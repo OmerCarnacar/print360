@@ -10,6 +10,29 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [Yayınlanmamış]
+
+### Güvenlik
+- **Şifresiz istemcilerin yazdırma işleri indirilebiliyordu:** kurulumda istemci şifresi
+  isteğe bağlıdır. Şifresiz makine sunucuya kaydolmuyor, makine adını bilen ve sunucuya
+  ulaşabilen biri onun bekleyen işini indirebiliyordu. Şifre verilmemişse istemci artık bu
+  kuruluma özel bir anahtar üretip kullanıyor; sunucu ilk temasta kaydediyor ve sonraki
+  şifresiz istekleri reddediyor. Kurulum kimliği değişirse (yeni işletim sistemi) makinenin
+  kaydı panelden sıfırlanmalıdır.
+- **Makine adı doğrulaması:** `..` kuyruk klasörünün dışını gösterebiliyordu; artık
+  zararsız bir ada çevriliyor. Boş, 64 karakterden uzun ya da denetim karakterli ad HTTP 400
+  alıyor. `CON`, `NUL` gibi Windows'a ayrılmış adlar da güvenli hale getiriliyor.
+
+### Düzeltildi
+- **Tarama gerçek sunucuyu kaçırabiliyordu:** ilk HTTPS bağlantısı 17-27 sn sürebildiği
+  halde doğrulama 3 sn'de vazgeçiyordu. Süre 30 sn oldu, açık portlar paralel doğrulanıyor;
+  hızlı taramada port yanıtı için 1,5 sn bekleniyor.
+- **RDP portu tüm makinelerde atlanıyordu:** RDP'si başka bir makinede 8443'ten giden
+  kullanıcıda Print360'ın 8443'ü de taranmıyordu. Port artık yalnızca o makinede atlanıyor.
+- Bağlantı aracı tararken arka plan taraması duruyor; aynı portlar iki kez taranmıyor.
+
+---
+
 ## [2026.11.03.0841]
 
 ### Eklendi
