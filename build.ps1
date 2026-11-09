@@ -103,7 +103,7 @@ Ok "Print360.Panel.exe (saf WPF - harici bilesen yok)"
 
 & $csc /nologo /target:winexe /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Management.dll `
     /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll `
-    /out:"$binC\Print360.ClientAgent.exe" "$root\client\Print360.ClientAgent.cs" "$root\client\Print360.Tani.cs" "$root\client\Print360.Baglanti.cs" $ortak $verCs $asmCs
+    "/resource:$root\vc\Print360.VC.dll,Print360.VC.dll" /out:"$binC\Print360.ClientAgent.exe" "$root\client\Print360.ClientAgent.cs" "$root\client\Print360.Tani.cs" "$root\client\Print360.Baglanti.cs" $ortak $verCs $asmCs
 if ($LASTEXITCODE -ne 0) { throw "ClientAgent derlemesi basarisiz." }
 Ok "Print360.ClientAgent.exe (v$fullVer)"
 

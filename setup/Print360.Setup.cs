@@ -1782,6 +1782,17 @@ static class Kurulum
             catch (Exception ex)
             {
                 sonHata = ex.Message;
+                // Yuklu DLL (acik mstsc icindeki RDP eklentisi) uzerine yazilamaz ama adi
+                // degistirilebilir: eskisi kenara alinir, yenisi yerine kopyalanir.
+                if (hedef.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) && File.Exists(hedef))
+                    try
+                    {
+                        File.Move(hedef, hedef + "." + DateTime.Now.ToString("yyyyMMddHHmmssfff") + ".old");
+                        File.Copy(kaynak, hedef, true);
+                        Yaz("  Kullanimdaki " + Path.GetFileName(hedef) + " kenara alinip yenisi yerlestirildi (acik pencereler kapaninca eskisi birakilir).");
+                        return;
+                    }
+                    catch (Exception ex2) { sonHata = ex2.Message; }
                 // Kilidi birakmasi icin bekle; surec yeniden basladiysa durdur.
                 SurecDurdur(Path.GetFileNameWithoutExtension(hedef));
                 System.Threading.Thread.Sleep(400 * deneme);

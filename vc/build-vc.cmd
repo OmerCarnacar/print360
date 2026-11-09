@@ -29,7 +29,7 @@ goto :derleManuel
 set "CL_EXE=cl.exe"
 :derleManuel
 echo Derleyici: %CL_EXE%
-"%CL_EXE%" /nologo /LD /O2 /EHsc Print360.VirtualChannel.cpp ^
+"%CL_EXE%" /nologo /LD /O2 /MT /EHsc Print360.VirtualChannel.cpp ^
    /Fe:Print360.VC.dll ^
    /link /DEF:Print360.VirtualChannel.def user32.lib kernel32.lib
 

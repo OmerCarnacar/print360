@@ -637,6 +637,7 @@ partial class UzmanTest
         // Kullanicinin kopyaladigi raporlar
         string ir = ClientAgent.HataRaporuMetni();
         Kontrol(ir.Contains("Surum") && ir.Contains(Environment.MachineName) && ir.Contains("Son hatalar"), "istemci raporu surum, makine ve son hatalari iceriyor", ir.Length.ToString());
+        Kontrol(ir.Contains("Uzak masaustu (mstsc) cokmeleri"), "istemci raporunda RDP cokme kayitlari bolumu var", null);
         Kontrol(!ir.Contains("key=testkey") && !ir.Contains("key=YANLIS"), "istemci raporunda sifre gorunmuyor", null);
         string sr;
         using (var wc = new WebClient()) { wc.Proxy = null; wc.Encoding = Encoding.UTF8; sr = wc.DownloadString("http://localhost:" + sunucuPort + "/tani/metin"); }

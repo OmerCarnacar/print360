@@ -53,6 +53,7 @@ $testler = @(
                                            "server\Print360.Version.cs", "server\Print360.VChannel.cs");
        Ref = @("System.Data.dll", "System.Windows.Forms.dll", "System.Drawing.dll", $sqlite);
        Main = "SunucuAjaniTest"; Interop = $true },
+    @{ Ad = "VcEklentisi";      Kaynak = @("tests\VcEklentisi.cs"); Ref = @(); Main = "" },
     @{ Ad = "PanelGorevi";      Kaynak = @("tests\PanelGorevi.cs", $setup);
        Ref = @("System.Data.dll", "System.Xml.dll", "System.IO.Compression.dll", "System.IO.Compression.FileSystem.dll", "Microsoft.CSharp.dll");
        Main = "PanelGoreviTest" }

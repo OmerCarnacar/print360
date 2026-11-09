@@ -305,6 +305,59 @@ static partial class ClientAgent
     //  Bu, kullanicinin Print360 ile iliskilendirmeyecegi bir arizadir.
     //  Bu yuzden ajan her aciliste kaydi dogrular ve bozuksa TEMIZLER.
     // ============================================================
+    // RDP KANAL EKLENTISINI GUNCELLE. Otomatik guncelleme yalnizca bu exe'yi degistirir; eklenti
+    // (Print360.VC.dll) eski kalirdi. Eski eklentideki bellek hatasi mstsc'yi cokertiyordu, bu
+    // yuzden duzeltilmis eklenti exe'nin ICINDE tasinir (imza onu da kapsar) ve acilista
+    // kurulu olanla karsilastirilir.
+    internal static byte[] GomuluEklenti()
+    {
+        using (var s = System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("Print360.VC.dll"))
+        {
+            if (s == null) return null;
+            var b = new byte[s.Length]; int o = 0, n;
+            while (o < b.Length && (n = s.Read(b, o, b.Length - o)) > 0) o += n;
+            return b;
+        }
+    }
+
+    static void RdpEklentisiniGuncelle()
+    {
+        try
+        {
+            string sonuc = Ortak.DllDegistir(Path.Combine(baseDir, "Print360.VC.dll"), GomuluEklenti());
+            if (sonuc == "degisti")
+                Log("RDP kanal eklentisi GUNCELLENDI (mstsc cokmesine yol acan bellek hatasi duzeltildi). "
+                  + (RdpSurecleri().Count > 0 ? "ACIK UZAK MASAUSTU PENCERELERI eski eklentiyle calisiyor: kapatip yeniden acin." : "Yeni acilan uzak masaustu pencereleri yeni eklentiyi kullanir."));
+        }
+        catch (Exception ex) { Log("RDP kanal eklentisi guncellenemedi: " + Ortak.HataDetayi(ex)); }
+    }
+
+    // Son 7 gunde uzak masaustu istemcisinin cokme kayitlari (Windows olay gunlugu).
+    internal static List<string> RdpCokmeleri()
+    {
+        var l = new List<string>();
+        try
+        {
+            using (var g = new EventLog("Application"))
+            {
+                DateTime sinir = DateTime.Now.AddDays(-7);
+                for (int i = g.Entries.Count - 1, bakilan = 0; i >= 0 && bakilan < 4000 && l.Count < 5; i--, bakilan++)
+                {
+                    EventLogEntry e;
+                    try { e = g.Entries[i]; } catch { continue; }
+                    if (e.TimeGenerated < sinir) break;
+                    if (e.EntryType != EventLogEntryType.Error || (e.Source != "Application Error" && e.Source != "Application Hang")) continue;
+                    string m = e.Message ?? "";
+                    if (m.IndexOf("mstsc", StringComparison.OrdinalIgnoreCase) < 0 && m.IndexOf("Print360", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    l.Add(e.TimeGenerated.ToString("yyyy-MM-dd HH:mm:ss") + "  " + string.Join(" | ",
+                        m.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).Take(7).Select(x => x.Trim()).ToArray()));
+                }
+            }
+        }
+        catch (Exception ex) { l.Add("(olay gunlugu okunamadi: " + ex.Message + ")"); }
+        return l;
+    }
+
     static void RdpEklentiSagligi()
     {
         string[] koklar = {
@@ -449,6 +502,7 @@ static partial class ClientAgent
             BaslangicDenetimi();
             KimlikDenetimi();
         RdpEklentiSagligi();   // bozuk kayit RDP'yi actirmaz - onar
+        RdpEklentisiniGuncelle();
             VarsayilanYaziciyiKurDefaults();   // istemcide her zaman bir varsayilan bulunsun
             new Thread(RdpIzleyici) { IsBackground = true }.Start();   // RDP acilir acilmaz algila
             sonVpnDurumu = string.Join(", ", RdpAlgilama.AcikVpnler().ToArray());

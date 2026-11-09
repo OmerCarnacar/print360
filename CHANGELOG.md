@@ -10,6 +10,36 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [Yayınlanmamış]
+
+### Düzeltildi
+- **Uzak masaüstü istemcisi (mstsc) çöküyordu:** RDP kanal eklentisi (`Print360.VC.dll`) mstsc'nin
+  içinde çalışır ve bellek hataları içeriyordu:
+  - Sunucuya yazılan verinin tamponu, yazma tamamlanmadan serbest bırakılıyordu. mstsc serbest
+    bırakılmış belleği okuyordu. Kanal modunda kalp atışı dakikada bir bu yoldan gittiği için her
+    oturumda tekrarlanıyordu.
+  - mstsc'nin verdiği giriş noktası yapısı kopyalanmıyor, göstericisi saklanıyordu; bu yapı
+    çağrı döndükten sonra geçersizdir.
+  - Aynı süreçteki birden fazla RDP bağlantısı (sekmeli RDP yöneticileri) tek bir durumu
+    paylaşıyor, birbirinin verisini bozuyordu.
+  - Bozuk bir iş başlığı bellek dışını okutabiliyordu; istisnalar mstsc'ye kaçabiliyordu.
+  Eklenti yeniden yazıldı: tamponlar yazma tamamlanana kadar yaşıyor, durum bağlantı başına
+  tutuluyor, mesaj boyutları sınırlı, istisnalar içeride kalıyor.
+- **Eklenti artık otomatik güncelleniyor:** otomatik güncelleme yalnızca istemci programını
+  değiştiriyordu, eklenti eski kalıyordu. Düzeltilmiş eklenti istemcinin içinde taşınıyor ve
+  açılışta kurulu olanın yerine geçiyor. Açık uzak masaüstü pencereleri kapatılıp yeniden
+  açılana kadar eski eklentiyle çalışır.
+- **Kurulum, kullanımdaki eklentiyi değiştiremiyordu:** uzak masaüstü açıkken eklenti dosyası
+  kilitli olduğu için eski sürümde kalıyordu. Artık eskisi kenara alınıp yenisi yerleştiriliyor.
+- **Kanaldan gelen Türkçe belge adları** diskte bozuk oluşuyordu; düzeltildi.
+
+### Eklendi
+- **Hatayı kopyala** raporuna son 7 günün uzak masaüstü çökme kayıtları ve eklenti günlüğü
+  (`logsc-eklenti.log`) eklendi.
+- `tests/VcEklentisi.cs`: eklentiyi sahte bir RDP istemcisiyle sınar (29 kontrol). 15 test dosyası.
+
+---
+
 ## [2026.11.09.1626]
 
 ### Eklendi

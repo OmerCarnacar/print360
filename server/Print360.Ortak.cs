@@ -522,6 +522,33 @@ static class Ortak
         catch { return ""; }
     }
 
+    // KULLANIMDAKI DLL'I DEGISTIR. Yuklu bir DLL'in uzerine yazilamaz ama ADI degistirilebilir:
+    // yenisi yanina yazilir, eskisi kenara alinir, yenisi yerine gecer. Eskiyi yuklemis surecler
+    // kapanana kadar eski kodla calisir. Donus: "ayni" | "degisti" | "yok" (hedef kurulu degil).
+    public static string DllDegistir(string hedef, byte[] yeni)
+    {
+        if (yeni == null || yeni.Length == 0 || !File.Exists(hedef)) return "yok";
+        byte[] eski;
+        using (var fs = new FileStream(hedef, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+        { eski = new byte[fs.Length]; int o = 0, n; while (o < eski.Length && (n = fs.Read(eski, o, eski.Length - o)) > 0) o += n; }
+        if (eski.Length == yeni.Length)
+        {
+            bool ayni = true;
+            for (int i = 0; i < eski.Length; i++) if (eski[i] != yeni[i]) { ayni = false; break; }
+            if (ayni) return "ayni";
+        }
+        // Onceki degisimlerden kalanlar (artik yuklu degilse silinir)
+        try { foreach (var f in Directory.GetFiles(Path.GetDirectoryName(hedef), Path.GetFileName(hedef) + ".*.old")) try { File.Delete(f); } catch { } } catch { }
+        string gecici = hedef + ".yeni";
+        File.WriteAllBytes(gecici, yeni);
+        string kenar = hedef + "." + DateTime.Now.ToString("yyyyMMddHHmmssfff") + ".old";
+        File.Move(hedef, kenar);
+        try { File.Move(gecici, hedef); }
+        catch { try { File.Move(kenar, hedef); } catch { } throw; }   // kayitli DLL yolu bos kalmasin
+        try { File.Delete(kenar); } catch { }   // yuklu degilse hemen gider
+        return "degisti";
+    }
+
     // GUNCELLEME IMZASI. Istemci indirdigi exe'yi yalnizca dogru imzayla calistirir.
     public static bool ImzaGecerli(byte[] veri, byte[] imza, string acikAnahtarXml)
     {

@@ -466,6 +466,21 @@ class OlayGunlugu
         Kontrol(ssat.Count == 3 && ssat[0][0] == "Print360 - FS", "yalnizca Print360 yazicilari listelenir, sirali", ssat.Count.ToString());
         Kontrol(ssat[1][1] == "GULAY" && ssat[1][2] == "Bagli" && ssat[1][3] == "PC-1", "kullanici ve aktif oturumun bilgisayari gosterilir (kopuk oturum degil)", string.Join("|", ssat[1]));
         Kontrol(ssat[0][2] == "Kopuk" && ssat[2][2] == "Oturum yok" && ssat[2][3] == "", "kopuk ve oturumsuz yazici ayirt edilir", null);
+        // Kullanimdaki DLL'in degistirilmesi (acik mstsc icindeki RDP eklentisi)
+        string dllK = Path.Combine(kok, "dll"); Directory.CreateDirectory(dllK);
+        string dllY = Path.Combine(dllK, "Eklenti.dll");
+        Kontrol(Ortak.DllDegistir(dllY, new byte[] { 1 }) == "yok" && !File.Exists(dllY), "eklenti kurulu degilse olusturulmaz", null);
+        File.WriteAllBytes(dllY, new byte[] { 1, 2, 3 });
+        Kontrol(Ortak.DllDegistir(dllY, new byte[] { 1, 2, 3 }) == "ayni", "ayni dosyaya dokunulmaz", null);
+        using (new FileStream(dllY, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete))   // yuklu DLL gibi: yazilamaz, adi degisebilir
+        {
+            bool yazilamadi = false;
+            try { File.WriteAllBytes(dllY, new byte[] { 9 }); } catch (IOException) { yazilamadi = true; }
+            string sn = Ortak.DllDegistir(dllY, new byte[] { 7, 7, 7, 7 });
+            Kontrol(yazilamadi && sn == "degisti" && File.ReadAllBytes(dllY).Length == 4, "kullanimdaki dosya uzerine yazilamazken yenisi yerine gecti", sn);
+            Kontrol(Directory.GetFiles(dllK, "Eklenti.dll.*.old").Length <= 1 && !File.Exists(dllY + ".yeni"), "gecici dosya kalmadi", null);
+        }
+        Kontrol(Ortak.DllDegistir(dllY, new byte[] { 8 }) == "degisti" && Directory.GetFiles(dllK, "*.old").Length == 0, "eski kopya serbest kalinca temizlendi", null);
         string mk, pt;
         Kontrol(RdpAlgilama.AdresAyir("srv", out mk, out pt) && mk == "srv" && pt == "", "adres: yalnizca makine", null);
         Kontrol(RdpAlgilama.AdresAyir(" 100.64.0.50:9443 ", out mk, out pt) && mk == "100.64.0.50" && pt == "9443", "adres: makine ve port", null);

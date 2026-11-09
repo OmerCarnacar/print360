@@ -95,6 +95,10 @@ static partial class ClientAgent
             }
             catch { }
         };
+        var cokme = RdpCokmeleri();
+        r.AppendLine().AppendLine("--- Uzak masaustu (mstsc) cokmeleri, son 7 gun: " + (cokme.Count == 0 ? "kayit yok" : cokme.Count + " kayit"));
+        foreach (var c in cokme) r.AppendLine(c);
+        ekle("RDP kanal eklentisi gunlugu", Path.Combine(Path.GetDirectoryName(logFile), "vc-eklenti.log"), 15);
         ekle("Son hatalar", HataDosyasi, 40);
         ekle("Son gunluk", logFile, 30);
         return System.Text.RegularExpressions.Regex.Replace(r.ToString(), @"(?i)\bkey=[^&\s,)]*", "key=***");
