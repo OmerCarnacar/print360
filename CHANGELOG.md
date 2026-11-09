@@ -10,7 +10,7 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
-## [Yayınlanmamış]
+## [2026.11.09.1626]
 
 ### Eklendi
 - **Yazıcılar sayfasında sanal yazıcılar:** sunucudaki `Print360 - <kullanıcı>` yazıcıları, kullanıcının
