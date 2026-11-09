@@ -10,7 +10,7 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
-## [Yayınlanmamış]
+## [2026.11.09.2246]
 
 ### Düzeltildi
 - **Uzak masaüstü istemcisi (mstsc) çöküyordu:** RDP kanal eklentisi (`Print360.VC.dll`) mstsc'nin
