@@ -104,6 +104,7 @@ static class Dashboard
                 try { Db.Alert("Kurulum", "Panel sunucusu: " + m); } catch { }
             }
             Db.EnsureSchema();
+            new Thread(OtomatikYaziciDongusu) { IsBackground = true }.Start();
             new Thread(AlertMonitor) { IsBackground = true }.Start();
             new Thread(MailMonitor) { IsBackground = true }.Start();
             while (true)
@@ -2487,6 +2488,49 @@ static class Dashboard
     }
 
     // Sunucudaki oturumlar: [oturumNo, kullanici, istemciAdi, durum, istasyon]
+    // RDP ile baglanan kullanicinin yazicisi yoksa olusturulur. Kurulum sihirbazi yalnizca yazilan
+    // kullanicilara yazici kurar; listede olmayan kullanicinin ciktisi hic baslamiyordu.
+    // Yazici eklemek yonetici yetkisi ister: panel SYSTEM olarak calisir, ajan calistiramaz.
+    // db.ini'de OtomatikYazici=0 kapatir.
+    static readonly Dictionary<string, DateTime> yaziciDenemeleri = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+
+    static void OtomatikYaziciDongusu()
+    {
+        Thread.Sleep(15000);
+        while (true)
+        {
+            try { OtomatikYazicilariKur(); }
+            catch (Exception ex) { Log("Otomatik yazici: " + Ortak.HataDetayi(ex)); }
+            Thread.Sleep(20000);
+        }
+    }
+
+    static void OtomatikYazicilariKur()
+    {
+        using (var kim = System.Security.Principal.WindowsIdentity.GetCurrent()) if (!kim.IsSystem) return;
+        try { if (File.ReadAllText(Db.DbIniYolu).IndexOf("OtomatikYazici=0", StringComparison.OrdinalIgnoreCase) >= 0) return; } catch { }
+        string kurulum = @"C:\Print360\Print360.Setup.exe";
+        foreach (var u in Ortak.YazicisizKullanicilar(OturumListesi(), Yazicilar().Select(y => y[0])))
+        {
+            DateTime son;
+            if (yaziciDenemeleri.TryGetValue(u, out son) && (DateTime.Now - son).TotalMinutes < 30) continue;
+            yaziciDenemeleri[u] = DateTime.Now;
+            if (!File.Exists(kurulum))
+            {
+                Log("UYARI: '" + u + "' icin Print360 yazicisi YOK ve otomatik kurulamadi: " + kurulum + " bulunamadi. Sunucu kurulumunu tekrarlayin.");
+                continue;
+            }
+            Log("'" + u + "' RDP ile bagli ama Print360 yazicisi yok: olusturuluyor...");
+            using (var p = Process.Start(new ProcessStartInfo(kurulum, "--yazici-ekle --kullanici \"" + u + "\"") { UseShellExecute = false, CreateNoWindow = true }))
+            {
+                bool bitti = p.WaitForExit(60000);
+                string sonuc = bitti && p.ExitCode == 0 ? "olusturuldu" : "OLUSTURULAMADI (ayrinti: logs\\kurulum.log)";
+                Log("Otomatik yazici 'Print360 - " + u + "': " + sonuc);
+                Db.Alert(bitti && p.ExitCode == 0 ? "Bilgi" : "Yazici", "Otomatik yazici 'Print360 - " + u + "': " + sonuc);
+            }
+        }
+    }
+
     internal static List<string[]> OturumListesi()
     {
         var l = new List<string[]>();

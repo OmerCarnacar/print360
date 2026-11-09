@@ -402,6 +402,23 @@ static class Ortak
             : "BAGLANTI YOLU DEGISTI: dogrudan ulasilamadi; Windows vekil sunucusu (" + vekil + ") uzerinden denenecek";
     }
 
+    // RDP ile bagli olup Print360 yazicisi olmayan kullanicilar. oturumlar: [id, kullanici, istemci,
+    // durum, istasyon]. Yazici yoksa cikti Print360'a hic ulasmaz ve hicbir yerde iz kalmazdi.
+    public static List<string> YazicisizKullanicilar(IEnumerable<string[]> oturumlar, IEnumerable<string> yazicilar)
+    {
+        var var_ = new HashSet<string>(yazicilar, StringComparer.OrdinalIgnoreCase);
+        var l = new List<string>();
+        foreach (var o in oturumlar)
+        {
+            if (o.Length < 5 || o[3] != "Active" || !o[4].StartsWith("RDP", StringComparison.OrdinalIgnoreCase)) continue;
+            string u = (o[1] ?? "").Trim();
+            if (u.Length == 0 || u.EndsWith("$") || u.IndexOfAny(new[] { '"', '\\', '/', ':', '*', '?', '<', '>', '|' }) >= 0) continue;
+            if (var_.Contains("Print360 - " + u) || l.Exists(x => x.Equals(u, StringComparison.OrdinalIgnoreCase))) continue;
+            l.Add(u);
+        }
+        return l;
+    }
+
     // Sunucudan gelen is dosyasi yalnizca PDF/XPS olabilir. Tur denetimi olmadan sahte bir sunucu
     // "x__PDF.exe" gonderip istemcide program calistirabilirdi (PDF modu dosyayi kabukla acar).
     public static bool IsDosyasiTuruGecerli(string ad)

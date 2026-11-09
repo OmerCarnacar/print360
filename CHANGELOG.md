@@ -18,6 +18,10 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
   PDF ve XPS işleniyor; RDP sanal kanalından gelen dosyalar da denetleniyor.
 
 ### Düzeltildi
+- **Sonradan bağlanan kullanıcının çıktısı başlamıyordu:** kurulum sanal yazıcıyı yalnızca sihirbaza
+  yazılan kullanıcılara kuruyordu. Listede olmayan kullanıcının yazıcısı olmadığı için çıktı
+  Print360'a hiç ulaşmıyordu. Panel artık RDP ile bağlı kullanıcının yazıcısını en geç yaklaşık
+  1 dakika içinde kendisi oluşturuyor. `db.ini`'de `OtomatikYazici=0` kapatır.
 - **Tailscale taraması:** kapalı ve Windows olmayan makineler artık taranmıyor.
 
 ---

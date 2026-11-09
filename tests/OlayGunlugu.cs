@@ -443,6 +443,19 @@ class OlayGunlugu
                    + "\"c\":{\"OS\":\"windows\",\"TailscaleIPs\":[\"100.64.0.4\"],\"Online\":false}}}";
         var ts2l = RdpAlgilama.TailscaleEslesleri(ts2, new[] { "100.64.0.1" });
         Kontrol(ts2l.Count == 1 && ts2l[0] == "100.64.0.2", "Linux ve kapali makine taranmaz", string.Join(",", ts2l.ToArray()));
+        // Sahadan: kurulum listesinde olmayan RDP kullanicisi
+        var oturum = new List<string[]> {
+            new[] { "2", "gulay", "PC1", "Active", "RDP-Tcp#5" },
+            new[] { "3", "ali", "PC2", "Active", "RDP-Tcp#6" },
+            new[] { "4", "GULAY", "PC3", "Active", "RDP-Tcp#7" },
+            new[] { "1", "yonetici", "", "Active", "Console" },
+            new[] { "5", "kapali", "PC4", "Disconnected", "" },
+            new[] { "6", "SRV$", "", "Active", "RDP-Tcp#8" },
+            new[] { "7", "", "", "Active", "RDP-Tcp#9" } };
+        var eksik = Ortak.YazicisizKullanicilar(oturum, new[] { "Print360 - ali", "HP" });
+        Kontrol(eksik.Count == 1 && eksik[0] == "gulay", "yalnizca yazicisi olmayan aktif RDP kullanicisi secilir, tekrar yok", string.Join(",", eksik.ToArray()));
+        Kontrol(Ortak.YazicisizKullanicilar(oturum, new[] { "PRINT360 - GULAY", "Print360 - ali" }).Count == 0, "yazici varsa dokunulmaz (buyuk/kucuk harf)", null);
+        Kontrol(Ortak.YazicisizKullanicilar(new List<string[]> { new[] { "2", "a\"b", "", "Active", "RDP-Tcp#1" } }, new string[0]).Count == 0, "komuta karisabilecek ad reddedilir", null);
         string mk, pt;
         Kontrol(RdpAlgilama.AdresAyir("srv", out mk, out pt) && mk == "srv" && pt == "", "adres: yalnizca makine", null);
         Kontrol(RdpAlgilama.AdresAyir(" 100.64.0.50:9443 ", out mk, out pt) && mk == "100.64.0.50" && pt == "9443", "adres: makine ve port", null);

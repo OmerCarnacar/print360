@@ -45,6 +45,7 @@ static class Kurulum
             string k = args[i].Substring(2);
             if (k.Equals("sunucu", StringComparison.OrdinalIgnoreCase) ||
                 k.Equals("istemci", StringComparison.OrdinalIgnoreCase) ||
+                k.Equals("yazici-ekle", StringComparison.OrdinalIgnoreCase) ||
                 k.Equals("kaldir-sunucu", StringComparison.OrdinalIgnoreCase) ||
                 k.Equals("kaldir-istemci", StringComparison.OrdinalIgnoreCase)) { mod = k.ToLowerInvariant(); continue; }
             // "--anahtar deger" veya "--anahtar=deger". Deger yoksa BOS kabul edilir
@@ -73,6 +74,7 @@ static class Kurulum
 
         try
         {
+            if (mod == "yazici-ekle") return YaziciEkle(Al(p, "kullanici")) ? 0 : 1;
             if (mod == "sunucu") SunucuKur(p);
             else if (mod == "istemci") IstemciKur(p);
             else if (mod == "kaldir-sunucu") SunucuKaldir();
@@ -216,6 +218,8 @@ static class Kurulum
         foreach (var mim in new[] { "x64", "x86" })
             KopyalaVarsa(Path.Combine(binDir, mim, "SQLite.Interop.dll"),
                          Path.Combine(BASE, mim, "SQLite.Interop.dll"));
+        // Panel, sonradan baglanan kullanicilara yazici olusturmak icin bunu calistirir
+        KopyalaVarsa(System.Reflection.Assembly.GetExecutingAssembly().Location, Path.Combine(BASE, "Print360.Setup.exe"));
         KopyalaVarsa(Path.Combine(binDir, "Print360.ClientAgent.exe"), Path.Combine(BASE, "update", "Print360.ClientAgent.exe"));
         KopyalaVarsa(Path.Combine(binDir, "Print360.ClientAgent.exe.sig"), Path.Combine(BASE, "update", "Print360.ClientAgent.exe.sig"));
         Yaz("[3/8] Bilesenler yerlestirildi.");
@@ -570,7 +574,7 @@ static class Kurulum
     // ============================================================
     internal const string KALINTI_KLASORU = "eski-surum-kalintilari";
     internal static readonly string[] SunucuIkilileri = {
-        "Print360.ServerAgent.exe", "Print360.Dashboard.exe", "Print360.Panel.exe", "System.Data.SQLite.dll" };
+        "Print360.ServerAgent.exe", "Print360.Dashboard.exe", "Print360.Panel.exe", "System.Data.SQLite.dll", "Print360.Setup.exe" };
     internal static readonly string[] IstemciIkilileri = { "Print360.ClientAgent.exe", "Print360.VC.dll" };
     // Iki rolun da tuttugu, kurulumda silinmeyen dosyalar
     internal static readonly string[] OrtakKorunan = { "SumatraPDF.exe", "Print360.ico" };
@@ -1317,6 +1321,23 @@ static class Kurulum
     }
 
     // Sanal yaziciyi olustur: cikti dogrudan spool dosyasina yazilir (dialog acilmaz)
+    // Panelin (SYSTEM) cagirdigi tek is: bir kullaniciya yazici. Mod kurulumdaki secimden gelir.
+    static bool YaziciEkle(string kullanici)
+    {
+        string u = (kullanici ?? "").Trim();
+        if (u.Length == 0 || u.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) { Yaz("HATA: gecersiz kullanici: " + u); return false; }
+        string mod = "dogrudan";
+        try
+        {
+            foreach (var l in File.ReadAllLines(Path.Combine(BASE, "db.ini")))
+                if (l.StartsWith("VarsayilanYaziciModu=", StringComparison.OrdinalIgnoreCase)) mod = l.Substring(21).Trim().ToLowerInvariant();
+        }
+        catch { }
+        string ek = mod == "sec" ? ".sec.pdf" : mod == "pdf" ? ".pdfview.pdf" : ".pdf";
+        Directory.CreateDirectory(Path.Combine(BASE, "spool"));
+        return YaziciOlustur("Print360 - " + u, Path.Combine(BASE, "spool", u + ek));
+    }
+
     static bool YaziciOlustur(string ad, string port)
     {
         try
