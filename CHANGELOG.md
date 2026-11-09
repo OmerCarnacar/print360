@@ -10,6 +10,15 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [Yayınlanmamış]
+
+### Eklendi
+- **Hata tek tıkla kopyalanıyor:** istemci penceresinin üstünde ve tepsi menüsünde **Hatayı kopyala**
+  var; sürüm, durum, adresler, VPN ve son hataları panoya alır. Sunucu panelinin **Tanı** sayfasında
+  **Sorun raporunu kopyala** düğmesi var. Kullanıcının dosya bulması veya komut çalıştırması gerekmiyor.
+
+---
+
 ## [2026.11.09.1552]
 
 ### Güvenlik

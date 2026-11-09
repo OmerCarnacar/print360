@@ -68,6 +68,46 @@ static partial class ClientAgent
         catch (Exception ex) { Log("Baglanti araci: " + Ortak.HataDetayi(ex)); }
     }
 
+    // KULLANICININ TEK TIKLA KOPYALADIGI RAPOR: hata ekranda okunur, destege yapistirilir.
+    // Kullanicinin hangi dosyaya bakacagini bilmesi gerekmez. Sifre maskelidir.
+    internal static string HataRaporuMetni()
+    {
+        var r = new System.Text.StringBuilder();
+        r.AppendLine("=== Print360 hata raporu - " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " ===");
+        r.AppendLine("Surum      : " + Surum.Etiket);
+        r.AppendLine("Bilgisayar : " + Environment.MachineName + "   Kullanici: " + Environment.UserName);
+        r.AppendLine("Durum      : " + durumMetin);
+        r.AppendLine("Kanal      : " + durumKanal);
+        try { r.AppendLine("RDP        : " + string.Join(", ", RdpSunucularBul().ToArray())); } catch { }
+        try { r.AppendLine("VPN        : " + string.Join(", ", RdpAlgilama.AcikVpnler().ToArray())); } catch { }
+        try { r.AppendLine("Adresler   : " + string.Join(", ", SunucuAdresleri(ReadIni()).ToArray())); } catch { }
+        Action<string, string, int> ekle = (baslik, dosya, adet) =>
+        {
+            try
+            {
+                if (!File.Exists(dosya)) return;
+                string[] tum;
+                using (var fs = new FileStream(dosya, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (var sr = new StreamReader(fs))
+                    tum = sr.ReadToEnd().Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+                r.AppendLine().AppendLine("--- " + baslik);
+                foreach (var s in tum.Skip(Math.Max(0, tum.Length - adet))) r.AppendLine(s);
+            }
+            catch { }
+        };
+        ekle("Son hatalar", HataDosyasi, 40);
+        ekle("Son gunluk", logFile, 30);
+        return System.Text.RegularExpressions.Regex.Replace(r.ToString(), @"(?i)\bkey=[^&\s,)]*", "key=***");
+    }
+
+    static void HataRaporunuKopyala(Action<bool> sonuc)
+    {
+        bool ok = false;
+        try { System.Windows.Forms.Clipboard.SetText(HataRaporuMetni()); ok = true; }
+        catch (Exception ex) { Log("Hata raporu kopyalanamadi: " + Ortak.HataDetayi(ex)); }
+        if (sonuc != null) sonuc(ok);
+    }
+
     static BaglantiFormu baglantiFormu;
 
     static void BaglantiAraciAc(bool otomatik)

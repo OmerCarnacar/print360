@@ -1633,6 +1633,7 @@ static class Dashboard
         {
             case "/tani": return Page("tani", PageTani());
             case "/tani/paket": return SunucuTaniPaketiGonder(ctx);
+            case "/tani/metin": return SunucuTaniMetniGonder(ctx);
             case "/tani/hata-ayiklama":
             {
                 // Yalnizca POST: bir baglantiya tiklamak (GET) modu degistiremesin.
@@ -2638,6 +2639,9 @@ static class Dashboard
         // DESTEK ARACLARI
         bool haAcik = Ortak.HataAyiklamaAcik();
         string dugme = "background:#1f3a5f;color:#fff;border:0;border-radius:6px;padding:7px 16px;font-size:13px;cursor:pointer;margin-right:8px;text-decoration:none;display:inline-block";
+        // Rapor yavas olabilir: yalniz dugmeye basilinca uretilir. Kopyala, http'de de calisir.
+        sb.Append("<div style='margin:10px 0'><button type='button' id='rk' style='").Append(dugme).Append("' onclick=\"(function(b){b.disabled=true;b.textContent='Hazirlaniyor...';fetch('/tani/metin').then(function(r){return r.text()}).then(function(t){var a=document.getElementById('rm');a.style.display='block';a.value=t;a.focus();a.select();var ok=false;try{ok=document.execCommand('copy')}catch(e){}b.disabled=false;b.textContent=ok?'Kopyalandi - sohbete yapistirin':'Asagidaki metni secip kopyalayin'}).catch(function(){b.disabled=false;b.textContent='Rapor alinamadi, tekrar deneyin'})})(this)\">&#128203; Sorun raporunu kopyala</button>")
+          .Append("<textarea id='rm' readonly style='display:none;width:100%;height:220px;margin-top:10px;font:12px Consolas,monospace'></textarea></div>");
         sb.Append("<div style='margin:10px 0 18px'>")
           .Append("<a href='/tani/paket' style='").Append(dugme).Append("'>&#128230; Sunucu tan&#305; paketini indir</a>")
           .Append("<form method='post' action='/tani/hata-ayiklama' style='display:inline'>")
@@ -3362,6 +3366,39 @@ static class Dashboard
     // SUNUCU TANI PAKETI: gunlukler, kurulum kayitlari ve sunucu durumu tek zip.
     // Belge icerikleri (spool/queue/archive PDF'leri) ve parolalar DAHIL DEGIL.
     // ------------------------------------------------------------------
+    // Panelde tek tikla kopyalanan rapor: rapor + ajan ve panel gunluklerinin sonu.
+    internal static string SunucuTaniMetni()
+    {
+        var r = new StringBuilder(SunucuTaniRaporu());
+        try
+        {
+            var dosyalar = Directory.GetFiles(Path.GetDirectoryName(logFile), "server-*.log")
+                                    .OrderByDescending(File.GetLastWriteTime).Take(3).ToList();
+            dosyalar.Add(logFile);
+            foreach (var f in dosyalar)
+            {
+                string[] satir;
+                using (var fs = new FileStream(f, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (var sr = new StreamReader(fs))
+                    satir = sr.ReadToEnd().Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+                r.AppendLine().AppendLine("==== SON GUNLUK: " + Path.GetFileName(f) + " ====");
+                foreach (var s in satir.Skip(Math.Max(0, satir.Length - 30))) r.AppendLine(s);
+            }
+        }
+        catch (Exception ex) { r.AppendLine("(gunlukler okunamadi: " + Ortak.HataDetayi(ex) + ")"); }
+        return System.Text.RegularExpressions.Regex.Replace(r.ToString(), @"(?i)\bkey=[^&\s,)]*", "key=***");
+    }
+
+    static string SunucuTaniMetniGonder(HttpListenerContext ctx)
+    {
+        byte[] b = Encoding.UTF8.GetBytes(SunucuTaniMetni());
+        ctx.Response.ContentType = "text/plain; charset=utf-8";
+        ctx.Response.ContentLength64 = b.Length;
+        ctx.Response.OutputStream.Write(b, 0, b.Length);
+        ctx.Response.Close();
+        return null;
+    }
+
     static string SunucuTaniPaketiGonder(HttpListenerContext ctx)
     {
         byte[] zip = SunucuTaniPaketi();

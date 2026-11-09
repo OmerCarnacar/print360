@@ -2891,6 +2891,7 @@ static partial class ClientAgent
         var menu = new System.Windows.Forms.ContextMenuStrip();
         menu.Items.Add("Durum penceresi", null, delegate { PencereAc(); });
         menu.Items.Add("Sunucu baglantisi (tara / elle gir)...", null, delegate { BaglantiAraciAc(false); });
+        menu.Items.Add("Hatayi kopyala (destek icin)", null, delegate { HataRaporunuKopyala(null); });
         menu.Items.Add("Yazdirma klasoru", null, delegate {
             try { Process.Start("explorer.exe", jobsDir); } catch { } });
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
@@ -3056,7 +3057,7 @@ static partial class ClientAgent
             // --- Ust durum paneli (gradyan) ---
             ustPanel = new System.Windows.Forms.Panel();
             ustPanel.Dock = System.Windows.Forms.DockStyle.Top;
-            ustPanel.Height = 88;
+            ustPanel.Height = 112;
             ustPanel.Paint += delegate (object s, System.Windows.Forms.PaintEventArgs e)
             {
                 // BAGLI = yesil, baglanti yok = kirmizi: durum bir bakista anlasilsin
@@ -3073,10 +3074,24 @@ static partial class ClientAgent
             lblDurum.BackColor = System.Drawing.Color.Transparent;
             lblKanal = new System.Windows.Forms.Label();
             lblKanal.ForeColor = System.Drawing.Color.FromArgb(225, 235, 255);
-            lblKanal.SetBounds(18, 46, 740, 34);
+            lblKanal.SetBounds(18, 44, 610, 62);
             lblKanal.BackColor = System.Drawing.Color.Transparent;
             ustPanel.Controls.Add(lblDurum);
             ustPanel.Controls.Add(lblKanal);
+            var btnKopya = new System.Windows.Forms.Button();
+            btnKopya.Text = "Hatayi kopyala"; btnKopya.SetBounds(640, 46, 124, 30);
+            btnKopya.BackColor = System.Drawing.Color.White; btnKopya.UseVisualStyleBackColor = false;
+            btnKopya.Click += delegate
+            {
+                HataRaporunuKopyala(ok =>
+                {
+                    btnKopya.Text = ok ? "Kopyalandi" : "Kopyalanamadi";
+                    var t = new System.Windows.Forms.Timer { Interval = 2500 };
+                    t.Tick += delegate { t.Dispose(); btnKopya.Text = "Hatayi kopyala"; };
+                    t.Start();
+                });
+            };
+            ustPanel.Controls.Add(btnKopya);
 
             // --- Sekmeler ---
             var tab = new System.Windows.Forms.TabControl();

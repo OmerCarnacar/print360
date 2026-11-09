@@ -634,6 +634,17 @@ partial class UzmanTest
         catch (WebException ex) { var y = ex.Response as HttpWebResponse; buyukKod = y != null ? (int)y.StatusCode : 413; }
         Kontrol(buyukKod == 413, "2 MB govde reddedilir (413)", buyukKod.ToString());
 
+        // Kullanicinin kopyaladigi raporlar
+        string ir = ClientAgent.HataRaporuMetni();
+        Kontrol(ir.Contains("Surum") && ir.Contains(Environment.MachineName) && ir.Contains("Son hatalar"), "istemci raporu surum, makine ve son hatalari iceriyor", ir.Length.ToString());
+        Kontrol(!ir.Contains("key=testkey") && !ir.Contains("key=YANLIS"), "istemci raporunda sifre gorunmuyor", null);
+        string sr;
+        using (var wc = new WebClient()) { wc.Proxy = null; wc.Encoding = Encoding.UTF8; sr = wc.DownloadString("http://localhost:" + sunucuPort + "/tani/metin"); }
+        Kontrol(sr.Contains("SURUMLER") && sr.Contains("SON GUNLUK"), "sunucu raporu panelden metin olarak alinir", sr.Length.ToString());
+        string tp;
+        using (var wc = new WebClient()) { wc.Proxy = null; wc.Encoding = Encoding.UTF8; tp = wc.DownloadString("http://localhost:" + sunucuPort + "/tani"); }
+        Kontrol(tp.Contains("/tani/metin") && tp.Contains("Sorun raporunu kopyala"), "tani sayfasinda kopyala dugmesi var", null);
+
         // Sifresiz istemci acigi: kayitli makinenin isi sifresiz alinamaz
         var bosAyar = new Dictionary<string, string>();
         string a1 = ClientAgent.IstemciAnahtari(bosAyar), a2 = ClientAgent.IstemciAnahtari(bosAyar);
