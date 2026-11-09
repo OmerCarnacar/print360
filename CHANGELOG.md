@@ -10,6 +10,14 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [Yayınlanmamış]
+
+### Eklendi
+- **Yazıcılar sayfasında sanal yazıcılar:** sunucudaki `Print360 - <kullanıcı>` yazıcıları, kullanıcının
+  oturum durumu ve bağlı olduğu bilgisayarla birlikte ayrı bir tabloda gösteriliyor.
+
+---
+
 ## [2026.11.09.1608]
 
 ### Eklendi

@@ -645,6 +645,10 @@ partial class UzmanTest
         using (var wc = new WebClient()) { wc.Proxy = null; wc.Encoding = Encoding.UTF8; tp = wc.DownloadString("http://localhost:" + sunucuPort + "/tani"); }
         Kontrol(tp.Contains("/tani/metin") && tp.Contains("Sorun raporunu kopyala"), "tani sayfasinda kopyala dugmesi var", null);
 
+        string yzs;
+        using (var wc = new WebClient()) { wc.Proxy = null; wc.Encoding = Encoding.UTF8; yzs = wc.DownloadString("http://localhost:" + sunucuPort + "/yazicilar"); }
+        Kontrol(yzs.Contains("Sanal Yaz") && yzs.Contains("Ba&#287;l&#305; Bilgisayar"), "yazicilar sayfasinda sanal yazici bolumu var", null);
+
         // Sifresiz istemci acigi: kayitli makinenin isi sifresiz alinamaz
         var bosAyar = new Dictionary<string, string>();
         string a1 = ClientAgent.IstemciAnahtari(bosAyar), a2 = ClientAgent.IstemciAnahtari(bosAyar);

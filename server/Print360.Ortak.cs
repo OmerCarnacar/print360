@@ -402,6 +402,30 @@ static class Ortak
             : "BAGLANTI YOLU DEGISTI: dogrudan ulasilamadi; Windows vekil sunucusu (" + vekil + ") uzerinden denenecek";
     }
 
+    // Panel icin sanal yazici satirlari: [yazici, kullanici, oturum durumu, bagli bilgisayar, port].
+    // yazicilar: [ad, port, surucu]; oturumlar: [id, kullanici, istemci, durum, istasyon].
+    public static List<string[]> SanalYaziciSatirlari(IEnumerable<string[]> yazicilar, IEnumerable<string[]> oturumlar)
+    {
+        var liste = oturumlar.ToList();
+        var l = new List<string[]>();
+        foreach (var y in yazicilar)
+        {
+            if (y.Length == 0 || !y[0].StartsWith("Print360", StringComparison.OrdinalIgnoreCase)) continue;
+            int t = y[0].LastIndexOf(" - ", StringComparison.Ordinal);
+            string u = t >= 0 ? y[0].Substring(t + 3).Trim() : "";
+            string[] o = null;
+            foreach (var x in liste)
+            {
+                if (x.Length < 5 || !string.Equals(x[1], u, StringComparison.OrdinalIgnoreCase)) continue;
+                if (o == null || (x[3] == "Active" && o[3] != "Active")) o = x;
+            }
+            string durum = o == null ? "Oturum yok" : o[3] == "Active" ? "Bagli" : o[3] == "Disconnected" ? "Kopuk" : o[3];
+            l.Add(new[] { y[0], u, durum, o == null ? "" : o[2], y.Length > 1 ? y[1] : "" });
+        }
+        l.Sort((a, b) => string.Compare(a[0], b[0], StringComparison.OrdinalIgnoreCase));
+        return l;
+    }
+
     // RDP ile bagli olup Print360 yazicisi olmayan kullanicilar. oturumlar: [id, kullanici, istemci,
     // durum, istasyon]. Yazici yoksa cikti Print360'a hic ulasmaz ve hicbir yerde iz kalmazdi.
     public static List<string> YazicisizKullanicilar(IEnumerable<string[]> oturumlar, IEnumerable<string> yazicilar)

@@ -2087,6 +2087,20 @@ static class Dashboard
         }
         if (toplam == 0) sb.Append("<tr><td colspan='7' class='mut'>Hen&uuml;z yaz&#305;c&#305; raporu gelmedi. &#304;stemci ajanlar&#305;n&#305;n g&uuml;ncel s&uuml;r&uuml;mde ve sunucu adresinin tan&#305;ml&#305; oldu&#287;undan emin olun.</td></tr>");
         sb.Append("</table>");
+
+        // Sunucudaki sanal yazicilar: kullanici bunlara yazdirir, cikti istemcinin gercek yazicisindan cikar
+        var sanal = Ortak.SanalYaziciSatirlari(Yazicilar(), OturumListesi());
+        sb.Append("<h2 style='margin-top:26px'>Sunucudaki Sanal Yaz&#305;c&#305;lar</h2>")
+          .Append("<div class='info'>Kullan&#305;c&#305; RDP oturumunda bu yaz&#305;c&#305;ya yazd&#305;r&#305;r; &ccedil;&#305;kt&#305; ba&#287;l&#305; bilgisayar&#305;n yukar&#305;daki ger&ccedil;ek yaz&#305;c&#305;s&#305;ndan &ccedil;&#305;kar.</div>")
+          .Append("<table><tr><th>Sanal Yaz&#305;c&#305;</th><th>Kullan&#305;c&#305;</th><th>Oturum</th><th>Ba&#287;l&#305; Bilgisayar</th><th>Ba&#287;lant&#305; Noktas&#305;</th></tr>");
+        foreach (var v in sanal)
+            sb.Append("<tr><td>").Append(H(v[0]))
+              .Append("</td><td>").Append(H(v[1]))
+              .Append("</td><td class='").Append(v[2] == "Bagli" ? "ok" : "mut").Append("'>").Append(H(v[2]))
+              .Append("</td><td>").Append(v[3].Length > 0 ? H(v[3]) : "&mdash;")
+              .Append("</td><td class='mut'>").Append(H(v[4])).Append("</td></tr>");
+        if (sanal.Count == 0) sb.Append("<tr><td colspan='5' class='mut'>Bu sunucuda Print360 sanal yaz&#305;c&#305;s&#305; yok. RDP ile ba&#287;lanan kullan&#305;c&#305;lara otomatik olu&#351;turulur.</td></tr>");
+        sb.Append("</table>");
         return sb.ToString();
     }
 

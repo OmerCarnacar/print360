@@ -456,6 +456,16 @@ class OlayGunlugu
         Kontrol(eksik.Count == 1 && eksik[0] == "gulay", "yalnizca yazicisi olmayan aktif RDP kullanicisi secilir, tekrar yok", string.Join(",", eksik.ToArray()));
         Kontrol(Ortak.YazicisizKullanicilar(oturum, new[] { "PRINT360 - GULAY", "Print360 - ali" }).Count == 0, "yazici varsa dokunulmaz (buyuk/kucuk harf)", null);
         Kontrol(Ortak.YazicisizKullanicilar(new List<string[]> { new[] { "2", "a\"b", "", "Active", "RDP-Tcp#1" } }, new string[0]).Count == 0, "komuta karisabilecek ad reddedilir", null);
+        // Panelde sanal yazicilar
+        var ssat = Ortak.SanalYaziciSatirlari(new List<string[]> {
+                new[] { "Print360 - GULAY", "C:\\Print360\\spool\\GULAY.pdf", "x" }, new[] { "HP LaserJet", "USB", "y" },
+                new[] { "Print360 - FS", "C:\\Print360\\spool\\FS.pdf", "x" }, new[] { "Print360 - YOK", "p", "x" } },
+            new List<string[]> {
+                new[] { "2", "gulay", "PC-ESKI", "Disconnected", "" }, new[] { "4", "GULAY", "PC-1", "Active", "RDP-Tcp#0" },
+                new[] { "3", "FS", "PC-2", "Disconnected", "" } });
+        Kontrol(ssat.Count == 3 && ssat[0][0] == "Print360 - FS", "yalnizca Print360 yazicilari listelenir, sirali", ssat.Count.ToString());
+        Kontrol(ssat[1][1] == "GULAY" && ssat[1][2] == "Bagli" && ssat[1][3] == "PC-1", "kullanici ve aktif oturumun bilgisayari gosterilir (kopuk oturum degil)", string.Join("|", ssat[1]));
+        Kontrol(ssat[0][2] == "Kopuk" && ssat[2][2] == "Oturum yok" && ssat[2][3] == "", "kopuk ve oturumsuz yazici ayirt edilir", null);
         string mk, pt;
         Kontrol(RdpAlgilama.AdresAyir("srv", out mk, out pt) && mk == "srv" && pt == "", "adres: yalnizca makine", null);
         Kontrol(RdpAlgilama.AdresAyir(" 100.64.0.50:9443 ", out mk, out pt) && mk == "100.64.0.50" && pt == "9443", "adres: makine ve port", null);
