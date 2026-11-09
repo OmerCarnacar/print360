@@ -10,6 +10,18 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [Yayınlanmamış]
+
+### Güvenlik
+- **Sunucudan gelen dosyanın türü denetlenmiyordu:** PDF modunda istemci dosyayı kabukla
+  açıyor. Sahte bir sunucu `x__PDF.exe` gönderip istemcide program çalıştırabilirdi. Artık yalnızca
+  PDF ve XPS işleniyor; RDP sanal kanalından gelen dosyalar da denetleniyor.
+
+### Düzeltildi
+- **Tailscale taraması:** kapalı ve Windows olmayan makineler artık taranmıyor.
+
+---
+
 ## [2026.11.05.1653]
 
 ### Düzeltildi

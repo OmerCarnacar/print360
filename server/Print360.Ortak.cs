@@ -402,6 +402,22 @@ static class Ortak
             : "BAGLANTI YOLU DEGISTI: dogrudan ulasilamadi; Windows vekil sunucusu (" + vekil + ") uzerinden denenecek";
     }
 
+    // Sunucudan gelen is dosyasi yalnizca PDF/XPS olabilir. Tur denetimi olmadan sahte bir sunucu
+    // "x__PDF.exe" gonderip istemcide program calistirabilirdi (PDF modu dosyayi kabukla acar).
+    public static bool IsDosyasiTuruGecerli(string ad)
+    {
+        string u = (Path.GetExtension(ad ?? "") ?? "").ToLowerInvariant();
+        return u == ".pdf" || u == ".xps";
+    }
+
+    public static string IsDosyaAdiGuvenli(string ad)
+    {
+        string s = ad ?? "";
+        foreach (char c in Path.GetInvalidFileNameChars()) s = s.Replace(c, '_');
+        if (s.Trim('.', ' ').Length == 0) s = "is";
+        return IsDosyasiTuruGecerli(s) ? s : s + ".pdf";
+    }
+
     // HATANIN TAM DOKUMU. Yalnizca ex.Message yazmak sebebi gizliyordu: hangi tur hata, hangi
     // soket/Windows kodu, HTTP yaniti, ic hata zinciri ve kodun neresinde oldugu kayboluyordu.
     // Sifre (key=...) maskelenir. Tek satirdir; ayni hata icin ayni metni uretir.
@@ -830,9 +846,33 @@ static class RdpAlgilama
                      json, "\"TailscaleIPs\"\\s*:\\s*\\[\\s*\"(\\d+\\.\\d+\\.\\d+\\.\\d+)\""))
         {
             string ip = m.Groups[1].Value;
-            if (!kendi.Contains(ip) && !l.Contains(ip)) l.Add(ip);
+            if (kendi.Contains(ip) || l.Contains(ip)) continue;
+            // Print360 sunucusu Windows'tur; kapali ya da Windows olmayan makine bosuna taranmaz.
+            string nesne = KapsayanNesne(json, m.Index);
+            if (System.Text.RegularExpressions.Regex.IsMatch(nesne, "\"Online\"\\s*:\\s*false")) continue;
+            var os = System.Text.RegularExpressions.Regex.Match(nesne, "\"OS\"\\s*:\\s*\"([^\"]*)\"");
+            if (os.Success && os.Groups[1].Value.Length > 0 && !os.Groups[1].Value.Equals("windows", StringComparison.OrdinalIgnoreCase)) continue;
+            l.Add(ip);
         }
         return l;
+    }
+
+    // Verilen konumu iceren en yakin { ... } JSON nesnesi
+    static string KapsayanNesne(string json, int konum)
+    {
+        int d = 0, bas = 0, son = json.Length;
+        for (int i = konum; i >= 0; i--)
+        {
+            if (json[i] == '}') d++;
+            else if (json[i] == '{') { if (d == 0) { bas = i; break; } d--; }
+        }
+        d = 0;
+        for (int i = konum; i < json.Length; i++)
+        {
+            if (json[i] == '{') d++;
+            else if (json[i] == '}') { if (d == 0) { son = i + 1; break; } d--; }
+        }
+        return json.Substring(bas, son - bas);
     }
 
     // VPN bagdastiricisinin bulundugu /24 (kendi adresi haric). Noktadan noktaya

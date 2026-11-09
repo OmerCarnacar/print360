@@ -429,6 +429,20 @@ class OlayGunlugu
         Kontrol(RdpAlgilama.VpnIpucu("https://10.77.0.5:8443", ofis, 0).StartsWith("VPN KAPALI"), "VPN yokken olasi sebep soylenir", null);
         Kontrol(RdpAlgilama.VpnIpucu("https://10.77.0.5:8443", ofis, 1) == "", "VPN aciksa VPN kapali denmez", null);
         Kontrol(RdpAlgilama.VpnIpucu("gecersiz", ofis, 0) == "", "gecersiz adres sorun cikarmaz", null);
+        // Sahte sunucudan gelen dosya adlari
+        Kontrol(Ortak.IsDosyasiTuruGecerli("a.pdf") && Ortak.IsDosyasiTuruGecerli("a.XPS") && !Ortak.IsDosyasiTuruGecerli("a__PDF.exe") && !Ortak.IsDosyasiTuruGecerli("a.bat") && !Ortak.IsDosyasiTuruGecerli("a"),
+                "yalnizca PDF/XPS is sayilir", null);
+        Kontrol(Ortak.IsDosyaAdiGuvenli("x__PDF.exe") == "x__PDF.exe.pdf", "exe uzantisi calistirilamaz hale gelir", Ortak.IsDosyaAdiGuvenli("x__PDF.exe"));
+        Kontrol(Ortak.IsDosyaAdiGuvenli("..\\..\\Baslangic\\x.pdf") == ".._.._Baslangic_x.pdf" && Ortak.IsDosyaAdiGuvenli("..") == "is.pdf", "yol kacisi olmaz", Ortak.IsDosyaAdiGuvenli("..\\..\\Baslangic\\x.pdf"));
+        Kontrol(Ortak.IsDosyaAdiGuvenli("20261105_ayse~Rapor.pdf") == "20261105_ayse~Rapor.pdf", "normal is adi degismez", null);
+
+        // Tailscale listesinden yalnizca acik Windows makineler taranir
+        string ts2 = "{\"Self\":{\"OS\":\"windows\",\"TailscaleIPs\":[\"100.64.0.1\"],\"Online\":true},\"Peer\":{"
+                   + "\"a\":{\"OS\":\"windows\",\"TailscaleIPs\":[\"100.64.0.2\"],\"Online\":true,\"Tags\":{\"x\":1}},"
+                   + "\"b\":{\"OS\":\"linux\",\"TailscaleIPs\":[\"100.64.0.3\"],\"Online\":true},"
+                   + "\"c\":{\"OS\":\"windows\",\"TailscaleIPs\":[\"100.64.0.4\"],\"Online\":false}}}";
+        var ts2l = RdpAlgilama.TailscaleEslesleri(ts2, new[] { "100.64.0.1" });
+        Kontrol(ts2l.Count == 1 && ts2l[0] == "100.64.0.2", "Linux ve kapali makine taranmaz", string.Join(",", ts2l.ToArray()));
         string mk, pt;
         Kontrol(RdpAlgilama.AdresAyir("srv", out mk, out pt) && mk == "srv" && pt == "", "adres: yalnizca makine", null);
         Kontrol(RdpAlgilama.AdresAyir(" 100.64.0.50:9443 ", out mk, out pt) && mk == "100.64.0.50" && pt == "9443", "adres: makine ve port", null);

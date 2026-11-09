@@ -804,6 +804,13 @@ static partial class ClientAgent
         var cfg = ReadIni();
         string fname = Path.GetFileName(file);
 
+        // RDP sanal kanalindan da dosya gelir: tur burada da denetlenir, program calistirilmaz
+        if (!Ortak.IsDosyasiTuruGecerli(fname))
+        {
+            Basarisiz(file, fname, "-", "desteklenmeyen dosya turu (yalnizca PDF/XPS yazdirilir)");
+            return;
+        }
+
         // Is turu: __PDF -> goruntule/kaydet, __SEC -> yazici sec
         string isTuru = IsAdi.Tur(fname);   // yalnizca '~' oncesi: belge adi ture karismasin
         if (isTuru == "PDF")
@@ -2235,7 +2242,7 @@ static partial class ClientAgent
                 string fnameB64 = resp.Headers["X-File-Name-B64"];
                 string fname = (fnameB64 != null) ? Ortak.B64Coz(fnameB64) : null;
                 if (fname == null) fname = Ortak.YuzdeCoz(resp.Headers["X-File-Name"] ?? (id + ".pdf"));
-                foreach (char c in Path.GetInvalidFileNameChars()) fname = fname.Replace(c, '_');
+                fname = Ortak.IsDosyaAdiGuvenli(fname);   // yol, ayrilmis ad ve tur denetimi
                 string hedef = Path.Combine(jobsDir, fname);
                 bool zatenVar = File.Exists(hedef) || File.Exists(Path.Combine(doneDir, fname));
                 if (!zatenVar)
