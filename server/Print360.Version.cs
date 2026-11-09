@@ -1,9 +1,9 @@
 ﻿// build.ps1 tarafindan otomatik uretildi - elle duzenlemeyin.
 static class Surum
 {
-    public const string V = "2026.11.05.1653";              // karsilastirma icin (otomatik guncelleme)
-    public const string Yapim = "05.11 16:53";        // gun.ay saat:dk
-    public const string YapimTam = "05.11.2026 16:53:33";       // tam tarih
+    public const string V = "2026.11.09.1552";              // karsilastirma icin (otomatik guncelleme)
+    public const string Yapim = "09.11 15:52";        // gun.ay saat:dk
+    public const string YapimTam = "09.11.2026 15:52:26";       // tam tarih
     // Ekranlarda gosterilecek tam etiket
-    public const string Etiket = "2026.11.05.1653 (05.11 16:53)";
+    public const string Etiket = "2026.11.09.1552 (09.11 15:52)";
 }

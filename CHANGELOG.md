@@ -10,7 +10,7 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
-## [Yayınlanmamış]
+## [2026.11.09.1552]
 
 ### Güvenlik
 - **Sunucudan gelen dosyanın türü denetlenmiyordu:** PDF modunda istemci dosyayı kabukla
