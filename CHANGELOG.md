@@ -10,7 +10,7 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
-## [Yayınlanmamış]
+## [2026.11.10.1342]
 
 ### Değişti
 - **RDP kanalı varsayılan olarak kapalı; işler HTTPS kuyruğundan gider.** Kanal, işi onaysız ve
