@@ -421,9 +421,20 @@ static void BirKezHazirla()
     // bosaltilmis koda dusmesin.
     HMODULE m;
     GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN, (LPCSTR)&BirKezHazirla, &m);
+}
+
+// VARSAYILAN: ETKISIZ. Bu DLL uzak masaustu istemcisinin icinde calisir; oradaki her hata
+// RDP'yi etkiler. Kanal yalnizca <kok>\\vc-etkin.txt dosyasi varsa (bilincli secim) acilir.
+// Dosya yoksa giris noktasi hicbir sey kaydetmeden doner: is parcacigi, dosya ve kanal YOK.
+static bool Etkin()
+{
     char kok[200];
     DWORD n = GetEnvironmentVariableA("PRINT360_VC_KOK", kok, sizeof(kok));
-    if (n > 0 && n < sizeof(kok)) { g_kok = kok; g_jobsDir = g_kok + "\\jobs"; }
+    std::string k = (n > 0 && n < sizeof(kok)) ? std::string(kok) : std::string("C:\\Print360");
+    if (GetFileAttributesA((k + "\\vc-etkin.txt").c_str()) == INVALID_FILE_ATTRIBUTES) return false;
+    Kilit kl;
+    g_kok = k; g_jobsDir = k + "\\jobs";
+    return true;
 }
 
 // mstsc.exe DLL'i yukleyince cagirdigi giris noktasi (SVC).
@@ -432,6 +443,7 @@ extern "C" BOOL VCAPITYPE VirtualChannelEntry(PCHANNEL_ENTRY_POINTS pEntryPoints
     try
     {
         if (pEntryPoints == NULL || pEntryPoints->pVirtualChannelInit == NULL) return FALSE;
+        if (!Etkin()) return FALSE;            // varsayilan: eklenti hicbir sey yapmaz
         Baglanti* b = new Baglanti();
         b->ep = *pEntryPoints;                 // KOPYA: gosterici donusten sonra gecersiz
         { Kilit k; BirKezHazirla(); g_bag.push_back(b); }

@@ -190,7 +190,7 @@ static class Kurulum
         string binDir = Al(p, "bin", Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bin"));
         string httpPort = Al(p, "httpport", "8360");
         string httpsPort = Al(p, "httpsport", "8443");
-        bool vc = Al(p, "vc", "1") != "0";
+        bool vc = Al(p, "vc", "0") == "1";   // RDP kanali varsayilan KAPALI (bkz. IstemciKur)
         string yaziciModu = Al(p, "yazicimodu", "dogrudan").ToLowerInvariant();
         bool sqlKur = Al(p, "sql", "0") == "1";
 
@@ -382,6 +382,26 @@ static class Kurulum
             //   x64 DLL -> SOFTWARE\Microsoft\...            (64-bit gorunum)
             //   x86 DLL -> SOFTWARE\WOW6432Node\Microsoft\... (32-bit gorunum)
             bool kayitAtla = false;
+            // RDP KANALI VARSAYILAN OLARAK KAPALI: eklenti mstsc'ye KAYDEDILMEZ, eski kayit silinir.
+            // Kanal isi onaysiz tasiyordu ve eklenti uzak masaustu istemcisinin icinde calisiyordu.
+            // Acmak icin: Print360.Setup.exe --istemci --vc 1 (sunucuda da --vc 1 gerekir).
+            string etkinDosya = Path.Combine(BASE, "vc-etkin.txt");
+            if (Al(p, "vc", "0") != "1")
+            {
+                try { File.Delete(etkinDosya); } catch { }
+                try { File.Delete(Path.Combine(BASE, "vc-outbox", ".vc-aktif")); } catch { }
+                foreach (var gorunum in new[] { Microsoft.Win32.RegistryView.Registry64, Microsoft.Win32.RegistryView.Registry32 })
+                    try
+                    {
+                        using (var hk = Microsoft.Win32.RegistryKey.OpenBaseKey(Microsoft.Win32.RegistryHive.LocalMachine, gorunum))
+                        using (var k = hk.OpenSubKey(@"SOFTWARE\Microsoft\Terminal Server Client\Default\AddIns", true))
+                            if (k != null) k.DeleteSubKeyTree("Print360", false);
+                    }
+                    catch (Exception ex) { Yaz("  RDP eklenti kaydi silinemedi: " + ex.Message); }
+                Yaz("[3/5] RDP kanal eklentisi KAYDEDILMEDI (varsayilan); isler HTTPS ile tasinir. Uzak masaustu istemcisine hicbir sey yuklenmez.");
+                kayitAtla = true;
+            }
+            else File.WriteAllText(etkinDosya, "RDP kanali bu dosya varken etkindir. Kapatmak icin silin.");
             bool altmisDort = PeX64(vcDll);
             string dogruKok = EklentiKoku(altmisDort);
             string yanlisKok = EklentiKoku(!altmisDort);
@@ -583,7 +603,7 @@ static class Kurulum
         "Print360.ini", "db.ini", "mail.ini", "panel.pwd", "cert-thumbprint.txt", "rules.csv",
         "print360.db", "print360.db-journal", "print360.db-wal", "print360.db-shm",
         "kimlik.txt", "makine-adi.txt", "SumatraPDF-settings.txt",
-        "kurulum-sunucu.txt", "kurulum-istemci.txt", "hata-ayiklama.txt", "baglanti.ini" };
+        "kurulum-sunucu.txt", "kurulum-istemci.txt", "hata-ayiklama.txt", "baglanti.ini", "vc-etkin.txt" };
     internal static readonly string[] BilinenKlasorler = {
         "logs", "stats", "archive", "queue", "queue-suresi-dolan", "spool", "update",
         "jobs", "done", "failed", "vc-outbox", "sumatrapdfcache", "x64", "x86", KALINTI_KLASORU };

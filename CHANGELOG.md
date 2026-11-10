@@ -10,6 +10,23 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [Yayınlanmamış]
+
+### Değişti
+- **RDP kanalı varsayılan olarak kapalı; işler HTTPS kuyruğundan gider.** Kanal, işi onaysız ve
+  yedeksiz taşıyan tek yoldu: sunucu "gönderdim" sayıyor, istemciye ulaşmayan iş kayboluyordu.
+  Eklentisi de uzak masaüstü istemcisinin (mstsc) içinde çalışıyordu; oradaki bir hata RDP'yi
+  çökertir. HTTPS kuyruğu onaylı ve kalıcıdır, VPN/Tailscale üzerinden de çalışır.
+  - İstemci kurulumu eklentiyi artık mstsc'ye **kaydetmiyor**, eski kaydı siliyor.
+  - Eklentinin kendisi varsayılan olarak **etkisiz**: izin dosyası (`vc-etkin.txt`) yoksa hiçbir
+    şey kaydetmeden döner. Otomatik güncellenen istemcilerde (kayıt silinemese de) eklenti
+    böylece devre dışı kalır.
+  - İstemci, eski eklentiden kalan kanal işaretini siler; işaret kalınca HTTPS seyrek yoklanıyordu.
+  - Sunucu kurulumunda seçenek "deneysel" ve varsayılan kapalı.
+  - Açmak isteyen: sunucu sihirbazındaki seçenek + istemcide `Print360.Setup.exe --istemci --vc 1`.
+
+---
+
 ## [2026.11.09.2246]
 
 ### Düzeltildi

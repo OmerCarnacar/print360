@@ -158,6 +158,17 @@ class VcEklentisiTest
         if (giris == IntPtr.Zero) { Console.WriteLine("Sonuc: " + gecti + "/" + toplam); return 1; }
         var entry = (EntryFn)Marshal.GetDelegateForFunctionPointer(giris, typeof(EntryFn));
 
+        Console.WriteLine("--- 0. Varsayilan: eklenti ETKISIZ (uzak masaustu istemcisinde hicbir sey yapmaz)");
+        IntPtr ep0 = Marshal.AllocHGlobal(40);
+        YapiYaz(ep0, dInit, dOpen, dClose, dWrite);
+        sonrakiInit = new IntPtr(0x500);
+        int surecOnce = System.Diagnostics.Process.GetCurrentProcess().Threads.Count;
+        bool etkisiz = entry(ep0) == 0;
+        Thread.Sleep(1500);
+        Kontrol(etkisiz && initOlay.Count == 0, "izin dosyasi yokken kanal KAYDEDILMEDI", "init cagrisi: " + initOlay.Count);
+        Kontrol(!Directory.Exists(outbox) && !Directory.Exists(jobs) && !Directory.Exists(Path.Combine(kok, "logs")), "hicbir klasor / dosya olusturulmadi");
+        File.WriteAllText(Path.Combine(kok, "vc-etkin.txt"), "test");
+
         Console.WriteLine("--- 1. Giris noktasi yapisi donusten sonra gecersizdir");
         IntPtr ep = Marshal.AllocHGlobal(40);
         YapiYaz(ep, dInit, dOpen, dClose, dWrite);

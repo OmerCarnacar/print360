@@ -393,7 +393,26 @@ static partial class ClientAgent
         string m = cfg.ContainsKey("VCMode") ? cfg["VCMode"].Trim().ToLowerInvariant() : "auto";
         if (m == "0") return false;
         if (m == "1") return true;          // zorla (tanilama icin)
-        return VcKanalCalisiyor();          // auto
+        return VcEtkin() && VcKanalCalisiyor();          // auto
+    }
+
+    // RDP KANALI VARSAYILAN OLARAK KAPALI. Kanal, isi ONAYSIZ ve YEDEKSIZ tasiyan tek yoldu
+    // (sunucu "gonderdim" sayiyor, istemciye ulasmayan is kayboluyordu) ve eklentisi uzak
+    // masaustu istemcisinin icinde calisiyordu. HTTPS kuyrugu onayli ve kaliciidir; VPN
+    // uzerinden de calisir. Kanal yalnizca vc-etkin.txt varsa (kurulumda --vc 1) kullanilir.
+    static bool VcEtkin() { return File.Exists(Path.Combine(baseDir, "vc-etkin.txt")); }
+
+    // Kanal kapaliyken eski eklentiden kalan isaret ve mesajlari temizle: isaret kalirsa
+    // istemci kanali acik sanip HTTPS'i seyrek yoklardi.
+    static void VcKalintisiniTemizle()
+    {
+        if (VcEtkin()) return;
+        try
+        {
+            string isaret = Path.Combine(vcOutbox, ".vc-aktif");
+            if (File.Exists(isaret)) { File.Delete(isaret); Log("RDP kanali kapali: eski kanal isareti silindi, isler HTTPS ile alinacak."); }
+        }
+        catch { }
     }
 
     // Kanal gercekten ayakta mi? (isaret dosyasi + outbox tikanmamis)
@@ -503,6 +522,7 @@ static partial class ClientAgent
             KimlikDenetimi();
         RdpEklentiSagligi();   // bozuk kayit RDP'yi actirmaz - onar
         RdpEklentisiniGuncelle();
+        VcKalintisiniTemizle();
             VarsayilanYaziciyiKurDefaults();   // istemcide her zaman bir varsayilan bulunsun
             new Thread(RdpIzleyici) { IsBackground = true }.Start();   // RDP acilir acilmaz algila
             sonVpnDurumu = string.Join(", ", RdpAlgilama.AcikVpnler().ToArray());
@@ -2203,6 +2223,7 @@ static partial class ClientAgent
                 // VC modu: is normalde dogrudan RDP kanalindan (Print360.VC.dll -> jobs)
                 // gelir; kuyruk yoklamasi gereksizdir. Yine de yukaridaki sebeple
                 // periyodik bir guvenlik yoklamasi yapilir.
+                if (tur % 20 == 0) VcKalintisiniTemizle();   // eski eklenti acik bir pencerede isareti yeniden birakabilir
                 bool vc = VcAcik(cfg);
                 if (!vc || tur % VC_GUVENLIK_AGI == 0)
                 {

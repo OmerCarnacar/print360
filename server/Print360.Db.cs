@@ -23,7 +23,7 @@ static class Db
     // Kanal 1. tercihtir: is RDP tunelinden gider, IP/port/HTTPS/firewall gerekmez.
     // Istemcide eklenti yoksa kanal acilmaz, sistem OTOMATIK HTTPS kuyruguna duser.
     // db.ini'de VirtualChannel=0 ile tamamen kapatilabilir.
-    public static bool VChannelAcik = true;
+    public static bool VChannelAcik = false;   // varsayilan KAPALI; db.ini VirtualChannel=1 acar
     // RDP oturumunda hangi Print360 yazicisi VARSAYILAN olsun (db.ini VarsayilanYazici=):
     //   dogrudan (varsayilan) = "Print360 - <user>"      -> istemcinin VARSAYILAN yazicisina sessiz baski
     //   sec                   = "Print360 Yazici Sec.."  -> yazici secim penceresi acilir

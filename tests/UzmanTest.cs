@@ -634,6 +634,18 @@ partial class UzmanTest
         catch (WebException ex) { var y = ex.Response as HttpWebResponse; buyukKod = y != null ? (int)y.StatusCode : 413; }
         Kontrol(buyukKod == 413, "2 MB govde reddedilir (413)", buyukKod.ToString());
 
+        // RDP kanali varsayilan olarak kapali: eski isaret dosyasi istemciyi kanal moduna sokamaz
+        string vcO = Path.Combine(Path.GetDirectoryName(iIni), "vc-outbox"); Directory.CreateDirectory(vcO);
+        File.WriteAllText(Path.Combine(vcO, ".vc-aktif"), "1");
+        var vcAcik = typeof(ClientAgent).GetMethod("VcAcik", OZEL);
+        var bosCfg = new Dictionary<string, string>();
+        Kontrol(!(bool)vcAcik.Invoke(null, new object[] { bosCfg }), "eski kanal isareti varken de istemci HTTPS kullanir (kanal varsayilan kapali)", null);
+        typeof(ClientAgent).GetMethod("VcKalintisiniTemizle", OZEL).Invoke(null, null);
+        Kontrol(!File.Exists(Path.Combine(vcO, ".vc-aktif")), "eski kanal isareti temizlendi", null);
+        File.WriteAllText(Path.Combine(Path.GetDirectoryName(iIni), "vc-etkin.txt"), "x"); File.WriteAllText(Path.Combine(vcO, ".vc-aktif"), "1");
+        Kontrol((bool)vcAcik.Invoke(null, new object[] { bosCfg }), "bilincli acilinca kanal kullanilir", null);
+        File.Delete(Path.Combine(Path.GetDirectoryName(iIni), "vc-etkin.txt")); File.Delete(Path.Combine(vcO, ".vc-aktif"));
+
         // Kullanicinin kopyaladigi raporlar
         string ir = ClientAgent.HataRaporuMetni();
         Kontrol(ir.Contains("Surum") && ir.Contains(Environment.MachineName) && ir.Contains("Son hatalar"), "istemci raporu surum, makine ve son hatalari iceriyor", ir.Length.ToString());
