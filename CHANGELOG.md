@@ -10,7 +10,7 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
-## [Yayınlanmamış]
+## [2026.11.13.0834]
 
 ### Düzeltildi
 - **Arka arkaya yazdırılan işler birbirinin çıktısını siliyordu:** sanal yazıcının portu
