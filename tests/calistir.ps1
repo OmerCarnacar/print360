@@ -50,9 +50,10 @@ $testler = @(
                "System.Windows.Forms.dll", "System.Drawing.dll", "System.Management.dll", $sqlite);
        Main = "PerformansTest"; Interop = $true },
     @{ Ad = "SunucuAjani";      Kaynak = @("tests\SunucuAjani.cs", "server\Print360.ServerAgent.cs", $db, $ortak, "server\Print360.License.cs",
-                                           "server\Print360.Version.cs", "server\Print360.VChannel.cs");
+                                           "server\Print360.Version.cs", "server\Print360.VChannel.cs", "server\Print360.SpoolKapisi.cs");
        Ref = @("System.Data.dll", "System.Windows.Forms.dll", "System.Drawing.dll", $sqlite);
        Main = "SunucuAjaniTest"; Interop = $true },
+    @{ Ad = "SpoolKapisi";      Kaynak = @("tests\SpoolKapisi.cs", "server\Print360.SpoolKapisi.cs"); Ref = @("System.Drawing.dll", "System.Management.dll"); Main = "" },
     @{ Ad = "VcEklentisi";      Kaynak = @("tests\VcEklentisi.cs"); Ref = @(); Main = "" },
     @{ Ad = "PanelGorevi";      Kaynak = @("tests\PanelGorevi.cs", $setup);
        Ref = @("System.Data.dll", "System.Xml.dll", "System.IO.Compression.dll", "System.IO.Compression.FileSystem.dll", "Microsoft.CSharp.dll");

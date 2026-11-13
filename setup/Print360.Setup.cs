@@ -1301,6 +1301,7 @@ static class Kurulum
 
     const int SERVER_ACCESS_ADMINISTER = 0x00000001;
     const uint PRINTER_ATTRIBUTE_LOCAL = 0x00000040;
+    const uint PRINTER_ATTRIBUTE_QUEUED = 0x00000001;
     const int ERROR_PRINTER_ALREADY_EXISTS = 1802;
     const int ERROR_ALREADY_EXISTS = 183;
 
@@ -1380,7 +1381,9 @@ static class Kurulum
                 pServerName = null,
                 pDevMode = IntPtr.Zero,
                 pSecurityDescriptor = IntPtr.Zero,
-                Attributes = PRINTER_ATTRIBUTE_LOCAL
+                // QUEUED: is ancak tamamen biriktirilince yaziciya gecer. Spool kapisinin (ajan)
+                // arka arkaya gelen isi bekletmesi icin zaman kazandirir.
+                Attributes = PRINTER_ATTRIBUTE_LOCAL | PRINTER_ATTRIBUTE_QUEUED
             };
             IntPtr h = AddPrinter(null, 2, ref pi);
             if (h != IntPtr.Zero) { ClosePrinter(h); Yaz("  Yazici olusturuldu: " + ad); return true; }

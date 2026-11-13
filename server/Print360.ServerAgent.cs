@@ -97,6 +97,7 @@ static class ServerAgent
             Log(sorun == 0 ? "Baslangic denetimi: klasorler yazilabilir, disk alani yeterli."
                            : "Baslangic denetimi: " + sorun + " sorun (yukarida).");
             VarsayilanYaziciAyarla(); // RDP oturumunda varsayilan = Print360 (dogrudan lokal PC'ye)
+            SpoolKapilariniKur();     // arka arkaya isler birbirinin ciktisini silmesin
             // VC modu: istemciden gelen onay/sayac/heartbeat'i RDP kanalindan oku
             // (ayni "P360" kanali cift yonlu). Bayrak kapaliysa hicbir sey degismez.
             if (Db.VChannelAcik)
@@ -117,7 +118,7 @@ static class ServerAgent
                     // Istemci adini tazele: ajan RDP oturumu tam kurulmadan baslamis
                     // olabilir VEYA ayni oturuma baska makineden baglanilmis olabilir.
                     IstemciAdiTazele();
-                    if (++tick % 30 == 0) { PullClientStats(); CheckConnection(); VarsayilanYaziciAyarla(); } // ~60 sn'de bir
+                    if (++tick % 30 == 0) { PullClientStats(); CheckConnection(); VarsayilanYaziciAyarla(); SpoolKapilariniKur(); } // ~60 sn'de bir
                     if (tick % 1800 == 0) PurgeArchive(); // saatte bir: 90 gunden eski arsivi sil
                 }
                 catch (Exception ex) { Log("HATA: " + Ortak.HataDetayi(ex)); }
@@ -530,6 +531,29 @@ static class ServerAgent
             }
         }
         catch (Exception ex) { Log("Varsayilan yazici: " + Ortak.HataDetayi(ex)); }
+    }
+
+    // Her sanal yazici icin bir spool kapisi (bkz. Print360.SpoolKapisi.cs). Yazici sonradan
+    // olusturulabildigi icin (panel otomatik kurar) dakikada bir yeniden bakilir.
+    static readonly Dictionary<string, SpoolKapisi> kapilar = new Dictionary<string, SpoolKapisi>(StringComparer.OrdinalIgnoreCase);
+    static void SpoolKapilariniKur()
+    {
+        try
+        {
+            foreach (var t in jobTypes)
+            {
+                string sp = SpoolPath(t);
+                foreach (var y in SpoolKapisi.PortaBagliYazicilar(sp))
+                {
+                    if (kapilar.ContainsKey(y)) continue;
+                    var k = new SpoolKapisi(y, sp, Log, Ayr);
+                    kapilar[y] = k;
+                    k.Baslat();
+                    Ayr("Spool kapisi baslatildi: '" + y + "' -> " + sp);
+                }
+            }
+        }
+        catch (Exception ex) { Log("Spool kapisi kurulamadi: " + Ortak.HataDetayi(ex)); }
     }
 
     static string SpoolPath(string type)

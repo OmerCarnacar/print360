@@ -57,7 +57,7 @@ jobs:
           & $csc /nologo /target:winexe /r:System.Data.dll /r:System.Windows.Forms.dll `
                  /r:System.Drawing.dll /r:"$sq" /out:out\Print360.ServerAgent.exe `
                  server\Print360.ServerAgent.cs server\Print360.Db.cs server\Print360.Ortak.cs server\Print360.License.cs `
-                 server\Print360.AssemblyInfo.cs server\Print360.Version.cs server\Print360.VChannel.cs
+                 server\Print360.AssemblyInfo.cs server\Print360.Version.cs server\Print360.VChannel.cs server\Print360.SpoolKapisi.cs
           if ($LASTEXITCODE -ne 0) { throw "ServerAgent derlenemedi" }
 
       - name: Web paneli

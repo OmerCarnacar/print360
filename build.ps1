@@ -82,7 +82,7 @@ Adim "1/3  Bilesenler derleniyor"
 New-Item -ItemType Directory -Force $binS, $binC | Out-Null
 
 & $csc /nologo /target:winexe /r:System.Data.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:"$sqliteRef" `
-    /out:"$binS\Print360.ServerAgent.exe" "$root\server\Print360.ServerAgent.cs" $db $ortak $lic $asmCs $verCs "$root\server\Print360.VChannel.cs"
+    /out:"$binS\Print360.ServerAgent.exe" "$root\server\Print360.ServerAgent.cs" $db $ortak $lic $asmCs $verCs "$root\server\Print360.VChannel.cs" "$root\server\Print360.SpoolKapisi.cs"
 if ($LASTEXITCODE -ne 0) { throw "ServerAgent derlemesi basarisiz." }
 Ok "Print360.ServerAgent.exe"
 

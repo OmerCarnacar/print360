@@ -10,6 +10,24 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [Yayınlanmamış]
+
+### Düzeltildi
+- **Arka arkaya yazdırılan işler birbirinin çıktısını siliyordu:** sanal yazıcının portu
+  kullanıcı başına tek dosyadır ve Windows her işi bu dosyanın üzerine yazar. Toplu
+  yazdırmada (fatura listesi, birden çok belge) sunucu ajanı önceki dosyayı almadan sonraki iş
+  onu siliyordu. Ölçüldü: aynı dosyaya art arda gönderilen 3 işten yalnızca sonuncusu kalıyordu.
+  - Yeni **spool kapısı**: önceki çıktı alınmadan sonraki işin yazıcıya geçmesine izin vermez.
+    Kuyruğa yeni iş eklenince Windows bildirim verir; iş bekletilir, önceki çıktı alınınca
+    sırayla serbest bırakılır. Kullanıcı kendi işini bekletebildiği için yönetici yetkisi
+    gerekmez.
+  - Yeni oluşturulan sanal yazıcılar işi ancak tamamen biriktirdikten sonra yazdırır; kapıya
+    zaman kazandırır.
+  - İş 2 dakikadan uzun beklerse günlüğe uyarı düşer; işler silinmez.
+  - Gerçek Windows yazdırma kuyruğuyla test edildi: 3 işin 3'ü de sırasıyla alındı.
+
+---
+
 ## [2026.11.10.1342]
 
 ### Değişti
