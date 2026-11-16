@@ -48,6 +48,31 @@ class SpoolKapisiTest
         Kontrol(K(new[] { I(6, P) }, false, new uint[0]) == "D: S:", "kullanicinin kendi duraklattigi ise dokunulmaz");
         Kontrol(K(new[] { I(6, 0) }, true, new uint[0]) == "D:6 S:", "eski cikti alinmamisken yeni is bekletilir");
 
+        Console.WriteLine("--- 1b. Acilista sahiplenme (kullanicinin kendi duraklattigi ise dokunulmaz)");
+        Func<IList<SpoolKapisi.Is>, uint[], string> S = (l, k) => string.Join(",", SpoolKapisi.Sahiplen(l, new HashSet<uint>(k)));
+        Kontrol(S(new[] { I(6, P), I(7, P) }, new uint[] { 6 }) == "6", "yalnizca kayittaki duraklatilmis is sahiplenilir", S(new[] { I(6, P), I(7, P) }, new uint[] { 6 }));
+        Kontrol(S(new[] { I(6, P), I(7, P) }, new uint[0]) == "", "kayit yoksa kullanicinin duraklattigi islere dokunulmaz (eskiden hepsi basiliyordu)");
+        Kontrol(S(new[] { I(6, 0), I(7, P | BIT) }, new uint[] { 6, 7 }) == "", "duraklatilmamis ya da bitmis is sahiplenilmez");
+        string kd = Path.Combine(Path.GetTempPath(), "p360-kayit-" + Guid.NewGuid().ToString("N").Substring(0, 6) + ".kapi");
+        SpoolKapisi.KayitYaz(kd, new uint[] { 9, 3 });
+        var ok = SpoolKapisi.KayitOku(kd);
+        Kontrol(ok.Count == 2 && ok.Contains(3) && ok.Contains(9), "kayit yazilip okunur", string.Join(",", ok));
+        SpoolKapisi.KayitYaz(kd, new uint[0]);
+        Kontrol(!File.Exists(kd), "bos kayit dosyayi siler");
+        Kontrol(SpoolKapisi.KayitOku(kd).Count == 0, "kayit dosyasi yoksa bos kume");
+
+        Console.WriteLine("--- 1c. Yazici acilamazsa kapi olmez, yeniden dener, gunlugu sisirmez");
+        SpoolKapisi.YenidenDeneme = TimeSpan.FromMilliseconds(200);
+        var mesajlar = new List<string>();
+        var yok = new SpoolKapisi("Print360 Olmayan Yazici " + Guid.NewGuid().ToString("N").Substring(0, 6), Path.Combine(Path.GetTempPath(), "p360-yok.pdf"), m => { lock (mesajlar) mesajlar.Add(m); });
+        yok.Baslat();
+        Thread.Sleep(1500);
+        Kontrol(yok.Calisiyor, "acilamayan yazicida kapi iplik hala calisiyor (eskiden olup bir daha kurulmuyordu)");
+        lock (mesajlar) Kontrol(mesajlar.Count == 1, "ayni hata gunluge bir kez yazildi", mesajlar.Count + " mesaj");
+        yok.Dispose();
+        Kontrol(!yok.Calisiyor, "Dispose ile iplik bitti");
+        SpoolKapisi.YenidenDeneme = TimeSpan.FromSeconds(10);
+
         Console.WriteLine("--- 2. Gercek spooler: ayni dosyaya arka arkaya 3 is");
         const string YAZICI = "Microsoft Print to PDF";
         bool var_ = PrinterSettings.InstalledPrinters.Cast<string>().Any(x => x == YAZICI);
@@ -98,7 +123,10 @@ class SpoolKapisiTest
                 }
                 var t0 = DateTime.Now;
                 while ((DateTime.Now - t0).TotalSeconds < 40) { lock (alinan) if (alinan.Count >= 3) break; Thread.Sleep(300); }
+                int tur0 = kapi.TurSayisi; Thread.Sleep(2000); int tur = kapi.TurSayisi - tur0;
+                Kontrol(tur <= 20, "bos kuyrukta dongu CPU yakmiyor (2 sn'de " + tur + " tur)", tur + " tur");
             }
+            Kontrol(!File.Exists(SpoolKapisi.KayitYolu(hedef)), "kapanista kayit dosyasi temizlendi");
             bitir = true;
             List<int> sonuc; lock (alinan) sonuc = alinan.ToList();
             Kontrol(sonuc.Count == 3, "3 isin 3'u de alindi (kapi yokken yalnizca sonuncusu kaliyordu)", "alinan: " + sonuc.Count);

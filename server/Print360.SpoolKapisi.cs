@@ -98,16 +98,17 @@ class SpoolKapisi : IDisposable
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     struct PRINTER_INFO_5 { public string pPrinterName, pPortName; public uint Attributes, DeviceNotSelectedTimeout, TransmissionRetryTimeout; }
 
+    // null: yazicilar okunamadi (bos liste ile karistirilmasin: cagiran kapilari kapatmasin)
     public static List<string> PortaBagliYazicilar(string dosya)
     {
         var l = new List<string>();
         uint gerek, sayi;
-        EnumPrinters(2 /*LOCAL*/, null, 5, IntPtr.Zero, 0, out gerek, out sayi);
+        if (!EnumPrinters(2 /*LOCAL*/, null, 5, IntPtr.Zero, 0, out gerek, out sayi) && Marshal.GetLastWin32Error() != 122) return null;
         if (gerek == 0) return l;
         IntPtr t = Marshal.AllocHGlobal((int)gerek);
         try
         {
-            if (!EnumPrinters(2, null, 5, t, gerek, out gerek, out sayi)) return l;
+            if (!EnumPrinters(2, null, 5, t, gerek, out gerek, out sayi)) return null;
             int boy = Marshal.SizeOf(typeof(PRINTER_INFO_5));
             for (int i = 0; i < sayi; i++)
             {
@@ -119,47 +120,148 @@ class SpoolKapisi : IDisposable
         return l;
     }
 
+    // ---- kapinin duraklattigi islerin kaydi ----
+    // Ajan cokerse/oldurulurse duraklattigi isler beklemede kalir; yeni ajan bunlari
+    // serbest birakmali. Eskiden TUM duraklatilmis isler sahiplenilirdi: kullanicinin
+    // KENDI duraklattigi is de kendiliginden basiliyordu. Artik yalniz kayittakiler.
+    public static string KayitYolu(string dosya) { return dosya + ".kapi"; }
+
+    public static HashSet<uint> KayitOku(string yol)
+    {
+        var l = new HashSet<uint>();
+        try
+        {
+            if (!File.Exists(yol)) return l;
+            foreach (var x in File.ReadAllText(yol).Split(new[] { ',', ' ', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            { uint id; if (uint.TryParse(x, out id)) l.Add(id); }
+        }
+        catch { }
+        return l;
+    }
+
+    public static void KayitYaz(string yol, ICollection<uint> ids)
+    {
+        try
+        {
+            if (ids.Count == 0) { if (File.Exists(yol)) File.Delete(yol); return; }
+            File.WriteAllText(yol, string.Join(",", ids.OrderBy(i => i)));
+        }
+        catch { }
+    }
+
+    // Acilista sahiplenilecek isler: hala duraklatilmis VE kayitta olanlar
+    public static List<uint> Sahiplen(IList<Is> isler, ICollection<uint> kayitli)
+    {
+        return isler.Where(i => (i.Durum & PAUSED) != 0 && !Bitmis(i.Durum) && kayitli.Contains(i.Id)).Select(i => i.Id).ToList();
+    }
+
     public void Baslat()
     {
         is_ = new Thread(Dongu) { IsBackground = true, Name = "SpoolKapisi " + yazici };
         is_.Start();
     }
 
+    // Iplik yalnizca Dispose ile biter. Yazici acilamazsa ya da tutamac bozulursa
+    // (spooler yeniden basladi, yazici silinip kuruldu) bekleyip YENIDEN acar. Eskiden
+    // ilk hatada iplik sessizce oluyordu ve kapi bir daha kurulmuyordu.
+    public static TimeSpan YenidenDeneme = TimeSpan.FromSeconds(10);
+    public bool Calisiyor { get { return is_ != null && is_.IsAlive; } }
+    public int TurSayisi;          // test: bos beklemede donguyu sayar (CPU yakmamali)
+    string sonHata;
+
+    // Ayni hata 200 ms'de bir gunluge yazilmasin: degisince yaz
+    void HataBildir(string m) { if (m == sonHata) return; sonHata = m; gunluk(m); }
+
+    void Bekle(TimeSpan t)
+    {
+        var son = DateTime.UtcNow + t;
+        while (!dur && DateTime.UtcNow < son) Thread.Sleep(50);
+    }
+
     void Dongu()
     {
-        IntPtr h;
-        if (!OpenPrinter(yazici, out h, IntPtr.Zero)) { gunluk("Spool kapisi: yazici acilamadi '" + yazici + "' (hata " + Marshal.GetLastWin32Error() + ")"); return; }
-        // Ajan yeniden basladiysa onceki kapinin duraklattigi isler bizimdir
-        try { foreach (var i in Isler(h)) if ((i.Durum & PAUSED) != 0) bizim.Add(i.Id); } catch { }
+        string kayit = KayitYolu(dosya);
+        while (!dur)
+        {
+            IntPtr h;
+            if (!OpenPrinter(yazici, out h, IntPtr.Zero))
+            {
+                HataBildir("Spool kapisi: yazici acilamadi '" + yazici + "' (hata " + Marshal.GetLastWin32Error() + "); "
+                         + (int)YenidenDeneme.TotalSeconds + " sn sonra yeniden denenecek");
+                Bekle(YenidenDeneme);
+                continue;
+            }
+            try { Calis(h, kayit); }
+            catch (Exception ex) { HataBildir("Spool kapisi: " + ex.Message); }
+            finally { ClosePrinter(h); }
+            if (!dur) Bekle(YenidenDeneme);
+        }
+    }
+
+    static bool Gecerli(IntPtr b) { return b != IntPtr.Zero && b.ToInt64() != -1; }
+
+    void Calis(IntPtr h, string kayit)
+    {
+        var ilk = Isler(h);
+        if (ilk != null) foreach (var id in Sahiplen(ilk, KayitOku(kayit))) bizim.Add(id);
         IntPtr bildirim = FindFirstPrinterChangeNotification(h, PRINTER_CHANGE_JOB, 0, IntPtr.Zero);
+        bool bildirimVar = Gecerli(bildirim);
+        int ardisikHata = 0;
         try
         {
             while (!dur)
             {
-                try { Tur(h); } catch (Exception ex) { gunluk("Spool kapisi: " + ex.Message); }
-                if (bildirim != IntPtr.Zero && bildirim.ToInt64() != -1)
+                TurSayisi++;
+                var isler = Isler(h);
+                if (isler == null)
                 {
-                    // Bildirim gelince hemen; gelmezse dosyanin alinmasini 200 ms'de bir yokla
-                    if (WaitForSingleObject(bildirim, 200) == 0) { uint d; FindNextPrinterChangeNotification(bildirim, out d, IntPtr.Zero, IntPtr.Zero); }
+                    if (++ardisikHata >= 5)
+                    {
+                        HataBildir("Spool kapisi: '" + yazici + "' is listesi okunamiyor (hata " + sonEnumHata + "); yazici yeniden aciliyor");
+                        return;
+                    }
+                }
+                else
+                {
+                    ardisikHata = 0;
+                    try { Tur(h, isler, kayit); sonHata = null; }
+                    catch (Exception ex) { HataBildir("Spool kapisi: " + ex.Message); }
+                }
+                if (bildirimVar)
+                {
+                    // Bildirim gelince hemen; gelmezse dosyanin alinmasini 200 ms'de bir yokla.
+                    // Tutamac bozulursa (WAIT_FAILED ya da FindNext basarisiz) bekleme ANINDA
+                    // donerdi: dongu %100 CPU yakiyordu. Artik bildirim birakilir, yoklamaya gecilir.
+                    uint w = WaitForSingleObject(bildirim, 200);
+                    uint d;
+                    if (w == 0 ? !FindNextPrinterChangeNotification(bildirim, out d, IntPtr.Zero, IntPtr.Zero) : w != 0x102 /*TIMEOUT*/)
+                    {
+                        FindClosePrinterChangeNotification(bildirim);
+                        bildirimVar = false;
+                    }
                 }
                 else Thread.Sleep(200);
             }
         }
         finally
         {
-            if (bildirim != IntPtr.Zero && bildirim.ToInt64() != -1) FindClosePrinterChangeNotification(bildirim);
-            // Kapanista duraklattigimiz hicbir is sonsuza kadar beklemesin
-            try { foreach (var id in bizim.ToList()) SetJob(h, id, 0, IntPtr.Zero, JOB_CONTROL_RESUME); } catch { }
-            ClosePrinter(h);
+            if (bildirimVar) FindClosePrinterChangeNotification(bildirim);
+            if (dur)
+            {
+                // Kapanista duraklattigimiz hicbir is sonsuza kadar beklemesin
+                foreach (var id in bizim.ToList())
+                    try { if (SetJob(h, id, 0, IntPtr.Zero, JOB_CONTROL_RESUME)) bizim.Remove(id); } catch { }
+                KayitYaz(kayit, bizim);
+            }
         }
     }
 
     [DllImport("kernel32", SetLastError = true)]
     static extern uint WaitForSingleObject(IntPtr h, uint ms);
 
-    void Tur(IntPtr h)
+    string sonKayit = "";
+    void Tur(IntPtr h, List<Is> isler, string kayit)
     {
-        var isler = Isler(h);
         bizim.IntersectWith(isler.Select(i => i.Id));                // biten isler unutulur
         var duraklat = new List<uint>(); var surdur = new List<uint>();
         Karar(isler, File.Exists(dosya), bizim, duraklat, surdur);
@@ -168,6 +270,8 @@ class SpoolKapisi : IDisposable
             else gunluk("Spool kapisi: is " + id + " bekletilemedi (hata " + Marshal.GetLastWin32Error() + ")");
         foreach (var id in surdur)
             if (SetJob(h, id, 0, IntPtr.Zero, JOB_CONTROL_RESUME)) bizim.Remove(id);
+        string k = string.Join(",", bizim.OrderBy(i => i));
+        if (k != sonKayit) { KayitYaz(kayit, bizim); sonKayit = k; }
         int bekleyen = bizim.Count;
         if (bekleyen != sonBekleyen && (bekleyen > 0 || sonBekleyen > 0))
             ayrinti(bekleyen > 0 ? "Spool kapisi: " + bekleyen + " is sirada bekliyor (onceki cikti alinana kadar)" : "Spool kapisi: sira bosaldi");
@@ -186,16 +290,22 @@ class SpoolKapisi : IDisposable
         }
     }
 
+    int sonEnumHata;
+    // null: okunamadi (tutamac bozuk olabilir). Bos liste: kuyruk bos.
     List<Is> Isler(IntPtr h)
     {
         var l = new List<Is>();
         uint gerek, sayi;
-        EnumJobs(h, 0, 512, 1, IntPtr.Zero, 0, out gerek, out sayi);
+        if (!EnumJobs(h, 0, 512, 1, IntPtr.Zero, 0, out gerek, out sayi))
+        {
+            int e = Marshal.GetLastWin32Error();
+            if (e != 122 /*INSUFFICIENT_BUFFER*/) { sonEnumHata = e; return null; }
+        }
         if (gerek == 0) return l;
         IntPtr t = Marshal.AllocHGlobal((int)gerek);
         try
         {
-            if (!EnumJobs(h, 0, 512, 1, t, gerek, out gerek, out sayi)) return l;
+            if (!EnumJobs(h, 0, 512, 1, t, gerek, out gerek, out sayi)) { sonEnumHata = Marshal.GetLastWin32Error(); return null; }
             int boy = Marshal.SizeOf(typeof(JOB_INFO_1));
             for (int i = 0; i < sayi; i++)
             {

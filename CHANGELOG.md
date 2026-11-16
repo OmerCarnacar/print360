@@ -10,6 +10,23 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [Yayınlanmamış]
+
+### Düzeltildi
+- **Spool kapısı kendini kapatabiliyordu:** yazıcı ajan açılırken henüz hazır değilse
+  (yazdırma hizmeti geç başladı, yazıcı yeni kuruluyor) kapı bir kez hata yazıp duruyor ve
+  bir daha kurulmuyordu; arka arkaya işler yine birbirini silebiliyordu. Artık 10 saniyede bir
+  yeniden dener; yazdırma hizmeti yeniden başlarsa da kendini toparlar.
+- **İşlemciyi %100 kullanma riski:** Windows bildirimi bozulduğunda kapı beklemeden sürekli
+  dönüyordu. Artık bildirim bırakılır ve 200 ms'lik yoklamaya geçilir.
+- **Kullanıcının kendi beklettiği iş kendiliğinden basılıyordu:** ajan yeniden başlayınca
+  kuyruktaki tüm bekletilmiş işleri kendi işi sanıp serbest bırakıyordu. Kapı artık beklettiği
+  işleri kayda alır ve yalnızca onları serbest bırakır.
+- Silinen ya da portu değişen yazıcının kapısı kapatılır, beklettiği işler bırakılır.
+- Aynı kapı hatası günlüğe 200 ms'de bir yazılmıyor; değişince bir kez yazılır.
+
+---
+
 ## [2026.11.13.0834]
 
 ### Düzeltildi

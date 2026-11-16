@@ -536,21 +536,34 @@ static class ServerAgent
     // Her sanal yazici icin bir spool kapisi (bkz. Print360.SpoolKapisi.cs). Yazici sonradan
     // olusturulabildigi icin (panel otomatik kurar) dakikada bir yeniden bakilir.
     static readonly Dictionary<string, SpoolKapisi> kapilar = new Dictionary<string, SpoolKapisi>(StringComparer.OrdinalIgnoreCase);
+    // Yazici silindiyse ya da portu degistiyse kapisi kapatilir (duraklattigi isleri birakir);
+    // ayni adla yeniden kurulursa bayat tutamacli eski kapi yerine yenisi acilir.
     static void SpoolKapilariniKur()
     {
         try
         {
+            var gorulen = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var t in jobTypes)
             {
                 string sp = SpoolPath(t);
-                foreach (var y in SpoolKapisi.PortaBagliYazicilar(sp))
-                {
-                    if (kapilar.ContainsKey(y)) continue;
-                    var k = new SpoolKapisi(y, sp, Log, Ayr);
-                    kapilar[y] = k;
-                    k.Baslat();
-                    Ayr("Spool kapisi baslatildi: '" + y + "' -> " + sp);
-                }
+                var yl = SpoolKapisi.PortaBagliYazicilar(sp);
+                if (yl == null) return;   // okunamadi: mevcut kapilara dokunma
+                foreach (var y in yl) gorulen[y] = sp;
+            }
+            foreach (var ad in new List<string>(kapilar.Keys))
+            {
+                if (gorulen.ContainsKey(ad)) continue;
+                kapilar[ad].Dispose();
+                kapilar.Remove(ad);
+                Ayr("Spool kapisi kapatildi (yazici yok ya da portu degisti): '" + ad + "'");
+            }
+            foreach (var g in gorulen)
+            {
+                if (kapilar.ContainsKey(g.Key)) continue;
+                var k = new SpoolKapisi(g.Key, g.Value, Log, Ayr);
+                kapilar[g.Key] = k;
+                k.Baslat();
+                Ayr("Spool kapisi baslatildi: '" + g.Key + "' -> " + g.Value);
             }
         }
         catch (Exception ex) { Log("Spool kapisi kurulamadi: " + Ortak.HataDetayi(ex)); }
