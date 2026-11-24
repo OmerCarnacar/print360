@@ -2,7 +2,7 @@ Print360 — Dosya Doğrulama (SHA-256)
 =====================================
 
 Sürüm : 2026.11.24.0838  (paket: Print360-Kurulum-v2026.11.24.0838.zip)
-Tarih : 09.11.2026
+Tarih : 24.11.2026
 
 İndirdiğiniz dosyanın yolda değiştirilmediğini doğrulamak için aşağıdaki
 özetleri kullanın. Değerler birebir tutmuyorsa dosyayı KULLANMAYIN, yeniden
