@@ -2770,6 +2770,8 @@ static class Dashboard
         {
             var sp = Directory.Exists(@"C:\Print360\spool")
                    ? new DirectoryInfo(@"C:\Print360\spool").GetFiles() : new FileInfo[0];
+            // .kapi: spool kapisinin bekletilen is kaydi; yakalanmamis is degildir
+            sp = sp.Where(f => !f.Name.EndsWith(".kapi", StringComparison.OrdinalIgnoreCase)).ToArray();
             if (sp.Length == 0)
                 sb.Append("<div class='mut'>Bo&#351; &mdash; bu normaldir (i&#351;ler an&#305;nda al&#305;n&#305;r). ")
                   .Append("Ama <b>hi&ccedil; yazd&#305;ramad&#305;ysan&#305;z</b> ve burada da bir &#351;ey olu&#351;muyorsa, ")

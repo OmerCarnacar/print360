@@ -48,6 +48,12 @@ class SpoolKapisiTest
         Kontrol(K(new[] { I(6, P) }, false, new uint[0]) == "D: S:", "kullanicinin kendi duraklattigi ise dokunulmaz");
         Kontrol(K(new[] { I(6, 0) }, true, new uint[0]) == "D:6 S:", "eski cikti alinmamisken yeni is bekletilir");
 
+        Func<uint, uint, uint, SpoolKapisi.Is> IS = (id, d, sira) => new SpoolKapisi.Is { Id = id, Durum = d, Sira = sira };
+        Kontrol(K(new[] { IS(3, P, 2), IS(65000, P, 1) }, false, new uint[] { 3, 65000 }) == "D: S:65000",
+                "is numarasi basa donunce sira KONUMA gore korunur (eski is once)", K(new[] { IS(3, P, 2), IS(65000, P, 1) }, false, new uint[] { 3, 65000 }));
+        Kontrol(K(new[] { IS(3, 0, 2), IS(65000, 0, 1) }, false, new uint[0]) == "D:3 S:",
+                "ayni anda gelen islerde kuyrukta ONDE olan gecer", K(new[] { IS(3, 0, 2), IS(65000, 0, 1) }, false, new uint[0]));
+
         Console.WriteLine("--- 1b. Acilista sahiplenme (kullanicinin kendi duraklattigi ise dokunulmaz)");
         Func<IList<SpoolKapisi.Is>, uint[], string> S = (l, k) => string.Join(",", SpoolKapisi.Sahiplen(l, new HashSet<uint>(k)));
         Kontrol(S(new[] { I(6, P), I(7, P) }, new uint[] { 6 }) == "6", "yalnizca kayittaki duraklatilmis is sahiplenilir", S(new[] { I(6, P), I(7, P) }, new uint[] { 6 }));

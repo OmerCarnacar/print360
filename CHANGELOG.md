@@ -25,6 +25,13 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 - Silinen ya da portu değişen yazıcının kapısı kapatılır, beklettiği işler bırakılır.
 - Aynı kapı hatası günlüğe 200 ms'de bir yazılmıyor; değişince bir kez yazılır.
 
+- **İş numarası başa dönünce sıra bozuluyordu:** Windows'un iş numaraları bir sınıra gelince
+  küçük sayılardan yeniden başlar. Kapı bekleyen işleri numaraya göre sıraladığı için o anda
+  yeni iş eskisinden önce basılabiliyordu. Artık kuyruktaki konuma göre sıralanır.
+- Bekletilemeyen bir iş için uyarı günlüğe 200 ms'de bir yazılıyordu; artık iş başına bir kez.
+- Panel tanı sayfası, kapının bekletme kaydını (`*.kapi`) "ajanın alamadığı iş" sanıp uyarı
+  veriyordu; artık saymıyor.
+
 ---
 
 ## [2026.11.13.0834]

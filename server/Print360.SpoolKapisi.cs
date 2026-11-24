@@ -51,7 +51,10 @@ class SpoolKapisi : IDisposable
     const uint PRINTER_CHANGE_JOB = 0x0000FF00;
 
     // ---- karar (saf, test edilir) ----
-    public class Is { public uint Id; public uint Durum; }
+    // Sira: kuyruktaki konum (JOB_INFO_1.Position). Is numaralari bir sinira gelince
+    // basa doner (65000 -> 3); siralamayi numaraya gore yapmak o anda YENI isi once
+    // gonderiyordu. Konum bilinmiyorsa (0) numaraya bakilir.
+    public class Is { public uint Id; public uint Durum; public uint Sira; }
 
     static bool Bitmis(uint d) { return (d & (PRINTED | COMPLETE | DELETED | DELETING)) != 0; }
 
@@ -61,7 +64,7 @@ class SpoolKapisi : IDisposable
     public static void Karar(IList<Is> isler, bool dosyaVar, ICollection<uint> bizim,
                              List<uint> duraklat, List<uint> surdur)
     {
-        var canli = isler.Where(i => !Bitmis(i.Durum)).OrderBy(i => i.Id).ToList();
+        var canli = isler.Where(i => !Bitmis(i.Durum)).OrderBy(i => i.Sira == 0 ? uint.MaxValue : i.Sira).ThenBy(i => i.Id).ToList();
         bool basiliyor = canli.Any(i => (i.Durum & PRINTING) != 0);
         var serbest = canli.Where(i => (i.Durum & (PAUSED | PRINTING)) == 0).ToList();
 
@@ -260,14 +263,21 @@ class SpoolKapisi : IDisposable
     static extern uint WaitForSingleObject(IntPtr h, uint ms);
 
     string sonKayit = "";
+    readonly HashSet<uint> uyarilan = new HashSet<uint>();
     void Tur(IntPtr h, List<Is> isler, string kayit)
     {
         bizim.IntersectWith(isler.Select(i => i.Id));                // biten isler unutulur
+        uyarilan.IntersectWith(isler.Select(i => i.Id));
         var duraklat = new List<uint>(); var surdur = new List<uint>();
         Karar(isler, File.Exists(dosya), bizim, duraklat, surdur);
         foreach (var id in duraklat)
             if (SetJob(h, id, 0, IntPtr.Zero, JOB_CONTROL_PAUSE)) bizim.Add(id);
-            else gunluk("Spool kapisi: is " + id + " bekletilemedi (hata " + Marshal.GetLastWin32Error() + ")");
+            else
+            {
+                int e = Marshal.GetLastWin32Error();
+                // Her turda (200 ms) ayni is icin yeniden yazilmasin: is basina bir kez
+                if (uyarilan.Add(id)) gunluk("Spool kapisi: is " + id + " bekletilemedi (hata " + e + "); bu is siraya alinmadan gidebilir");
+            }
         foreach (var id in surdur)
             if (SetJob(h, id, 0, IntPtr.Zero, JOB_CONTROL_RESUME)) bizim.Remove(id);
         string k = string.Join(",", bizim.OrderBy(i => i));
@@ -310,7 +320,7 @@ class SpoolKapisi : IDisposable
             for (int i = 0; i < sayi; i++)
             {
                 var j = (JOB_INFO_1)Marshal.PtrToStructure(new IntPtr(t.ToInt64() + (long)i * boy), typeof(JOB_INFO_1));
-                l.Add(new Is { Id = j.JobId, Durum = j.Status });
+                l.Add(new Is { Id = j.JobId, Durum = j.Status, Sira = j.Position });
             }
         }
         finally { Marshal.FreeHGlobal(t); }
