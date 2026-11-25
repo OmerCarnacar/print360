@@ -721,7 +721,9 @@ static class ServerAgent
             if (pdfE == null) { try { pdfE = File.ReadAllBytes(spoolFile); } catch { } }
             string docE = ilkDoc, pagesE = ilkSayfa;
             if (pagesE.Length == 0 && pdfE != null) pagesE = CountPages(pdfE).ToString();
-            File.Delete(spoolFile);
+            // Eskiden duz File.Delete: dosya kilitliyse (antivirus) istisna atiyor, kayit
+            // yazilmiyor ve ayni is 2 sn'de bir yeniden isleniyordu. Gonderilen isle ayni yol.
+            if (!SpoolSil(spoolFile)) gonderilmisSpool = SpoolImzasi(spoolFile);
             if (pdfE != null) ArchiveJob(pdfE, name); // engellenen is de denetim icin arsivlenir
             string paperE = pdfE != null ? DetectPaper(pdfE) : "";
             string kbE = pdfE != null ? ((pdfE.Length + 1023) / 1024).ToString() : "";
@@ -752,7 +754,9 @@ static class ServerAgent
             }
             if (sec == null)   // kullanici iptal etti
             {
-                try { File.Delete(spoolFile); } catch { }
+                // Silinemezse sessizce kaliyordu: 2 sn sonra ayni is yeniden "iptal" edilip
+                // her seferinde yeni bir IPTAL kaydi yaziliyordu.
+                if (!SpoolSil(spoolFile)) gonderilmisSpool = SpoolImzasi(spoolFile);
                 AppendCsv(jobsCsv, new[] { DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
                     user, clientName, "", "0", name, "", "", "IPTAL: yazici secilmedi" });
                 Log("SEC: kullanici yazici secmedi, is iptal edildi.");

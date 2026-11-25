@@ -10,6 +10,19 @@ _2026.08.21 öncesi sürümler `1.1.x` şemasıyla numaralandırılmıştır._
 
 ---
 
+## [Yayınlanmamış]
+
+### Düzeltildi
+- **Engellenen iş silinemezse sürekli yeniden işleniyordu:** kullanıcı ya da makine
+  engelliyken spool dosyası o an kilitliyse (antivirüs taraması) sunucu ajanı hata verip kaydı
+  yazmıyor, aynı işi 2 saniyede bir yeniden işliyordu. Artık gönderilen işlerle aynı güvenli
+  silme yolu kullanılır; kayıt bir kez yazılır.
+- **"Yazıcı seç" penceresinde iptal edilen iş tekrar tekrar kaydediliyordu:** dosya
+  silinemezse aynı iş her 2 saniyede bir yeniden "iptal" sayılıyor, iş geçmişine yeni bir
+  IPTAL satırı ekleniyordu. Artık bir kez kaydedilir.
+
+---
+
 ## [2026.11.24.0838]
 
 ### Düzeltildi

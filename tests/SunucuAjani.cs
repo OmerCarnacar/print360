@@ -77,6 +77,40 @@ class SunucuAjaniTest
             File.SetLastWriteTimeUtc(a, DateTime.UtcNow.AddSeconds(5));
             Kontrol((string)Cagir("SpoolImzasi", a) != (string)Oku("gonderilmisSpool"),
                     "yeni is farkli imza tasir (gonderilmis sayilip atlanmaz)", null);
+
+            Console.WriteLine("--- 5. ENGELLENEN is, dosya kilitliyken: istisna yok, kayit BIR kez");
+            Ayarla("gonderilmisSpool", null);
+            string ku = (string)Oku("user");
+            Db.Exec("INSERT INTO Rules(Tip,Ad,Engel,Kota) VALUES('user',@a,1,0)", "@a", ku);
+            File.WriteAllText(Path.Combine(kok, "rules.csv"), "user," + ku + ",1,0\r\n");
+            string jc = Path.Combine(kok, "jobs.csv");
+            Func<string, int> Satir = d => File.Exists(jc) ? System.Linq.Enumerable.Count(File.ReadAllLines(jc), l => l.Contains(d)) : 0;
+            File.WriteAllText(a, "%PDF-1.4 engellenecek is %%EOF");
+            using (new FileStream(a, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                string hata = null;
+                try { Cagir("Dispatch", "", a); } catch (Exception ex) { hata = (ex.InnerException ?? ex).Message; }
+                Kontrol(hata == null, "kilitli dosyada engel isi istisna atmadi", hata);
+                Cagir("SpoolKontrol", "", a);   // ana dongunun sonraki turu
+                Kontrol(Satir("ENGEL") == 1, "engel kaydi BIR kez yazildi", Satir("ENGEL") + " kayit");
+            }
+            Cagir("SpoolKontrol", "", a);
+            Kontrol(!File.Exists(a) && Satir("ENGEL") == 1, "kilit kalkinca dosya silindi, is yeniden islenmedi", Satir("ENGEL") + " kayit");
+            Db.Exec("DELETE FROM Rules");
+            File.Delete(Path.Combine(kok, "rules.csv"));
+
+            Console.WriteLine("--- 6. SEC iptali, dosya kilitliyken: IPTAL kaydi BIR kez");
+            Ayarla("gonderilmisSpool", null);
+            File.WriteAllText(a, "%PDF-1.4 iptal edilecek is %%EOF");
+            Ayarla("sonSecimImzasi", (string)Cagir("SpoolImzasi", a));
+            Ayarla("sonSecim", null);   // kullanici pencerede Iptal'e basti
+            using (new FileStream(a, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                Cagir("Dispatch", "SEC", a);
+                Cagir("SpoolKontrol", "SEC", a);
+                Cagir("SpoolKontrol", "SEC", a);
+            }
+            Kontrol(Satir("IPTAL") == 1, "iptal kaydi BIR kez yazildi (eskiden her 2 sn'de bir)", Satir("IPTAL") + " kayit");
         }
         catch (Exception ex) { Kontrol(false, "BEKLENMEYEN ISTISNA", ex.ToString()); }
         finally { try { Directory.Delete(kok, true); } catch { } }
